@@ -101,25 +101,27 @@ location.
 
 ## 5. Existing train API boundary
 
-Known availability contract (must be verified before implementation
-relies on it):
+Verified availability contract (source inspection plus a bounded live
+contract check on 23 October 2026):
 
 -   Base URL configuration key: `TRAIN_API_BASE_URL`
 -   Path: `/api/v1/trains/availability`
 -   Method: `POST`
--   Query parameters: `trainNo`, `source`, `destination`, `travelClass`,
-    `date` (`DD-MM-YYYY`), `quota`
--   Request body: empty, according to the currently known contract.
+-   Supported calling conventions: query parameters or a JSON request
+    body containing `trainNo`, `source`, `destination`, `travelClass`,
+    `date`, and optional `quota` (default `GN`).
+-   TrainWatch will use the JSON request form when the adapter is
+    implemented in Phase 5.
 
 Example test fixture values only: train `06030`, source `RJPM`,
 destination `CBE`, date `25-10-2026`, class `SL`, quota `GN`. These are
 not production defaults.
 
-The agent must ask the user for an OpenAPI export or sanitized examples,
-or ask permission for a narrowly scoped live contract check. Do not
-guess station/train search routes or response fields. Do not call a live
-endpoint by default. Document response semantics, errors, timeouts, rate
-limits, and fields needed for comparisons in `docs/API_CONTRACTS.md`.
+The user authorized narrowly scoped live contract checks against the
+deployed service. The resulting source-backed and live-observed contract,
+including unresolved operational details, is documented in
+`docs/API_CONTRACTS.md`. Future live checks still require explicit scope;
+do not perform load tests or discover credentials.
 
 ## 6. Architecture and design principles
 

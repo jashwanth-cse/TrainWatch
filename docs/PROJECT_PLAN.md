@@ -15,8 +15,8 @@ The complete, authoritative plan is [`../TrainWatch_Project_RnD_and_Implementati
 
 | Phase | Scope | Status |
 |---|---|---|
-| 0 | Safe repository baseline | Complete; awaiting phase-gate approval |
-| 1 | Upstream R&D and API contract | Not approved / not started |
+| 0 | Safe repository baseline | Complete; merged in PR #1 |
+| 1 | Upstream R&D and API contract | Complete locally; awaiting phase-gate review |
 | 2 | Domain model | Not approved / not started |
 | 3 | FastAPI skeleton and auth boundary | Not approved / not started |
 | 4-15 | Adapters, features, hardening, deployment, mobile, release | Not approved / not started |
