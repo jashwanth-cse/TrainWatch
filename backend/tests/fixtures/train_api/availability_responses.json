@@ -1,0 +1,102 @@
+[
+  {
+    "case": "available",
+    "response": {
+      "success": true,
+      "message": "Live availability fetched",
+      "data": {
+        "train_number": "06030",
+        "travel_class": "SL",
+        "quota": "GN",
+        "availability": "AVL 25",
+        "booking_status": "AVAILABLE",
+        "prediction": 95,
+        "fare": 380,
+        "total_fare": 417,
+        "booking_enabled": true,
+        "last_updated": "2026-10-23T20:00:00",
+        "next_available_dates": []
+      }
+    }
+  },
+  {
+    "case": "rac",
+    "response": {
+      "success": true,
+      "message": "Live availability fetched",
+      "data": {
+        "train_number": "06030",
+        "travel_class": "SL",
+        "quota": "GN",
+        "availability": "RAC 12",
+        "booking_status": "RAC",
+        "prediction": 72,
+        "fare": 380,
+        "total_fare": 417,
+        "booking_enabled": true,
+        "last_updated": "2026-10-23T20:01:00",
+        "next_available_dates": []
+      }
+    }
+  },
+  {
+    "case": "waitlist",
+    "response": {
+      "success": true,
+      "message": "Live availability fetched",
+      "data": {
+        "train_number": "06030",
+        "travel_class": "SL",
+        "quota": "GN",
+        "availability": "WL 61",
+        "booking_status": "WL",
+        "prediction": 22,
+        "fare": 380,
+        "total_fare": 417,
+        "booking_enabled": true,
+        "last_updated": "2026-10-23T20:10:43.097",
+        "next_available_dates": ["1-11-2026", "8-11-2026", "15-11-2026"]
+      }
+    }
+  },
+  {
+    "case": "regret",
+    "response": {
+      "success": true,
+      "message": "Live availability fetched",
+      "data": {
+        "train_number": "06030",
+        "travel_class": "SL",
+        "quota": "GN",
+        "availability": "REGRET",
+        "booking_status": "REGRET",
+        "prediction": 0,
+        "fare": 380,
+        "total_fare": 417,
+        "booking_enabled": false,
+        "last_updated": "2026-10-23T20:02:00",
+        "next_available_dates": []
+      }
+    }
+  },
+  {
+    "case": "unknown",
+    "response": {
+      "success": true,
+      "message": "Live availability fetched",
+      "data": {
+        "train_number": "06030",
+        "travel_class": "SL",
+        "quota": "GN",
+        "availability": "",
+        "booking_status": "UNKNOWN",
+        "prediction": 0,
+        "fare": 0,
+        "total_fare": 0,
+        "booking_enabled": true,
+        "last_updated": "2026-10-23T20:03:00",
+        "next_available_dates": []
+      }
+    }
+  }
+]

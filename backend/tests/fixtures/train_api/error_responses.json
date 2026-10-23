@@ -1,0 +1,8 @@
+[
+  {"status": 400, "body": {"detail": "Invalid request parameters"}},
+  {"status": 404, "body": {"detail": "Train or route schedule not found"}},
+  {"status": 502, "body": {"detail": "Upstream availability provider returned an error. Please try again."}},
+  {"status": 503, "body": {"detail": "Availability service is temporarily unavailable due to upstream provider outage."}},
+  {"status": 504, "body": {"detail": "Upstream availability provider timed out. Please retry shortly."}},
+  {"status": 500, "body": {"success": false, "message": "Internal server error"}}
+]

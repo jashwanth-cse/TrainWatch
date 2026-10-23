@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "message": "Stations found",
+  "data": [
+    {
+      "station_name": "Rajapalayam",
+      "station_code": "RJPM",
+      "latitude": 0.0,
+      "longitude": 0.0
+    }
+  ]
+}

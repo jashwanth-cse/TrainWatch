@@ -1,0 +1,82 @@
+{
+  "success": true,
+  "message": "Train search successful",
+  "data": {
+    "result_type": "direct",
+    "source": "Rajapalayam",
+    "destination": "Coimbatore Jn",
+    "total_trains": 1,
+    "trains": [
+      {
+        "train_number": "06030",
+        "train_name": "Synthetic Express",
+        "train_type": "EXP",
+        "from": {"code": "RJPM", "name": "Rajapalayam"},
+        "to": {"code": "CBE", "name": "Coimbatore Jn"},
+        "departure_time": "08:00",
+        "arrival_time": "13:00",
+        "duration_minutes": 300,
+        "duration": "5h 0m",
+        "distance": 300,
+        "running_days": ["Sun"],
+        "rating": 4.0,
+        "has_pantry": false,
+        "lowest_fare": 380,
+        "recommended_class": {
+          "travel_class": "SL",
+          "fare": 380,
+          "availability": "WL 61",
+          "prediction": 22,
+          "bookable": true,
+          "availability_source": "live"
+        },
+        "classes": [
+          {
+            "travel_class": "SL",
+            "fare": 380,
+            "availability": "WL 61",
+            "prediction": 22,
+            "bookable": true,
+            "availability_source": "live"
+          }
+        ]
+      }
+    ],
+    "route_type": "direct",
+    "original_source": {
+      "station_code": "RJPM",
+      "station_name": "Rajapalayam",
+      "division": "MDU",
+      "zone": "SR",
+      "state": "Tamil Nadu",
+      "district": "Virudhunagar"
+    },
+    "original_destination": {
+      "station_code": "CBE",
+      "station_name": "Coimbatore Jn",
+      "division": "SA",
+      "zone": "SR",
+      "state": "Tamil Nadu",
+      "district": "Coimbatore"
+    },
+    "actual_source": {
+      "station_code": "RJPM",
+      "station_name": "Rajapalayam",
+      "division": "MDU",
+      "zone": "SR",
+      "state": "Tamil Nadu",
+      "district": "Virudhunagar"
+    },
+    "actual_destination": {
+      "station_code": "CBE",
+      "station_name": "Coimbatore Jn",
+      "division": "SA",
+      "zone": "SR",
+      "state": "Tamil Nadu",
+      "district": "Coimbatore"
+    },
+    "fallback_reason": null,
+    "fallback_searches_count": 1,
+    "latency_ms": 250.0
+  }
+}
