@@ -1,6 +1,6 @@
 # Architecture
 
-## Current Phase 0 shape
+## Current Phase 2 shape
 
 ```text
 repository root
@@ -10,11 +10,21 @@ repository root
     ├── pyproject.toml            package and shared tool configuration
     ├── src/trainwatch/
     │   ├── config.py             non-secret process configuration
-    │   └── main.py               FastAPI app factory and liveness route
-    └── tests/unit/               local, isolated smoke tests
+    │   ├── main.py               FastAPI app factory and liveness route
+    │   ├── domain/               pure queries, watches, snapshots, and alerts
+    │   └── ports/                minimal provider and repository protocols
+    └── tests/                    offline unit and provider-contract tests
 ```
 
-Only responsibilities needed to start and validate the process exist today. The application has no persistence, provider client, background task, authentication SDK, or notification dependency.
+The domain layer uses only the Python standard library. It has no FastAPI, persistence, provider client, background-task, authentication SDK, or notification dependency. Ports describe required capabilities but initialize nothing and perform no I/O.
+
+## Domain rules
+
+- A shared query key is a versioned SHA-256 digest over normalized train number, source, destination, journey date, travel class, and quota. Leading zeroes in train numbers are preserved.
+- Watch values are immutable. Active and paused watches may be transitioned explicitly; cancelled and expired watches are terminal.
+- Availability ordering is structural: `AVAILABLE` is better than `RAC`, which is better than `WL`; lower RAC/WL positions are better.
+- The first valid observation establishes a baseline. Duplicate observations do not alert.
+- Unknown, malformed, or failed provider observations cannot trigger an alert. Prediction, fare, and timestamps do not influence ordering.
 
 ## Target modular monolith
 
@@ -35,7 +45,7 @@ Dependency direction points inward: infrastructure and delivery mechanisms imple
 
 ## Runtime boundaries
 
-The future public API, dispatcher, worker, data store, provider, and notification sender are separate trust and failure boundaries. Provider failures never become positive availability observations. User subscriptions remain separate from deduplicated shared monitoring watches. These rules are design constraints only in Phase 0; they are not yet implemented.
+The future public API, dispatcher, worker, data store, provider, and notification sender are separate trust and failure boundaries. Provider failures are now modeled separately from successful availability snapshots and fail closed during alert evaluation. User subscriptions remain separate from deduplicated shared monitoring watches; persistence for that separation is deferred to its approved phase.
 
 ## Configuration
 
