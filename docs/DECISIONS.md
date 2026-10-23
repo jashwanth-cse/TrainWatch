@@ -45,3 +45,20 @@ This log records accepted baseline decisions and items that require later user a
 - Cloud project, region, infrastructure-as-code, budget, deployment, and rollback (Phases 10+).
 - Expo versus bare React Native and target mobile platforms (Phase 12).
 - Repository license and ownership metadata.
+
+## Accepted in Phase 1
+
+### ADR-0007: Treat Dream Destiny as an external provider boundary
+
+- **Decision:** TrainWatch consumes the deployed Dream Destiny train service and does not copy or reimplement its station, train-search, availability-provider, or route-fallback internals.
+- **Reason:** The service already owns those responsibilities. TrainWatch needs a narrow typed adapter around its verified public contract.
+
+### ADR-0008: Prefer the JSON availability request
+
+- **Decision:** The future Phase 5 adapter will call `POST /api/v1/trains/availability` with its supported JSON body rather than duplicating parameters in the URL.
+- **Reason:** Both forms are supported, and JSON provides a clearer typed boundary while preserving the deployed service contract.
+
+### ADR-0009: Preserve raw status and fail closed
+
+- **Decision:** Retain both `availability` and `booking_status`. Blank, malformed, `UNKNOWN`, transport-error, and provider-error observations are unusable for positive alerts.
+- **Reason:** The coarse status alone cannot express numerical RAC or waitlist improvement, and provider failure must never look like better availability.

@@ -1,6 +1,6 @@
 # TrainWatch
 
-TrainWatch is a planned Indian train-seat-availability monitoring application. The repository is currently at **Phase 0: Safe Repository Baseline**. It contains only a credential-free FastAPI startup probe and development quality gates; train-provider access, persistence, queues, notifications, cloud configuration, and the mobile client are intentionally not implemented.
+TrainWatch is a planned Indian train-seat-availability monitoring application. The repository has completed the local work for **Phase 1: Upstream R&D and API Contract**. It contains a credential-free FastAPI startup probe, development quality gates, and offline contract fixtures for the existing Dream Destiny train service. Provider adapters, persistence, queues, notifications, cloud configuration, and the mobile client are intentionally not implemented.
 
 The authoritative implementation plan is [`TrainWatch_Project_RnD_and_Implementation_Plan.md`](TrainWatch_Project_RnD_and_Implementation_Plan.md). Each phase requires an explicit approval gate.
 
@@ -49,3 +49,5 @@ python scripts/check_secrets.py
 ```
 
 CI runs the same gates. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/SECURITY.md`](docs/SECURITY.md), and [`docs/DECISIONS.md`](docs/DECISIONS.md) for the current boundaries and decisions.
+
+The verified external-service boundary is documented in [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md). Contract tests use sanitized local fixtures and never call the deployed service.
