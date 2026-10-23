@@ -1,41 +1,32 @@
-"""In-process tests for the minimal Phase 0 API."""
+"""In-process tests for the credential-free application factory."""
 
-from collections.abc import Callable
-from typing import cast
+import pytest
 
-from fastapi.routing import APIRoute
-
+from tests.asgi import request
 from trainwatch.config import AppSettings
-from trainwatch.main import LivenessResponse, create_app
+from trainwatch.main import create_app
 
 
-def get_liveness_endpoint() -> Callable[[], LivenessResponse]:
-    """Return the registered endpoint without opening a socket or event loop."""
-    settings = AppSettings(app_env="test")
-    app = create_app(settings)
-    route = next(
-        route
-        for route in app.routes
-        if isinstance(route, APIRoute) and route.path == "/health/live"
-    )
-    return cast(Callable[[], LivenessResponse], route.endpoint)
+@pytest.mark.anyio
+async def test_versioned_health_routes_are_local_and_non_sensitive() -> None:
+    """Return only process metadata without probing external services."""
+    app = create_app(AppSettings(app_env="test"))
+    live = await request(app, "GET", "/api/v1/health/live")
+    ready = await request(app, "GET", "/api/v1/health/ready")
 
-
-def test_liveness_is_local_and_non_sensitive() -> None:
-    """Return only non-sensitive values from the in-process health probe."""
-    response = get_liveness_endpoint()()
-
-    assert response.model_dump() == {
-        "status": "ok",
+    assert live.status_code == 200
+    assert live.json() == {"status": "ok", "service": "trainwatch-api", "environment": "test"}
+    assert ready.status_code == 200
+    assert ready.json() == {
+        "status": "ready",
         "service": "trainwatch-api",
         "environment": "test",
     }
 
 
-def test_schema_and_interactive_docs_are_not_exposed_in_phase_zero() -> None:
-    """Keep schema and interactive documentation disabled in Phase 0."""
+def test_schema_and_interactive_docs_remain_disabled() -> None:
+    """Avoid exposing discovery endpoints before an explicit API-doc decision."""
     app = create_app(AppSettings(app_env="test"))
-
     assert app.openapi_url is None
     assert app.docs_url is None
     assert app.redoc_url is None

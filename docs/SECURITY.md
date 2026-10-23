@@ -20,9 +20,19 @@
 
 The local scanner is defense in depth, not proof that a repository contains no secret. Human review and a dedicated secret-scanning platform should be added when the hosting platform and policy are approved.
 
+## Phase 3 controls
+
+- Protected routes depend on an injected `TokenVerifier`; the default implementation rejects every token without external access.
+- Authentication derives a minimal UID only from a successful verifier result. Request bodies cannot establish identity.
+- Bearer headers are bounded and are never included in public errors.
+- Ownership mismatches return the same sanitized `404` used for absent resources.
+- Request IDs accept only bounded opaque syntax; unsafe values are replaced rather than reflected.
+- Validation, framework, and unexpected errors use a stable envelope with no stack trace or raw exception detail.
+- Tests use synthetic tokens and a fake verifier. No Firebase SDK or credential is present.
+
 ## Future controls (not implemented)
 
-Firebase token verification, authorization/ownership checks, service-to-service authentication, least-privilege identities, rate limiting, retention, encryption configuration, dependency scanning, container scanning, and cloud policy belong to later approval-gated phases.
+The real Firebase verification adapter, service-to-service authentication, least-privilege identities, rate limiting, retention, encryption configuration, dependency scanning, container scanning, and cloud policy belong to later approval-gated phases.
 
 ## Reporting
 

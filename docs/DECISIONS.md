@@ -37,7 +37,6 @@ This log records accepted baseline decisions and items that require later user a
 ## Deferred decisions
 
 - Provider OpenAPI contract, response semantics, permitted rates, and fixtures (Phase 1).
-- Authentication implementation and error envelope details (Phase 3).
 - Firestore schema, indexes, retention, emulator/test-project use, and migrations (Phase 4).
 - Queue limits, leases, retries, polling intervals, and concurrency (Phase 7).
 - Notification content and delivery/retry policy (Phase 8).
@@ -83,3 +82,20 @@ This log records accepted baseline decisions and items that require later user a
 
 - **Decision:** Domain values are frozen dataclasses with explicit lifecycle transitions. Provider and repository dependencies are minimal async Protocol ports outside the domain package.
 - **Reason:** Immutable values make transitions testable and reduce shared-state risks. Protocols preserve dependency inversion without selecting an HTTP or database implementation early.
+
+## Accepted in Phase 3
+
+### ADR-0014: Inject token verification and fail closed by default
+
+- **Decision:** Protected routes depend on a `TokenVerifier` Protocol. When no approved adapter is configured, the application uses a verifier that rejects every token without external access.
+- **Reason:** API structure and authorization behavior can be tested now without Firebase credentials, SDK initialization, or accidental network access.
+
+### ADR-0015: Hide ownership mismatches as not found
+
+- **Decision:** A caller requesting another user's resource receives the same sanitized `404` response as an absent resource.
+- **Reason:** A distinct authorization response would reveal whether another user's identifier exists.
+
+### ADR-0016: Centralize public errors and opaque request IDs
+
+- **Decision:** Public failures use one error envelope and a bounded opaque request ID. Invalid client IDs are replaced; raw framework validation and exception details are suppressed.
+- **Reason:** Stable errors support clients and diagnosis without reflecting sensitive input or exposing implementation details.
