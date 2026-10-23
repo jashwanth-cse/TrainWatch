@@ -27,6 +27,7 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
 
     @application.get("/health/live", response_model=LivenessResponse)
     def liveness() -> LivenessResponse:
+        """Report local process health without probing external services."""
         return LivenessResponse(
             status="ok",
             service="trainwatch-api",

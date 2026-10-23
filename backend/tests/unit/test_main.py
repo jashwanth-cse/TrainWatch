@@ -22,6 +22,7 @@ def get_liveness_endpoint() -> Callable[[], LivenessResponse]:
 
 
 def test_liveness_is_local_and_non_sensitive() -> None:
+    """Return only non-sensitive values from the in-process health probe."""
     response = get_liveness_endpoint()()
 
     assert response.model_dump() == {
@@ -32,6 +33,7 @@ def test_liveness_is_local_and_non_sensitive() -> None:
 
 
 def test_schema_and_interactive_docs_are_not_exposed_in_phase_zero() -> None:
+    """Keep schema and interactive documentation disabled in Phase 0."""
     app = create_app(AppSettings(app_env="test"))
 
     assert app.openapi_url is None

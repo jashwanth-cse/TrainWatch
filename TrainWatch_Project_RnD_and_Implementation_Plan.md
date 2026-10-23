@@ -77,55 +77,21 @@ dashboard, or Redis before measurements justify it.
 
 ## 4. Recommended technology stack
 
-  -----------------------------------------------------------------------
-  Concern                             Recommendation
-  ----------------------------------- -----------------------------------
-  Mobile                              React Native + TypeScript
-
-  Mobile workflow                     Expo if current Firebase Auth/FCM
-                                      requirements are supported;
-                                      validate before locking
-
-  Backend                             Python + FastAPI + Pydantic +
-                                      Uvicorn
-
-  Identity                            Firebase Authentication, Google
-                                      Sign-In
-
-  Database                            Firestore, only through explicitly
-                                      configured code and user-approved
-                                      credentials
-
-  Async work                          Cloud Tasks with bounded
-                                      concurrency and retries
-
-  Scheduling                          Cloud Scheduler invoking one
-                                      authenticated dispatcher, not a
-                                      scheduler job per user/watch
-
-  Push                                Firebase Cloud Messaging
-
-  Hosting                             Separate Cloud Run deployments for
-                                      public API, dispatcher, and worker
-                                      where useful
-
-  Observability                       Cloud Logging and Cloud Monitoring;
-                                      mobile
-                                      Crashlytics/Analytics/Performance
-                                      Monitoring as appropriate
-
-  Testing                             pytest, httpx/FastAPI TestClient,
-                                      fixtures, mocks, concurrency tests,
-                                      mobile component tests
-
-  Quality                             Ruff, one selected Python type
-                                      checker, ESLint/Prettier,
-                                      dependency/secret/container
-                                      scanning
-
-  IaC                                 Terraform only if approved; plans
-                                      reviewed before any apply
-  -----------------------------------------------------------------------
+| Concern | Recommendation |
+| --- | --- |
+| Mobile | React Native + TypeScript |
+| Mobile workflow | Expo if current Firebase Auth/FCM requirements are supported; validate before locking |
+| Backend | Python + FastAPI + Pydantic + Uvicorn |
+| Identity | Firebase Authentication, Google Sign-In |
+| Database | Firestore, only through explicitly configured code and user-approved credentials |
+| Async work | Cloud Tasks with bounded concurrency and retries |
+| Scheduling | Cloud Scheduler invoking one authenticated dispatcher, not a scheduler job per user/watch |
+| Push | Firebase Cloud Messaging |
+| Hosting | Separate Cloud Run deployments for public API, dispatcher, and worker where useful |
+| Observability | Cloud Logging and Cloud Monitoring; mobile Crashlytics/Analytics/Performance Monitoring as appropriate |
+| Testing | pytest, httpx/FastAPI TestClient, fixtures, mocks, concurrency tests, mobile component tests |
+| Quality | Ruff, one selected Python type checker, ESLint/Prettier, dependency/secret/container scanning |
+| IaC | Terraform only if approved; plans reviewed before any apply |
 
 Do not hard-code cloud project IDs or region. Ask the user to provide
 the approved staging project/region directly in their environment and
@@ -296,20 +262,20 @@ behavior: stop polling after the journey date.
 Routes below are proposals, not existing endpoints. Finalize schemas in
 the contract phase.
 
-  Method   Route                           Purpose
-  -------- ------------------------------- ----------------------------------
-  GET      `/api/v1/health/live`           Liveness
-  GET      `/api/v1/health/ready`          Readiness without secret leakage
-  GET      `/api/v1/trains/search`         Search trains through adapter
-  GET      `/api/v1/stations/search`       Search stations through adapter
-  POST     `/api/v1/watches`               Create subscription
-  GET      `/api/v1/watches`               List own subscriptions
-  GET      `/api/v1/watches/{watch_id}`    Get owned subscription
-  PATCH    `/api/v1/watches/{watch_id}`    Update/pause/resume
-  DELETE   `/api/v1/watches/{watch_id}`    Cancel subscription
-  POST     `/api/v1/devices`               Register/refresh device token
-  DELETE   `/api/v1/devices/{device_id}`   Remove device
-  GET      `/api/v1/notifications`         Notification history
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/health/live` | Liveness |
+| GET | `/api/v1/health/ready` | Readiness without secret leakage |
+| GET | `/api/v1/trains/search` | Search trains through adapter |
+| GET | `/api/v1/stations/search` | Search stations through adapter |
+| POST | `/api/v1/watches` | Create subscription |
+| GET | `/api/v1/watches` | List own subscriptions |
+| GET | `/api/v1/watches/{watch_id}` | Get owned subscription |
+| PATCH | `/api/v1/watches/{watch_id}` | Update/pause/resume |
+| DELETE | `/api/v1/watches/{watch_id}` | Cancel subscription |
+| POST | `/api/v1/devices` | Register/refresh device token |
+| DELETE | `/api/v1/devices/{device_id}` | Remove device |
+| GET | `/api/v1/notifications` | Notification history |
 
 Requirements: - Verify Firebase ID tokens on protected endpoints. -
 Derive the user UID from the verified token, never a request body. -
