@@ -1,6 +1,6 @@
 # Architecture
 
-## Current Phase 2 shape
+## Current Phase 3 shape
 
 ```text
 repository root
@@ -10,13 +10,22 @@ repository root
     ├── pyproject.toml            package and shared tool configuration
     ├── src/trainwatch/
     │   ├── config.py             non-secret process configuration
-    │   ├── main.py               FastAPI app factory and liveness route
+    │   ├── main.py               FastAPI app factory and dependency wiring
+    │   ├── api/                  versioned routes, auth, errors, request IDs
     │   ├── domain/               pure queries, watches, snapshots, and alerts
-    │   └── ports/                minimal provider and repository protocols
+    │   └── ports/                provider, repository, and identity protocols
     └── tests/                    offline unit and provider-contract tests
 ```
 
-The domain layer uses only the Python standard library. It has no FastAPI, persistence, provider client, background-task, authentication SDK, or notification dependency. Ports describe required capabilities but initialize nothing and perform no I/O.
+The domain layer uses only the Python standard library. It has no FastAPI, persistence, provider client, background-task, authentication SDK, or notification dependency. The API layer owns HTTP concerns and depends on an identity port; ports initialize nothing and perform no I/O.
+
+## API and identity boundary
+
+- `/api/v1` is the public version prefix. Liveness and readiness inspect only local process state.
+- A `TokenVerifier` is injected into the app factory. The safe default rejects all tokens; tests inject an in-memory fake.
+- Verified identities contain only a UID. Client-supplied identity claims are ignored.
+- Ownership is a separate reusable policy and returns `404` for both absent and cross-user resources.
+- Request IDs and sanitized error envelopes are centralized. Raw validation data, exception text, tokens, and stack traces are not returned.
 
 ## Domain rules
 
