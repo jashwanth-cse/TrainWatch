@@ -45,7 +45,9 @@ PLACEHOLDERS = {
 PATTERNS = {
     "private key header": re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"),
     "Google API key": re.compile(r"AIza[0-9A-Za-z_-]{35}"),
-    "GitHub access credential": re.compile(r"gh(?:p|o|u|s|r)_[0-9A-Za-z]{30,}"),
+    "GitHub access credential": re.compile(
+        r"(?:gh(?:p|o|u|s|r)_[0-9A-Za-z]{30,}|github_pat_[0-9A-Za-z_]{82})"
+    ),
     "Slack access credential": re.compile(r"xox[baprs]-[0-9A-Za-z-]{20,}"),
     "credential assignment": re.compile(
         r"(?i)['\"]?(?:api[_-]?key|client[_-]?secret|password|private[_-]?key|token)"
