@@ -8,6 +8,13 @@ from typing import Any
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "train_api"
 BOOKING_STATUSES = {"AVAILABLE", "RAC", "WL", "REGRET", "UNKNOWN"}
+EXPECTED_BOOKING_STATUS = {
+    "available": "AVAILABLE",
+    "rac": "RAC",
+    "waitlist": "WL",
+    "regret": "REGRET",
+    "unknown": "UNKNOWN",
+}
 
 
 def load_json(name: str) -> Any:
@@ -68,6 +75,7 @@ def test_availability_response_fixtures_match_verified_shape() -> None:
             "next_available_dates",
         }
         assert data["booking_status"] in BOOKING_STATUSES
+        assert data["booking_status"] == EXPECTED_BOOKING_STATUS[case["case"]]
         assert isinstance(data["availability"], str)
         assert_integer(data["prediction"])
         assert_integer(data["fare"])

@@ -8,7 +8,7 @@ This contract was derived from:
 
 - read-only inspection of the supplied service source at `E:\Projects\Dream Destiny v2.0\transport-service\train`;
 - its route, Pydantic model, service, and test definitions; and
-- four bounded, credential-free live requests authorized by the user on 23 October 2026.
+- five bounded, credential-free live requests authorized by the user on 23 October 2026.
 
 The live checks covered health, readiness, station search, train search, and one availability request. They were contract observations, not availability guarantees or load tests. No authentication material was supplied or used.
 
