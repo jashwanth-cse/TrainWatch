@@ -13,7 +13,7 @@ from trainwatch.domain.alerts import AlertCondition
 
 TRAVEL_CLASSES = frozenset({"1A", "2A", "3A", "3E", "SL", "CC", "2S", "EC", "EA", "FC", "GN"})
 QUOTAS = frozenset({"GN", "TQ", "PT", "LD", "SS", "DF", "FT", "HP", "DP", "OS", "RAC"})
-_TRAIN_NUMBER = re.compile(r"\d{4,5}")
+_TRAIN_NUMBER = re.compile(r"[0-9]{4,5}")
 _STATION_CODE = re.compile(r"[A-Z]{2,5}")
 
 

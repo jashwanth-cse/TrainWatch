@@ -72,6 +72,7 @@ def test_watch_key_is_stable_sensitive_and_non_revealing() -> None:
     ("overrides", "message"),
     [
         ({"train_number": "630"}, "4 or 5 digits"),
+        ({"train_number": "\uff10\uff16\uff10\uff13\uff10"}, "4 or 5 digits"),
         ({"source": "R1"}, "source"),
         ({"destination": "TOOLONG"}, "destination"),
         ({"destination": "RJPM"}, "must differ"),
