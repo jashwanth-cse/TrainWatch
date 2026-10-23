@@ -11,6 +11,7 @@ from trainwatch.api.errors import ApiError
 from trainwatch.ports.identity import AuthenticatedUser, TokenVerificationError, TokenVerifier
 
 _MAX_AUTHORIZATION_LENGTH = 8192
+_BEARER_CHALLENGE = {"WWW-Authenticate": "Bearer"}
 
 
 class RejectingTokenVerifier:
@@ -25,10 +26,20 @@ class RejectingTokenVerifier:
 def _bearer_token(authorization: str | None) -> str:
     """Extract a bounded bearer token without returning it in an error."""
     if authorization is None or len(authorization) > _MAX_AUTHORIZATION_LENGTH:
-        raise ApiError(status_code=401, code="unauthorized", message="Authentication required")
+        raise ApiError(
+            status_code=401,
+            code="unauthorized",
+            message="Authentication required",
+            headers=_BEARER_CHALLENGE,
+        )
     scheme, separator, bearer_value = authorization.partition(" ")
     if scheme.lower() != "bearer" or not separator or not bearer_value or " " in bearer_value:
-        raise ApiError(status_code=401, code="unauthorized", message="Authentication required")
+        raise ApiError(
+            status_code=401,
+            code="unauthorized",
+            message="Authentication required",
+            headers=_BEARER_CHALLENGE,
+        )
     return bearer_value
 
 
@@ -48,6 +59,7 @@ def build_current_user_dependency(
                 status_code=401,
                 code="unauthorized",
                 message="Authentication required",
+                headers=_BEARER_CHALLENGE,
             ) from None
 
     return current_user

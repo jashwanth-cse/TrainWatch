@@ -108,6 +108,7 @@ async def test_missing_or_malformed_authorization_is_sanitized(
     )
 
     assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
     assert response.json()["error"] == {
         "code": "unauthorized",
         "message": "Authentication required",
@@ -129,6 +130,7 @@ async def test_invalid_verified_token_is_sanitized() -> None:
     )
 
     assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
     assert response.json()["error"]["code"] == "unauthorized"
     assert "invalid-secret-token" not in response.text
     assert verifier.seen == ["invalid-secret-token"]
@@ -181,6 +183,7 @@ async def test_default_verifier_rejects_without_external_access() -> None:
         app, "GET", "/test/default-auth", headers={"Authorization": "Bearer any-token"}
     )
     assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 @pytest.mark.anyio
@@ -219,6 +222,7 @@ async def test_validation_and_http_errors_use_consistent_envelopes() -> None:
     assert "count" not in invalid.text
     assert missing.json()["error"]["code"] == "not_found"
     assert method.json()["error"]["code"] == "method_not_allowed"
+    assert method.headers["allow"] == "GET"
     assert teapot_response.json()["error"] == {
         "code": "http_error",
         "message": "Request could not be completed",
