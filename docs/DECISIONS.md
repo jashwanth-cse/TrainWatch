@@ -37,7 +37,6 @@ This log records accepted baseline decisions and items that require later user a
 ## Deferred decisions
 
 - Provider OpenAPI contract, response semantics, permitted rates, and fixtures (Phase 1).
-- Domain fields, alert transition semantics, and canonical watch-key fields (Phase 2).
 - Authentication implementation and error envelope details (Phase 3).
 - Firestore schema, indexes, retention, emulator/test-project use, and migrations (Phase 4).
 - Queue limits, leases, retries, polling intervals, and concurrency (Phase 7).
@@ -62,3 +61,25 @@ This log records accepted baseline decisions and items that require later user a
 
 - **Decision:** Retain both `availability` and `booking_status`. Blank, malformed, `UNKNOWN`, transport-error, and provider-error observations are unusable for positive alerts.
 - **Reason:** The coarse status alone cannot express numerical RAC or waitlist improvement, and provider failure must never look like better availability.
+
+## Accepted in Phase 2
+
+### ADR-0010: Version the canonical shared-watch key
+
+- **Decision:** Normalize only verified safe fields and hash the ordered train number, source, destination, ISO journey date, travel class, and quota into a `v1:` SHA-256 key. Preserve leading-zero train numbers.
+- **Reason:** Identical provider queries can share work without exposing query values in identifiers, while the version prefix permits a controlled future normalization change.
+
+### ADR-0011: Use structured availability ordering
+
+- **Decision:** Order comparable states as `AVAILABLE` above `RAC` above `WL`, with lower numeric RAC/WL positions considered better. Do not compare raw strings or use provider prediction values.
+- **Reason:** This implements only source-verified semantics. Raw lexical ordering and undocumented prediction scores could create false alerts.
+
+### ADR-0012: Alerts require a valid transition
+
+- **Decision:** The first successful observation establishes a baseline. Repeated values do not alert. Unknown, malformed, or failed observations cannot create a positive alert; provider `REGRET` is not numerically comparable.
+- **Reason:** A notification must be supported by two trustworthy observations and a deterministic transition, not by missing or uncertain data.
+
+### ADR-0013: Keep domain state immutable and infrastructure-free
+
+- **Decision:** Domain values are frozen dataclasses with explicit lifecycle transitions. Provider and repository dependencies are minimal async Protocol ports outside the domain package.
+- **Reason:** Immutable values make transitions testable and reduce shared-state risks. Protocols preserve dependency inversion without selecting an HTTP or database implementation early.
