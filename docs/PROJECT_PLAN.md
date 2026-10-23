@@ -17,8 +17,8 @@ The complete, authoritative plan is [`../TrainWatch_Project_RnD_and_Implementati
 |---|---|---|
 | 0 | Safe repository baseline | Complete; merged in PR #1 |
 | 1 | Upstream R&D and API contract | Complete; merged in PR #2 |
-| 2 | Domain model | Complete locally; awaiting phase-gate review |
-| 3 | FastAPI skeleton and auth boundary | Not approved / not started |
+| 2 | Domain model | Complete; merged in PR #3 |
+| 3 | FastAPI skeleton and auth boundary | Complete locally; awaiting phase-gate review |
 | 4-15 | Adapters, features, hardening, deployment, mobile, release | Not approved / not started |
 
 ## Phase 0 acceptance criteria
@@ -39,3 +39,11 @@ Phase 0 explicitly excludes train API contracts/integration, Firestore, authenti
 - Baselines, duplicate states, unknown values, malformed values, and provider failures cannot create false-positive alerts.
 - Prediction semantics remain excluded until the provider contract supports safe use.
 - Default tests remain offline and credential-free.
+
+## Phase 3 acceptance criteria
+
+- Versioned health routes, request IDs, and sanitized error envelopes are tested in process.
+- Protected-route identity comes only from the injected verifier, never request data.
+- Missing, malformed, and invalid bearer tokens return the same sanitized `401` response.
+- Cross-user resource access uses a non-enumerating `404` policy.
+- The default verifier fails closed without Firebase credentials, SDK initialization, or network access.
