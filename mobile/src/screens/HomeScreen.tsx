@@ -4,14 +4,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { spacing } from '../theme/tokens';
 import { AppHeader } from '../components/AppHeader';
 import { Station } from '../services/stationService';
 import { StationSearchModal } from '../components/StationSearchModal';
@@ -142,35 +140,51 @@ export const HomeScreen: React.FC = () => {
   });
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={[
+        '#2563EB',
+        '#3B82F6',
+        '#60A5FA',
+        '#93C5FD',
+        '#BFDBFE',
+        '#DBEAFE',
+        '#EFF6FF',
+        '#FFFFFF',
+        '#FFFFFF',
+      ]}
+      locations={[0, 0.08, 0.17, 0.27, 0.38, 0.49, 0.60, 0.74, 1.0]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={styles.fullScreenGradient}
+    >
       <StatusBar style="light" />
 
-      {/* Top Gradient Banner replicating ref image */}
-      <LinearGradient
-        colors={['#4382EC', '#6AA0F7', '#E8F2FE']}
-        locations={[0, 0.7, 1]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[styles.heroBanner, { paddingTop: insets.top + spacing.xs }]}
+      <View
+        style={[
+          styles.mainLayout,
+          {
+            paddingTop: Math.max(insets.top, 10),
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+        ]}
       >
-        <AppHeader variant="light" />
+        {/* Top Header & Tagline */}
+        <View style={styles.topSection}>
+          <AppHeader variant="light" />
 
-        <View style={styles.captionContainer}>
-          <Text style={styles.captionMain}>Track your seats</Text>
-          <View style={styles.onTheGoRow}>
-            <View style={styles.onTheGoBadge}>
-              <Text style={styles.onTheGoText}>on-the-go</Text>
+          <View style={styles.captionContainer}>
+            <Text style={styles.captionMain}>Track your seats</Text>
+            <View style={styles.onTheGoRow}>
+              <Text style={styles.captionIn}>in</Text>
+              <View style={styles.onTheGoBadge}>
+                <Text style={styles.onTheGoText}>on-the-go</Text>
+              </View>
             </View>
           </View>
         </View>
-      </LinearGradient>
 
-      {/* Main Elevated White Form Card replicating the image layout */}
-      <ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.card}>
+        {/* Fixed Non-Scrolling Body smoothly smurged into the white lower half */}
+        <View style={styles.formSection}>
           {/* FROM Section */}
           <TouchableOpacity
             accessibilityRole="button"
@@ -286,7 +300,7 @@ export const HomeScreen: React.FC = () => {
             onPress={handleSearchTrains}
           >
             <LinearGradient
-              colors={['#3B82F6', '#5295F8']}
+              colors={['#3B82F6', '#2563EB']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.searchGradient}
@@ -296,7 +310,7 @@ export const HomeScreen: React.FC = () => {
             </LinearGradient>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+      </View>
 
       {/* Station Autocomplete Modal */}
       <StationSearchModal
@@ -329,32 +343,35 @@ export const HomeScreen: React.FC = () => {
         onSelect={handleQuotaSelected}
         onClose={() => setQuotaModalVisible(false)}
       />
-    </View>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  fullScreenGradient: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
   },
-  heroBanner: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
+  mainLayout: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+  },
+  topSection: {
+    alignItems: 'center',
+    paddingTop: 4,
   },
   captionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
+    marginTop: 8,
   },
   captionMain: {
-    fontSize: 30,
+    fontSize: 27,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.6,
     textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.12)',
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
   },
@@ -366,13 +383,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   captionIn: {
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.92)',
     fontStyle: 'italic',
   },
   onTheGoBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.24)',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
     borderWidth: 1.2,
     borderColor: 'rgba(255, 255, 255, 0.55)',
     paddingHorizontal: 14,
@@ -384,30 +401,25 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   onTheGoText: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.4,
   },
-  scrollContent: {
-    paddingTop: spacing.xs,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.xxl,
+  formSection: {
+    backgroundColor: 'transparent',
+    paddingBottom: 4,
   },
   stationBlock: {
-    paddingVertical: 10,
+    paddingVertical: 6,
   },
   stationLabel: {
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.8,
-    color: '#8E9BAE',
+    color: '#64748B',
     textTransform: 'uppercase',
-    marginBottom: 6,
+    marginBottom: 2,
   },
   stationRow: {
     flexDirection: 'row',
@@ -415,27 +427,27 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   stationName: {
-    fontSize: 36,
-    fontWeight: '700',
-    letterSpacing: -0.5,
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.8,
     color: '#0F172A',
     flex: 1,
-    paddingRight: spacing.sm,
+    marginRight: 12,
   },
   stationCode: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#334155',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: 0.5,
   },
   dividerWrapper: {
     position: 'relative',
     justifyContent: 'center',
-    marginVertical: 14,
-    height: 44,
+    height: 38,
   },
   dividerLine: {
     height: 1,
-    backgroundColor: '#EEF2F6',
+    backgroundColor: '#E2E8F0',
   },
   swapContainer: {
     position: 'absolute',
@@ -446,17 +458,17 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   swapCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#3B82F6',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowRadius: 6,
+    elevation: 5,
   },
   datePill: {
     flexDirection: 'row',
@@ -464,23 +476,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.2,
     borderColor: '#E2E8F0',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    marginTop: 22,
+    borderRadius: 22,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    marginTop: 14,
     backgroundColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   dateTextGroup: {
     flex: 1,
   },
   dateLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: '#94A3B8',
     fontWeight: '500',
-    marginBottom: 3,
+    marginBottom: 2,
   },
   dateValue: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#0F172A',
   },
@@ -488,7 +505,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
-    marginTop: 14,
+    marginTop: 12,
   },
   filterBox: {
     flex: 1,
@@ -497,10 +514,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.2,
     borderColor: '#E2E8F0',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   filterContent: {
     flexDirection: 'row',
@@ -511,31 +533,31 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   filterText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#0F172A',
     flex: 1,
   },
   searchButton: {
-    marginTop: 36,
-    borderRadius: 30,
+    marginTop: 20,
+    borderRadius: 28,
     overflow: 'hidden',
     shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
-    shadowRadius: 16,
+    shadowRadius: 14,
     elevation: 6,
   },
   searchGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 18,
-    paddingHorizontal: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 22,
   },
   searchButtonText: {
     fontSize: 17,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.2,
   },

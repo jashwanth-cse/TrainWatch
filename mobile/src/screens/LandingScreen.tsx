@@ -12,10 +12,28 @@ export const LandingScreen: React.FC = () => {
 
   return (
     <LinearGradient
-      colors={['#0F172A', '#1E3A8A', '#2563EB']}
+      colors={[
+        '#1E40AF',
+        '#2563EB',
+        '#3B82F6',
+        '#60A5FA',
+        '#93C5FD',
+        '#BFDBFE',
+        '#DBEAFE',
+        '#EFF6FF',
+        '#FFFFFF',
+        '#FFFFFF',
+      ]}
+      locations={[0, 0.12, 0.25, 0.38, 0.5, 0.62, 0.74, 0.86, 0.94, 1.0]}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
-      style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 24 }]}
+      style={[
+        styles.container,
+        {
+          paddingTop: Math.max(insets.top, 16) + 12,
+          paddingBottom: Math.max(insets.bottom, 16) + 12,
+        },
+      ]}
     >
       <StatusBar style="light" />
 
@@ -45,7 +63,7 @@ export const LandingScreen: React.FC = () => {
 
       <View style={styles.middleSpace} />
 
-      {/* Primary CTA Button */}
+      {/* Primary CTA Button on the white lower section */}
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.button}
@@ -53,7 +71,7 @@ export const LandingScreen: React.FC = () => {
           activeOpacity={0.88}
         >
           <Text style={styles.buttonText}>Search Trains</Text>
-          <ArrowRight size={20} color="#1E3A8A" strokeWidth={2.4} style={styles.buttonArrow} />
+          <ArrowRight size={20} color="#FFFFFF" strokeWidth={2.4} style={styles.buttonArrow} />
         </TouchableOpacity>
       </View>
     </LinearGradient>
@@ -143,20 +161,20 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   button: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#2563EB',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 18,
     borderRadius: 30,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
     elevation: 6,
   },
   buttonText: {
-    color: '#1E3A8A',
+    color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.3,
