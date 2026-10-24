@@ -1,32 +1,53 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { colors, typography, spacing, radius } from '../theme/tokens';
 import { useAuth } from '../services/AuthContext';
 import { AppHeader } from '../components/AppHeader';
+import { Station } from '../services/stationService';
+import { StationSearchModal } from '../components/StationSearchModal';
+import { ClassPickerModal, ClassOption } from '../components/ClassPickerModal';
+import { QuotaPickerModal, QuotaOption } from '../components/QuotaPickerModal';
+import {
+  DatePickerModal,
+  DateItem,
+  formatDateToApi,
+  formatDateForDisplay,
+} from '../components/DatePickerModal';
 
 /**
  * Main Search Screen Header replicating ref.jpg card exactly:
  * Top gradient card with "Track your seats in one-go",
- * FROM: New Delhi (NDLS), TO: Kanpur (CNB), Date pill, Classes pill,
+ * Interactive FROM / TO stations, Date pill, Classes & Quota pills,
  * and prominent blue "Search Trains ->" button.
  */
 export const SearchHeaderCard: React.FC<{
-  source?: string;
-  sourceCode?: string;
-  destination?: string;
-  destinationCode?: string;
-  date?: string;
-  onSwap?: () => void;
-  onSearch?: () => void;
+  source: Station;
+  destination: Station;
+  displayDate: string;
+  travelClass: string;
+  quota: string;
+  onSelectSource: () => void;
+  onSelectDestination: () => void;
+  onSelectDate: () => void;
+  onSelectClass: () => void;
+  onSelectQuota: () => void;
+  onSwap: () => void;
+  onSearch: () => void;
 }> = ({
-  source = 'New Delhi',
-  sourceCode = 'NDLS',
-  destination = 'Kanpur',
-  destinationCode = 'CNB',
-  date = 'Select journey date',
+  source,
+  destination,
+  displayDate,
+  travelClass,
+  quota,
+  onSelectSource,
+  onSelectDestination,
+  onSelectDate,
+  onSelectClass,
+  onSelectQuota,
   onSwap,
   onSearch,
 }) => {
@@ -45,16 +66,23 @@ export const SearchHeaderCard: React.FC<{
       {/* Embedded Route Selection Sheet */}
       <View style={styles.routeContainer}>
         {/* FROM Section */}
-        <View style={styles.stationBlock}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.stationBlock}
+          onPress={onSelectSource}
+        >
           <Text style={styles.stationLabel}>FROM</Text>
           <View style={styles.stationRow}>
-            <Text style={styles.stationName} numberOfLines={1}>{source}</Text>
-            <Text style={styles.stationCode}>{sourceCode}</Text>
+            <Text style={styles.stationName} numberOfLines={1}>
+              {source.name}
+            </Text>
+            <Text style={styles.stationCode}>{source.code}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Swap Floating Action Circle */}
         <TouchableOpacity
+          accessibilityRole="button"
           activeOpacity={0.85}
           style={styles.swapCircle}
           onPress={onSwap}
@@ -66,32 +94,60 @@ export const SearchHeaderCard: React.FC<{
         <View style={styles.divider} />
 
         {/* TO Section */}
-        <View style={styles.stationBlock}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.stationBlock}
+          onPress={onSelectDestination}
+        >
           <Text style={styles.stationLabel}>TO</Text>
           <View style={styles.stationRow}>
-            <Text style={styles.stationName} numberOfLines={1}>{destination}</Text>
-            <Text style={styles.stationCode}>{destinationCode}</Text>
+            <Text style={styles.stationName} numberOfLines={1}>
+              {destination.name}
+            </Text>
+            <Text style={styles.stationCode}>{destination.code}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Date Selector Pill */}
-        <View style={styles.pillContainer}>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          style={styles.pillContainer}
+          onPress={onSelectDate}
+        >
           <View style={styles.dateBlock}>
             <Text style={styles.metaLabel}>Journey Date</Text>
-            <Text style={styles.metaValue}>{date}</Text>
+            <Text style={styles.metaValue}>{displayDate}</Text>
           </View>
           <Text style={styles.calendarIcon}>📅</Text>
-        </View>
+        </TouchableOpacity>
 
         {/* Filter Pills: All Classes / General */}
         <View style={styles.filterRow}>
-          <TouchableOpacity activeOpacity={0.8} style={styles.filterPill}>
-            <Text style={styles.filterPillText}>💺 All Classes</Text>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.filterPill}
+            onPress={onSelectClass}
+          >
+            <View style={styles.pillContent}>
+              <Text style={styles.pillMiniLabel}>CLASS</Text>
+              <Text style={styles.filterPillText} numberOfLines={1}>
+                💺 {travelClass}
+              </Text>
+            </View>
             <Text style={styles.filterCaret}>▾</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity activeOpacity={0.8} style={styles.filterPill}>
-            <Text style={styles.filterPillText}>🎫 General</Text>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={styles.filterPill}
+            onPress={onSelectQuota}
+          >
+            <View style={styles.pillContent}>
+              <Text style={styles.pillMiniLabel}>QUOTA</Text>
+              <Text style={styles.filterPillText} numberOfLines={1}>
+                🎫 {quota}
+              </Text>
+            </View>
             <Text style={styles.filterCaret}>▾</Text>
           </TouchableOpacity>
         </View>
@@ -111,9 +167,95 @@ export const SearchHeaderCard: React.FC<{
 };
 
 export const HomeScreen: React.FC = () => {
+  const router = useRouter();
   const { signOut } = useAuth();
   const insets = useSafeAreaInsets();
   const [signOutError, setSignOutError] = useState<string | null>(null);
+
+  // Default tomorrow date for instant convenience
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const [source, setSource] = useState<Station>({
+    code: 'NDLS',
+    name: 'NEW DELHI',
+    state: 'DELHI',
+  });
+  const [destination, setDestination] = useState<Station>({
+    code: 'CNB',
+    name: 'KANPUR CENTRAL JN.',
+    state: 'UTTAR PRADESH',
+  });
+  const [apiDate, setApiDate] = useState<string>(formatDateToApi(tomorrow));
+  const [displayDate, setDisplayDate] = useState<string>(formatDateForDisplay(tomorrow));
+  const [travelClass, setTravelClass] = useState<string>('All Classes');
+  const [quota, setQuota] = useState<string>('GN');
+
+  // Modal visibility states
+  const [searchModalVisible, setSearchModalVisible] = useState(false);
+  const [searchTarget, setSearchTarget] = useState<'source' | 'destination'>('source');
+  const [dateModalVisible, setDateModalVisible] = useState(false);
+  const [classModalVisible, setClassModalVisible] = useState(false);
+  const [quotaModalVisible, setQuotaModalVisible] = useState(false);
+
+  // Swap animation
+  const [swapRotate] = useState(() => new Animated.Value(0));
+
+  const handleSwap = () => {
+    Animated.sequence([
+      Animated.timing(swapRotate, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(swapRotate, {
+        toValue: 0,
+        duration: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const temp = source;
+    setSource(destination);
+    setDestination(temp);
+  };
+
+  const handleStationSelected = (station: Station) => {
+    if (searchTarget === 'source') {
+      setSource(station);
+    } else {
+      setDestination(station);
+    }
+  };
+
+  const handleDateSelected = (dateItem: DateItem) => {
+    setApiDate(dateItem.apiFormat);
+    setDisplayDate(dateItem.displayFormat);
+  };
+
+  const handleClassSelected = (option: ClassOption) => {
+    setTravelClass(option.code);
+  };
+
+  const handleQuotaSelected = (option: QuotaOption) => {
+    setQuota(option.code);
+  };
+
+  const handleSearchTrains = () => {
+    router.push({
+      pathname: '/results',
+      params: {
+        source: source.code,
+        sourceName: source.name,
+        destination: destination.code,
+        destinationName: destination.name,
+        date: apiDate,
+        displayDate,
+        quota,
+        travelClass,
+      },
+    });
+  };
 
   const handleSignOut = async () => {
     setSignOutError(null);
@@ -138,21 +280,92 @@ export const HomeScreen: React.FC = () => {
         <AppHeader variant="light" onSignOut={handleSignOut} />
       </LinearGradient>
 
-      {signOutError ? (
-        <View style={styles.errorBanner}>
-          <Text accessibilityRole="alert" style={styles.signOutError}>
-            {signOutError}
-          </Text>
-        </View>
-      ) : null}
-
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
+        {signOutError ? (
+          <View style={styles.errorBanner}>
+            <Text accessibilityRole="alert" style={styles.signOutError}>
+              {signOutError}
+            </Text>
+          </View>
+        ) : null}
+
         {/* Main Hero Route Card exactly matching ref.jpg */}
-        <SearchHeaderCard />
+        <SearchHeaderCard
+          source={source}
+          destination={destination}
+          displayDate={displayDate}
+          travelClass={travelClass}
+          quota={quota}
+          onSelectSource={() => {
+            setSearchTarget('source');
+            setSearchModalVisible(true);
+          }}
+          onSelectDestination={() => {
+            setSearchTarget('destination');
+            setSearchModalVisible(true);
+          }}
+          onSelectDate={() => setDateModalVisible(true)}
+          onSelectClass={() => setClassModalVisible(true)}
+          onSelectQuota={() => setQuotaModalVisible(true)}
+          onSwap={handleSwap}
+          onSearch={handleSearchTrains}
+        />
+
+        {/* Live Features Summary Card */}
+        <View style={styles.featuresCard}>
+          <Text style={styles.featureHeading}>TrainWatch Live Benefits</Text>
+          <View style={styles.featureItem}>
+            <Text style={styles.featureEmoji}>⚡</Text>
+            <View style={styles.featureTextGroup}>
+              <Text style={styles.featureTitle}>Sub-Second Direct Route Search</Text>
+              <Text style={styles.featureDesc}>Queries IRCTC network directly across all 8,500+ Indian railway stations.</Text>
+            </View>
+          </View>
+
+          <View style={styles.featureItem}>
+            <Text style={styles.featureEmoji}>🔔</Text>
+            <View style={styles.featureTextGroup}>
+              <Text style={styles.featureTitle}>Smart Background Watching</Text>
+              <Text style={styles.featureDesc}>Set watch alerts on any waitlisted class to get notified immediately when berths open.</Text>
+            </View>
+          </View>
+        </View>
       </ScrollView>
+
+      {/* Station Autocomplete Modal */}
+      <StationSearchModal
+        visible={searchModalVisible}
+        title={searchTarget === 'source' ? 'Select Origin Station' : 'Select Destination Station'}
+        onClose={() => setSearchModalVisible(false)}
+        onSelect={handleStationSelected}
+      />
+
+      {/* Date Picker Modal */}
+      <DatePickerModal
+        visible={dateModalVisible}
+        selectedApiDate={apiDate}
+        onSelect={handleDateSelected}
+        onClose={() => setDateModalVisible(false)}
+      />
+
+      {/* Travel Class Picker Modal */}
+      <ClassPickerModal
+        visible={classModalVisible}
+        selectedClass={travelClass}
+        onSelect={handleClassSelected}
+        onClose={() => setClassModalVisible(false)}
+      />
+
+      {/* Quota Picker Modal */}
+      <QuotaPickerModal
+        visible={quotaModalVisible}
+        selectedQuota={quota}
+        onSelect={handleQuotaSelected}
+        onClose={() => setQuotaModalVisible(false)}
+      />
     </View>
   );
 };
@@ -214,6 +427,7 @@ const styles = StyleSheet.create({
   },
   stationBlock: {
     marginVertical: spacing.xs,
+    paddingVertical: 4,
   },
   stationLabel: {
     ...typography.label,
@@ -293,9 +507,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: spacing.md,
+    gap: 8,
   },
   filterPill: {
-    flex: 0.48,
+    flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -303,17 +518,28 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.pillBg,
   },
+  pillContent: {
+    flex: 1,
+  },
+  pillMiniLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.textMuted,
+    letterSpacing: 0.5,
+  },
   filterPillText: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: colors.textPrimary,
+    marginTop: 1,
   },
   filterCaret: {
     fontSize: 12,
     color: colors.textSecondary,
+    marginLeft: 4,
   },
   searchButton: {
     backgroundColor: colors.primary,
@@ -338,5 +564,44 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
     fontSize: 18,
     fontWeight: '700',
+  },
+  featuresCard: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.lg,
+    backgroundColor: colors.cardBackground,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  featureHeading: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+  },
+  featureEmoji: {
+    fontSize: 20,
+    marginRight: spacing.md,
+    marginTop: 2,
+  },
+  featureTextGroup: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  featureDesc: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 16,
   },
 });

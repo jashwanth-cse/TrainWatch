@@ -24,6 +24,7 @@ const AppNavigator: React.FC = () => {
       </Stack.Protected>
       <Stack.Protected guard={isAuthenticated}>
         <Stack.Screen name="home" />
+        <Stack.Screen name="results" />
       </Stack.Protected>
     </Stack>
   );
