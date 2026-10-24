@@ -18,6 +18,7 @@ _TEST_OWNER = "trainwatch-connection-test"
 
 
 def _arguments() -> argparse.Namespace:
+    """Parse the target database and explicit live-write acknowledgement."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True)
     parser.add_argument("--database", default="(default)")
@@ -30,6 +31,7 @@ def _arguments() -> argparse.Namespace:
 
 
 async def _check(*, project: str, database: str, confirm_live: bool) -> None:
+    """Verify live CRUD using a unique watch and delete it during cleanup."""
     if not confirm_live:
         raise RuntimeError("live Firestore CRUD check requires --confirm-live")
     client = create_firestore_client(

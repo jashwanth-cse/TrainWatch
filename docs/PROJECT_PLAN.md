@@ -19,7 +19,7 @@ The complete, authoritative plan is [`../TrainWatch_Full_Implementation_Plan.md`
 | 1 | Upstream R&D and API contract | Complete; merged in PR #2 |
 | 2 | Domain model | Complete; merged in PR #3 |
 | 3 | FastAPI skeleton and auth boundary | Complete; merged in PR #4 |
-| 4 | Firestore repository boundary | Implemented; mocked suite and disposable live CRUD smoke check pass |
+| 4 | Firestore repository boundary | Implemented; mocked suite and disposable live CRUD smoke check pass; exit gate pending rules verification |
 | 5-15 | Adapters, features, hardening, deployment, mobile, release | Not approved / not started |
 
 ## Phase 0 acceptance criteria
@@ -57,3 +57,4 @@ Phase 0 explicitly excludes train API contracts/integration, Firestore, authenti
 - Firestore rules deny all direct client access because Phase 4 approves only backend-owned persistence.
 - No composite indexes are declared until an implemented query requires one.
 - Unit tests use an in-memory Firestore-shaped fake. An explicitly approved disposable live CRUD check passed against project `trainwatch` and database `(default)` on 24 October 2026; deployed-rules verification remains pending.
+- The Phase 4 exit gate remains pending: the in-memory fake does not exercise `firestore.rules`, and no rules-test result is recorded. The live Admin/ADC CRUD smoke check bypasses client rules and does not satisfy the required rules tests.
