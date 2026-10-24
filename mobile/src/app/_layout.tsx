@@ -1,10 +1,9 @@
 import React from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider, useAuth } from './src/services/AuthContext';
-import { LandingScreen } from './src/screens/LandingScreen';
-import { HomeScreen } from './src/screens/HomeScreen';
-import { colors } from './src/theme/tokens';
+import { AuthProvider, useAuth } from '../services/AuthContext';
+import { colors } from '../theme/tokens';
 
 const AppNavigator: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -17,10 +16,20 @@ const AppNavigator: React.FC = () => {
     );
   }
 
-  return isAuthenticated ? <HomeScreen /> : <LandingScreen />;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Protected guard={!isAuthenticated}>
+        <Stack.Screen name="index" />
+      </Stack.Protected>
+      <Stack.Protected guard={isAuthenticated}>
+        <Stack.Screen name="home" />
+      </Stack.Protected>
+    </Stack>
+  );
 };
 
-export default function App() {
+/** Provides session state and protected routes for the mobile application. */
+export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { AuthState, UserProfile } from '../types/auth';
+import { AuthState } from '../types/auth';
 import { authService } from '../services/authService';
 
 interface AuthContextValue extends AuthState {
@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signInWithGoogle = async () => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const user = await authService.signInWithGoogleMock();
+      const user = await authService.signInWithGoogle();
       setState({
         user,
         isAuthenticated: true,

@@ -6,7 +6,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { colors, typography, spacing, radius } from '../theme/tokens';
@@ -21,9 +24,14 @@ const { width } = Dimensions.get('window');
  */
 export const LandingScreen: React.FC = () => {
   const { signInWithGoogle, isLoading, error } = useAuth();
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom }]}
+    >
       <StatusBar style="light" />
 
       {/* Top Gradient Hero Banner replicating ref.jpg */}
@@ -31,7 +39,7 @@ export const LandingScreen: React.FC = () => {
         colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={styles.heroSection}
+        style={[styles.heroSection, { minHeight: height * 0.46, paddingTop: spacing.xxl + insets.top }]}
       >
         {/* Subtle dot matrix / pattern overlay representation */}
         <View style={styles.patternOverlay}>
@@ -104,7 +112,7 @@ export const LandingScreen: React.FC = () => {
           By signing in, your watch subscriptions synchronize across devices seamlessly.
         </Text>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
@@ -113,10 +121,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  scrollContent: {
+    flexGrow: 1,
+  },
   heroSection: {
-    height: '46%',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xxl + spacing.md,
+    paddingBottom: spacing.xl,
     justifyContent: 'space-between',
     borderBottomLeftRadius: radius.xl,
     borderBottomRightRadius: radius.xl,
@@ -156,7 +166,8 @@ const styles = StyleSheet.create({
     maxWidth: width * 0.85,
   },
   cardContainer: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 0,
     backgroundColor: colors.cardBackground,
     marginHorizontal: spacing.md,
     marginTop: -spacing.xl,
