@@ -10,6 +10,8 @@
 *.keystore
 *service-account*.json
 *credentials*.json
+*firebase-adminsdk*.json
+application_default_credentials.json
 secrets/
 credentials/
 

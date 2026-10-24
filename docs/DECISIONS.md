@@ -99,3 +99,25 @@ This log records accepted baseline decisions and items that require later user a
 
 - **Decision:** Public failures use one error envelope and a bounded opaque request ID. Invalid client IDs are replaced; raw framework validation and exception details are suppressed.
 - **Reason:** Stable errors support clients and diagnosis without reflecting sensitive input or exposing implementation details.
+
+## Accepted in Phase 4
+
+### ADR-0017: Keep reminders in owner-scoped Firestore subcollections
+
+- **Decision:** Persist watch documents at `users/{uid}/reminders/{watchId}` and require the owner ID for every repository read and write.
+- **Reason:** Ownership becomes part of document addressing, avoids global user-watch lookups, and matches the backend authorization boundary.
+
+### ADR-0018: Version and revalidate stored documents
+
+- **Decision:** Store a `schemaVersion` and decode all fields through Phase 2 domain constructors. Treat unknown, malformed, or invariant-breaking documents as `WatchDataError` rather than returning partial state.
+- **Reason:** Firestore is schemaless at rest; validation on both write and read prevents corrupt or manually edited data from bypassing domain rules.
+
+### ADR-0019: Require explicit live Firestore activation
+
+- **Decision:** Inject a narrow Firestore client into repositories. The production ADC factory refuses construction unless the caller explicitly enables live access and supplies non-placeholder project and database IDs.
+- **Reason:** Tests and normal imports must never discover local credentials or accidentally connect to a real database.
+
+### ADR-0020: Deny direct Firestore client access in Phase 4
+
+- **Decision:** Commit deny-all Firestore rules and no composite indexes. Mobile clients will use the authenticated backend until a later phase explicitly designs and tests direct access.
+- **Reason:** Backend-only persistence provides the smallest authorization surface and avoids granting unneeded client permissions.

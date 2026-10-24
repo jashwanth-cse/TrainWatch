@@ -5,6 +5,10 @@ from typing import Protocol
 from trainwatch.domain.watch import Watch
 
 
+class WatchDataError(RuntimeError):
+    """Stored watch data could not be safely reconstructed."""
+
+
 class WatchRepository(Protocol):
     """Persist watches without coupling domain rules to a database."""
 
@@ -14,4 +18,8 @@ class WatchRepository(Protocol):
 
     async def save(self, watch: Watch) -> None:
         """Persist a validated watch."""
+        ...
+
+    async def delete(self, *, watch_id: str, owner_id: str) -> None:
+        """Delete one owned watch when present."""
         ...
