@@ -24,7 +24,7 @@ const { width } = Dimensions.get('window');
  * "Track your seats in one-go"
  */
 export const LandingScreen: React.FC = () => {
-  const { signInWithGoogle, isLoading, error } = useAuth();
+  const { signInWithGoogle, continueAsGuest, isLoading, error } = useAuth();
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
@@ -116,6 +116,7 @@ export const LandingScreen: React.FC = () => {
 
         {/* Primary Google Sign-In Action Button */}
         <TouchableOpacity
+          accessibilityRole="button"
           activeOpacity={0.88}
           style={styles.googleButton}
           onPress={signInWithGoogle}
@@ -133,8 +134,18 @@ export const LandingScreen: React.FC = () => {
           )}
         </TouchableOpacity>
 
+        {/* Guest Explorer Action Button */}
+        <TouchableOpacity
+          accessibilityRole="button"
+          activeOpacity={0.8}
+          style={styles.guestButton}
+          onPress={continueAsGuest}
+        >
+          <Text style={styles.guestButtonText}>Continue as Guest (Explore App) →</Text>
+        </TouchableOpacity>
+
         <Text style={styles.disclaimerText}>
-          By signing in, your watch subscriptions synchronize across devices seamlessly.
+          Sign in to synchronize watch subscriptions across devices, or explore as guest.
         </Text>
       </View>
     </ScrollView>
@@ -325,6 +336,21 @@ const styles = StyleSheet.create({
   googleButtonText: {
     ...typography.button,
     color: colors.textPrimary,
+  },
+  guestButton: {
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.full,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  guestButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.primary,
   },
   errorText: {
     color: colors.statusWl,
