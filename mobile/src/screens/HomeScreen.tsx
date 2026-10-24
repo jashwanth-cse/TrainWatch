@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
   captionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -2,
+    marginTop: -38,
   },
   captionMain: {
     fontSize: 27,
