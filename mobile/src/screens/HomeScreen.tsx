@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -24,7 +24,7 @@ export const SearchHeaderCard: React.FC<{
   sourceCode = 'NDLS',
   destination = 'Kanpur',
   destinationCode = 'CNB',
-  date = '20/06/2026 (Tuesday)',
+  date = 'Select journey date',
   onSwap,
   onSearch,
 }) => {
@@ -115,6 +115,15 @@ export const SearchHeaderCard: React.FC<{
 
 export const HomeScreen: React.FC = () => {
   const { user, signOut } = useAuth();
+  const [signOutError, setSignOutError] = useState<string | null>(null);
+  const handleSignOut = async () => {
+    setSignOutError(null);
+    try {
+      await signOut();
+    } catch {
+      setSignOutError('Sign-out failed. Please try signing out again.');
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -123,10 +132,14 @@ export const HomeScreen: React.FC = () => {
         {/* User bar */}
         <View style={styles.userBar}>
           <Text style={styles.welcomeText}>Hello, {user?.displayName || 'Traveler'}</Text>
-          <TouchableOpacity onPress={signOut} style={styles.signOutBtn}>
+          <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>
             <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
+
+        {signOutError ? (
+          <Text accessibilityRole="alert" style={styles.signOutError}>{signOutError}</Text>
+        ) : null}
 
         {/* Main Hero Route Card exactly matching ref.jpg */}
         <SearchHeaderCard />
@@ -167,6 +180,10 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
     fontSize: 12,
     fontWeight: '600',
+  },
+  signOutError: {
+    color: colors.statusWl,
+    margin: spacing.md,
   },
   cardWrapper: {
     marginHorizontal: spacing.md,
