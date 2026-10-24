@@ -19,8 +19,9 @@ The complete, authoritative plan is [`../TrainWatch_Full_Implementation_Plan.md`
 | 1 | Upstream R&D and API contract | Complete; merged in PR #2 |
 | 2 | Domain model | Complete; merged in PR #3 |
 | 3 | FastAPI skeleton and auth boundary | Complete; merged in PR #4 |
-| 4 | Firestore repository boundary | Implemented; mocked suite and disposable live CRUD smoke check pass; exit gate pending rules verification |
-| 5-15 | Adapters, features, hardening, deployment, mobile, release | Not approved / not started |
+| 4 | Firestore repository boundary | Complete; merged in PR #5 (rules-test limitation documented) |
+| 5 | Existing train API integration adapters | Implemented locally; exit gate checks pass; review/merge pending |
+| 6-15 | Features, hardening, deployment, mobile, release | Not approved / not started |
 
 ## Phase 0 acceptance criteria
 
@@ -58,3 +59,12 @@ Phase 0 explicitly excludes train API contracts/integration, Firestore, authenti
 - No composite indexes are declared until an implemented query requires one.
 - Unit tests use an in-memory Firestore-shaped fake. An explicitly approved disposable live CRUD check passed against project `trainwatch` and database `(default)` on 24 October 2026; deployed-rules verification remains pending.
 - The Phase 4 exit gate remains pending: the in-memory fake does not exercise `firestore.rules`, and no rules-test result is recorded. The live Admin/ADC CRUD smoke check bypasses client rules and does not satisfy the required rules tests.
+
+## Phase 5 acceptance criteria
+
+- Station search, train search, and availability are exposed through one typed, injected async provider adapter.
+- Provider parameters preserve the verified `DD-MM-YYYY` date format, class/quota codes, and leading-zero train numbers.
+- Responses are reduced to stable application DTOs; malformed envelopes and required fields fail closed with sanitized error categories.
+- Requests have explicit connection/read/write/pool timeouts and bounded exponential retries only for transport failures, `429`, `502`, `503`, and `504`.
+- Tests cover normal, empty, partial, malformed, timeout, transport, `4xx`, `5xx`, retry, and recovery behavior with an in-memory HTTP transport.
+- The default suite makes no live train API, database, credential, Firebase, or cloud call.

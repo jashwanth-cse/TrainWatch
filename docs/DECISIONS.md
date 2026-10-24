@@ -121,3 +121,25 @@ This log records accepted baseline decisions and items that require later user a
 
 - **Decision:** Commit deny-all Firestore rules and no composite indexes. Mobile clients will use the authenticated backend until a later phase explicitly designs and tests direct access.
 - **Reason:** Backend-only persistence provides the smallest authorization surface and avoids granting unneeded client permissions.
+
+## Accepted in Phase 5
+
+### ADR-0021: Adapt the existing train service behind narrow typed ports
+
+- **Decision:** Implement one `DreamDestinyClient` that maps the verified station, train-search, and availability contracts into application-owned immutable DTOs and availability observations.
+- **Reason:** The existing service remains the source of provider behavior while TrainWatch avoids coupling domain and use-case code to provider-specific payloads.
+
+### ADR-0022: Inject the async HTTP client
+
+- **Decision:** Accept an `httpx.AsyncClient` in the adapter and provide a separate factory with explicit timeout and connection-pool limits.
+- **Reason:** Client injection keeps construction side-effect free, makes transport behavior deterministic in tests, and allows later runtime composition without hiding network configuration.
+
+### ADR-0023: Retry only bounded transient failures
+
+- **Decision:** Use finite exponential backoff with jitter for transport exceptions and `429`, `502`, `503`, and `504`; do not retry other `4xx` or `5xx` responses.
+- **Reason:** A short transient failure may recover, while retrying invalid requests or arbitrary upstream errors adds load and latency without a safe expectation of success.
+
+### ADR-0024: Sanitize and fail closed at the provider boundary
+
+- **Decision:** Expose stable error categories without response bodies or exception text. Reject malformed required response data; convert availability failures to non-successful observations.
+- **Reason:** Provider diagnostics may contain sensitive or unstable details, and uncertain data must never become a false-positive seat alert.
