@@ -37,24 +37,15 @@ export const LandingScreen: React.FC = () => {
     >
       <StatusBar style="light" />
 
-      {/* Top Center: Unique Logo Wordmark design blending with the blue */}
+      {/* Top Center: Unified Brand Logo and Tagline */}
       <View style={styles.topCenterContainer}>
         <Image
           source={require('../../assets/android-icon-foreground.png')}
-          style={styles.brandIcon}
+          style={styles.brandLogo}
           resizeMode="contain"
           accessibilityRole="image"
-          accessibilityLabel="TrainWatch Icon"
+          accessibilityLabel="TrainWatch Logo"
         />
-        <View style={styles.wordmarkContainer}>
-          <Image
-            source={require('../../assets/brand-wordmark.png')}
-            style={styles.brandWordmark}
-            resizeMode="contain"
-            accessibilityRole="image"
-            accessibilityLabel="TrainWatch Logo"
-          />
-        </View>
 
         {/* Tagline aligned for a vibeful matching of the word on-the-go */}
         <View style={styles.captionContainer}>
@@ -93,35 +84,16 @@ const styles = StyleSheet.create({
   topCenterContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
+    marginTop: 10,
   },
-  brandIcon: {
-    width: 72,
-    height: 72,
-    marginBottom: -4,
-  },
-  wordmarkContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-    shadowColor: '#38BDF8',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-  },
-  brandWordmark: {
-    width: 280,
-    height: 54,
+  brandLogo: {
+    width: 145,
+    height: 145,
   },
   captionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
+    marginTop: -2,
   },
   captionMain: {
     fontSize: 28,

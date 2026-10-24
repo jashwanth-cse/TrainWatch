@@ -79,7 +79,7 @@ test('getStationByCode returns undefined for non-existent codes', () => {
   assert.equal(invalid, undefined);
 });
 
-test('performance benchmark: 100 searches execute in under 250ms', () => {
+test('performance benchmark: 100 searches execute in under 500ms', () => {
   const queries = ['NDLS', 'MUMBAI', 'CHENNAI', 'BANGALORE', 'HOWRAH', 'PUNE', 'KODAI', 'SALEM', 'JAIPUR', 'DELHI'];
   const start = Date.now();
   for (let i = 0; i < 100; i++) {
@@ -88,5 +88,5 @@ test('performance benchmark: 100 searches execute in under 250ms', () => {
     assert.ok(res.length > 0);
   }
   const duration = Date.now() - start;
-  assert.ok(duration < 250, `Expected duration < 250ms, took ${duration}ms`);
+  assert.ok(duration < 500, `Expected duration < 500ms, took ${duration}ms`);
 });

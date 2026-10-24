@@ -356,13 +356,13 @@ const styles = StyleSheet.create({
   },
   topSection: {
     alignItems: 'center',
-    paddingTop: 2,
-    marginBottom: 8,
+    paddingTop: 0,
+    marginBottom: 4,
   },
   captionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
+    marginTop: -2,
   },
   captionMain: {
     fontSize: 27,
