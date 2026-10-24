@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Mapping
 from datetime import date, datetime
 from typing import Protocol
@@ -13,6 +14,7 @@ from trainwatch.ports.watches import WatchDataError
 
 _SCHEMA_VERSION = 1
 _MAX_DOCUMENT_ID_LENGTH = 128
+_RESERVED_DOCUMENT_ID = re.compile(r"^__.*__$")
 
 
 class DocumentSnapshot(Protocol):
@@ -34,6 +36,10 @@ class DocumentReference(Protocol):
 
     def set(self, document_data: Mapping[str, object]) -> Awaitable[object]:
         """Replace one document."""
+        ...
+
+    def delete(self) -> Awaitable[object]:
+        """Delete one document."""
         ...
 
     def collection(self, collection_path: str) -> CollectionReference:
@@ -60,7 +66,12 @@ class FirestoreClient(Protocol):
 def _document_id(value: str, *, field: str) -> str:
     """Validate a value before using it as one Firestore path segment."""
     normalized = value.strip()
-    if not normalized or "/" in normalized or len(normalized) > _MAX_DOCUMENT_ID_LENGTH:
+    if (
+        not normalized
+        or "/" in normalized
+        or len(normalized) > _MAX_DOCUMENT_ID_LENGTH
+        or _RESERVED_DOCUMENT_ID.fullmatch(normalized)
+    ):
         raise ValueError(f"{field} is not a safe Firestore document ID")
     return normalized
 
@@ -187,3 +198,7 @@ class FirestoreWatchRepository:
     async def save(self, watch: Watch) -> None:
         """Replace one owned watch document with its validated representation."""
         await self._reference(watch_id=watch.watch_id, owner_id=watch.owner_id).set(_encode(watch))
+
+    async def delete(self, *, watch_id: str, owner_id: str) -> None:
+        """Delete one watch beneath the supplied owner's path."""
+        await self._reference(watch_id=watch_id, owner_id=owner_id).delete()

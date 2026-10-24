@@ -55,3 +55,8 @@ CI runs the same gates. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`do
 The verified external-service boundary is documented in [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md). Contract tests use sanitized local fixtures and never call the deployed service.
 
 Domain, API, and persistence tests are fully offline. Authentication tests use synthetic tokens, and persistence tests use an in-memory Firestore-shaped fake; no Firebase credential is required.
+
+An intentional live CRUD check is available through `scripts/check_firestore_connection.py`.
+It requires both `--confirm-live` and externally configured Application Default
+Credentials, uses a unique disposable document, and deletes that document in a
+cleanup block. It must never be added to the default test suite.
