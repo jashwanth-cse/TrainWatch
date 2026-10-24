@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { colors, radius, spacing } from '../theme/tokens';
+import { ArrowRight } from 'lucide-react-native';
 
 export const LandingScreen: React.FC = () => {
   const router = useRouter();
@@ -13,8 +14,12 @@ export const LandingScreen: React.FC = () => {
       <TouchableOpacity
         style={styles.button}
         onPress={() => router.replace('/home')}
+        activeOpacity={0.8}
       >
-        <Text style={styles.buttonText}>Go to Search →</Text>
+        <View style={styles.buttonContent}>
+          <Text style={styles.buttonText}>Go to Search</Text>
+          <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} style={{ marginLeft: 6 }} />
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -44,6 +49,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: radius.full,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonText: {
     color: '#FFFFFF',

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing } from '../theme/tokens';
+import { Zap } from 'lucide-react-native';
 
 interface AppHeaderProps {
   variant?: 'light' | 'dark';
@@ -55,8 +56,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ variant = 'light' }) => {
 
       {/* Top-Right Status Pill */}
       <View style={[styles.statusPill, isLight ? styles.statusPillLight : styles.statusPillDark]}>
+        <Zap size={11} color={isLight ? '#FFFFFF' : colors.primary} strokeWidth={2.6} style={{ marginRight: 4 }} />
         <Text style={[styles.statusPillText, isLight ? styles.textWhite : styles.textPrimary]}>
-          ⚡ Direct Sync
+          Direct Sync
         </Text>
       </View>
     </View>

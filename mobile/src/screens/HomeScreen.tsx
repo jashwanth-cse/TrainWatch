@@ -23,6 +23,14 @@ import {
   formatDateToApi,
   formatDateForDisplay,
 } from '../components/DatePickerModal';
+import {
+  ArrowUpDown,
+  CalendarDays,
+  ChevronDown,
+  TrainFront,
+  Armchair,
+  ArrowRight,
+} from 'lucide-react-native';
 
 export const HomeScreen: React.FC = () => {
   const router = useRouter();
@@ -183,11 +191,12 @@ export const HomeScreen: React.FC = () => {
             <Animated.View style={[styles.swapContainer, { transform: [{ rotate: rotateInterpolation }] }]}>
               <TouchableOpacity
                 accessibilityRole="button"
+                accessibilityLabel="Swap departure and destination stations"
                 activeOpacity={0.85}
                 style={styles.swapCircle}
                 onPress={handleSwap}
               >
-                <Text style={styles.swapIcon}>⇅</Text>
+                <ArrowUpDown size={20} color="#FFFFFF" strokeWidth={2.2} />
               </TouchableOpacity>
             </Animated.View>
           </View>
@@ -214,6 +223,7 @@ export const HomeScreen: React.FC = () => {
           {/* Journey Date Box */}
           <TouchableOpacity
             accessibilityRole="button"
+            accessibilityLabel="Select journey date"
             activeOpacity={0.8}
             style={styles.datePill}
             onPress={() => setDateModalVisible(true)}
@@ -222,7 +232,7 @@ export const HomeScreen: React.FC = () => {
               <Text style={styles.dateLabel}>Journey Date</Text>
               <Text style={styles.dateValue}>{displayDate}</Text>
             </View>
-            <Text style={styles.calendarIcon}>📅</Text>
+            <CalendarDays size={22} color="#0F172A" strokeWidth={2} />
           </TouchableOpacity>
 
           {/* Two Boxes Side-by-Side: [All Classes ▾] [General ▾] */}
@@ -230,39 +240,42 @@ export const HomeScreen: React.FC = () => {
             {/* Box 1: Classes */}
             <TouchableOpacity
               accessibilityRole="button"
+              accessibilityLabel="Select travel class"
               activeOpacity={0.8}
               style={styles.filterBox}
               onPress={() => setClassModalVisible(true)}
             >
               <View style={styles.filterContent}>
-                <Text style={styles.filterIcon}>💺</Text>
+                <Armchair size={19} color="#0F172A" strokeWidth={2.2} style={styles.filterIconStyle} />
                 <Text style={styles.filterText} numberOfLines={1}>
                   {travelClass}
                 </Text>
               </View>
-              <Text style={styles.filterChevron}>▾</Text>
+              <ChevronDown size={18} color="#475569" strokeWidth={2.2} />
             </TouchableOpacity>
 
             {/* Box 2: Quota */}
             <TouchableOpacity
               accessibilityRole="button"
+              accessibilityLabel="Select quota"
               activeOpacity={0.8}
               style={styles.filterBox}
               onPress={() => setQuotaModalVisible(true)}
             >
               <View style={styles.filterContent}>
-                <Text style={styles.filterIcon}>🚆</Text>
+                <TrainFront size={19} color="#0F172A" strokeWidth={2.2} style={styles.filterIconStyle} />
                 <Text style={styles.filterText} numberOfLines={1}>
                   {quota}
                 </Text>
               </View>
-              <Text style={styles.filterChevron}>▾</Text>
+              <ChevronDown size={18} color="#475569" strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
 
           {/* Search Trains CTA Button */}
           <TouchableOpacity
             accessibilityRole="button"
+            accessibilityLabel="Search trains"
             activeOpacity={0.88}
             style={styles.searchButton}
             onPress={handleSearchTrains}
@@ -274,7 +287,7 @@ export const HomeScreen: React.FC = () => {
               style={styles.searchGradient}
             >
               <Text style={styles.searchButtonText}>Search Trains</Text>
-              <Text style={styles.searchArrow}>→</Text>
+              <ArrowRight size={22} color="#FFFFFF" strokeWidth={2.4} />
             </LinearGradient>
           </TouchableOpacity>
         </View>
@@ -404,11 +417,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  swapIcon: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
   datePill: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -435,9 +443,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A',
   },
-  calendarIcon: {
-    fontSize: 20,
-  },
   twoBoxesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -461,8 +466,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  filterIcon: {
-    fontSize: 15,
+  filterIconStyle: {
     marginRight: 8,
   },
   filterText: {
@@ -470,11 +474,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0F172A',
     flex: 1,
-  },
-  filterChevron: {
-    fontSize: 14,
-    color: '#475569',
-    marginLeft: 4,
   },
   searchButton: {
     marginTop: 36,
@@ -498,10 +497,5 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
     letterSpacing: 0.2,
-  },
-  searchArrow: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
   },
 });

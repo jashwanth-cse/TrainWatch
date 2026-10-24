@@ -18,6 +18,17 @@ import {
   TravelClassInfo,
   TrainSearchResults,
 } from '../services/trainService';
+import {
+  ArrowLeft,
+  ArrowRight,
+  RotateCcw,
+  Clock,
+  Zap,
+  IndianRupee,
+  AlertCircle,
+  TrainFront,
+  Bell,
+} from 'lucide-react-native';
 
 export const TrainResultsScreen: React.FC = () => {
   const router = useRouter();
@@ -149,13 +160,13 @@ export const TrainResultsScreen: React.FC = () => {
             onPress={() => router.back()}
             activeOpacity={0.7}
           >
-            <Text style={styles.backArrow}>←</Text>
+            <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2.4} />
           </TouchableOpacity>
 
           <View style={styles.headerTitleGroup}>
             <View style={styles.routePill}>
               <Text style={styles.routeCode}>{sourceCode}</Text>
-              <Text style={styles.routeArrow}>➔</Text>
+              <ArrowRight size={13} color="rgba(255,255,255,0.85)" strokeWidth={2.5} style={{ marginHorizontal: 6 }} />
               <Text style={styles.routeCode}>{destinationCode}</Text>
             </View>
             <Text style={styles.headerSubtitle}>
@@ -164,7 +175,7 @@ export const TrainResultsScreen: React.FC = () => {
           </View>
 
           <TouchableOpacity style={styles.refreshBtn} onPress={handleRefresh} activeOpacity={0.7}>
-            <Text style={styles.refreshText}>↻</Text>
+            <RotateCcw size={18} color="#FFFFFF" strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
 
@@ -174,10 +185,16 @@ export const TrainResultsScreen: React.FC = () => {
             style={[styles.sortPill, selectedSort === 'departure' && styles.sortPillActive]}
             onPress={() => setSelectedSort('departure')}
           >
+            <Clock
+              size={13}
+              color={selectedSort === 'departure' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
+              strokeWidth={2.2}
+              style={{ marginRight: 5 }}
+            />
             <Text
               style={[styles.sortPillText, selectedSort === 'departure' && styles.sortPillTextActive]}
             >
-              🕒 Departure
+              Departure
             </Text>
           </TouchableOpacity>
 
@@ -185,10 +202,16 @@ export const TrainResultsScreen: React.FC = () => {
             style={[styles.sortPill, selectedSort === 'duration' && styles.sortPillActive]}
             onPress={() => setSelectedSort('duration')}
           >
+            <Zap
+              size={13}
+              color={selectedSort === 'duration' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
+              strokeWidth={2.2}
+              style={{ marginRight: 5 }}
+            />
             <Text
               style={[styles.sortPillText, selectedSort === 'duration' && styles.sortPillTextActive]}
             >
-              ⚡ Duration
+              Duration
             </Text>
           </TouchableOpacity>
 
@@ -196,8 +219,14 @@ export const TrainResultsScreen: React.FC = () => {
             style={[styles.sortPill, selectedSort === 'fare' && styles.sortPillActive]}
             onPress={() => setSelectedSort('fare')}
           >
+            <IndianRupee
+              size={13}
+              color={selectedSort === 'fare' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
+              strokeWidth={2.2}
+              style={{ marginRight: 5 }}
+            />
             <Text style={[styles.sortPillText, selectedSort === 'fare' && styles.sortPillTextActive]}>
-              💰 Lowest Fare
+              Lowest Fare
             </Text>
           </TouchableOpacity>
         </View>
@@ -211,7 +240,7 @@ export const TrainResultsScreen: React.FC = () => {
         </View>
       ) : error ? (
         <View style={styles.centerContainer}>
-          <Text style={styles.errorIcon}>⚠️</Text>
+          <AlertCircle size={40} color={colors.statusWl} style={{ marginBottom: 12 }} />
           <Text style={styles.errorTitle}>Search Failed</Text>
           <Text style={styles.errorMessage}>{error}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={handleRefresh}>
@@ -220,7 +249,7 @@ export const TrainResultsScreen: React.FC = () => {
         </View>
       ) : sortedTrains.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Text style={styles.emptyIcon}>🚄</Text>
+          <TrainFront size={48} color={colors.textMuted} strokeWidth={1.8} style={{ marginBottom: 12 }} />
           <Text style={styles.emptyTitle}>No Trains Found</Text>
           <Text style={styles.emptySubtitle}>
             No direct trains operate between {sourceCode} and {destinationCode} on {displayDate}.
@@ -325,7 +354,7 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onWat
 
               {!isAvailable && (
                 <View style={styles.watchHintRow}>
-                  <Text style={styles.watchHintIcon}>🔔</Text>
+                  <Bell size={11} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 3 }} />
                   <Text style={styles.watchHintText}>Watch</Text>
                 </View>
               )}
@@ -415,10 +444,12 @@ const styles = StyleSheet.create({
   },
   sortPill: {
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingVertical: 6,
     borderRadius: radius.full,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    alignItems: 'center',
   },
   sortPillActive: {
     backgroundColor: '#FFFFFF',
