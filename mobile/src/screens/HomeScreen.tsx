@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, radius } from '../theme/tokens';
 import { useAuth } from '../services/AuthContext';
+import { AppHeader } from '../components/AppHeader';
 
 /**
  * Main Search Screen Header replicating ref.jpg card exactly:
@@ -30,18 +32,13 @@ export const SearchHeaderCard: React.FC<{
 }) => {
   return (
     <View style={styles.cardWrapper}>
-      {/* Top Gradient Banner with updated headline */}
+      {/* Top Gradient Banner with headline */}
       <LinearGradient
         colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.heroCard}
       >
-        <View style={styles.topBar}>
-          <Text style={styles.heroClock}>19:02</Text>
-          <Text style={styles.heroSignals}>●●● 4G</Text>
-        </View>
-
         <Text style={styles.heroHeadline}>Track your seats{'\n'}in one-go</Text>
       </LinearGradient>
 
@@ -114,8 +111,10 @@ export const SearchHeaderCard: React.FC<{
 };
 
 export const HomeScreen: React.FC = () => {
-  const { user, signOut } = useAuth();
+  const { signOut } = useAuth();
+  const insets = useSafeAreaInsets();
   const [signOutError, setSignOutError] = useState<string | null>(null);
+
   const handleSignOut = async () => {
     setSignOutError(null);
     try {
@@ -128,17 +127,27 @@ export const HomeScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* User bar */}
-        <View style={styles.userBar}>
-          <Text style={styles.welcomeText}>Hello, {user?.displayName || 'Traveler'}</Text>
-          <TouchableOpacity onPress={handleSignOut} style={styles.signOutBtn}>
-            <Text style={styles.signOutText}>Sign Out</Text>
-          </TouchableOpacity>
-        </View>
 
+      {/* Top Gradient Header enclosing AppHeader */}
+      <LinearGradient
+        colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.topHeaderGradient}
+      >
+        <AppHeader variant="light" onSignOut={handleSignOut} />
+      </LinearGradient>
+
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
+        showsVerticalScrollIndicator={false}
+      >
         {signOutError ? (
-          <Text accessibilityRole="alert" style={styles.signOutError}>{signOutError}</Text>
+          <View style={styles.errorBanner}>
+            <Text accessibilityRole="alert" style={styles.signOutError}>
+              {signOutError}
+            </Text>
+          </View>
         ) : null}
 
         {/* Main Hero Route Card exactly matching ref.jpg */}
@@ -153,37 +162,28 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  scrollContent: {
-    paddingBottom: spacing.xxl,
-  },
-  userBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl + spacing.md,
+  topHeaderGradient: {
+    borderBottomLeftRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
     paddingBottom: spacing.sm,
-    backgroundColor: colors.primaryGradientStart,
   },
-  welcomeText: {
-    color: colors.textInverse,
-    fontWeight: '700',
-    fontSize: 16,
+  scrollContent: {
+    paddingTop: spacing.sm,
   },
-  signOutBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: radius.full,
-  },
-  signOutText: {
-    color: colors.textInverse,
-    fontSize: 12,
-    fontWeight: '600',
+  errorBanner: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+    backgroundColor: colors.statusWlBg,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
   },
   signOutError: {
     color: colors.statusWl,
-    margin: spacing.md,
+    fontSize: 12,
+    fontWeight: '500',
+    textAlign: 'center',
   },
   cardWrapper: {
     marginHorizontal: spacing.md,
@@ -201,20 +201,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
-  },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
-  },
-  heroClock: {
-    color: colors.textInverse,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  heroSignals: {
-    color: colors.textInverse,
-    fontSize: 12,
   },
   heroHeadline: {
     ...typography.hero,
