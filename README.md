@@ -1,6 +1,6 @@
 # TrainWatch
 
-TrainWatch is a planned Indian train-seat-availability monitoring application. The repository is implementing **Phase 4: Firestore Repositories** after completing Phases 0-3. It contains a credential-free versioned API, injectable token verification, ownership policy, pure domain rules, and an owner-scoped Firestore adapter. An explicitly approved live Firestore CRUD smoke check is available as documented below. Real Firebase verification, full live or deployed validation, provider adapters, queues, notifications, cloud deployment, and the mobile client are intentionally not implemented.
+TrainWatch is a planned Indian train-seat-availability monitoring application. The repository has implemented **Phase 5: Existing Train API Integration Adapters** after completing Phases 0-4. It contains a credential-free versioned API, injectable token verification, ownership policy, pure domain rules, an owner-scoped Firestore adapter, and a typed Dream Destiny train-service adapter. Real Firebase verification, public reminder routes, queues, notifications, cloud deployment, and the mobile client are intentionally not implemented.
 
 The authoritative implementation plan is [`TrainWatch_Full_Implementation_Plan.md`](TrainWatch_Full_Implementation_Plan.md). Each phase requires an explicit approval gate.
 
@@ -54,7 +54,7 @@ CI runs the same gates. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`do
 
 The verified external-service boundary is documented in [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md). Contract tests use sanitized local fixtures and never call the deployed service.
 
-Domain, API, and persistence tests are fully offline. Authentication tests use synthetic tokens, and persistence tests use an in-memory Firestore-shaped fake; no Firebase credential is required.
+Domain, API, persistence, and provider-adapter tests are fully offline. Authentication tests use synthetic tokens, persistence tests use an in-memory Firestore-shaped fake, and HTTP tests use an injected mock transport; no Firebase credential or live provider is required.
 
 An intentional live CRUD check is available through `scripts/check_firestore_connection.py`.
 It requires both `--confirm-live` and externally configured Application Default
