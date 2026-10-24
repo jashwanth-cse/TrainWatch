@@ -28,6 +28,7 @@ import {
   AlertCircle,
   TrainFront,
   Bell,
+  Utensils,
 } from 'lucide-react-native';
 
 export const TrainResultsScreen: React.FC = () => {
@@ -289,7 +290,12 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onWat
         <View>
           <View style={styles.trainNumberRow}>
             <Text style={styles.trainNumber}>{train.train_number}</Text>
-            {train.has_pantry ? <Text style={styles.pantryBadge}>🍱 Pantry</Text> : null}
+            {train.has_pantry ? (
+              <View style={styles.pantryBadge}>
+                <Utensils size={10} color={colors.textSecondary} strokeWidth={2.4} style={{ marginRight: 3 }} />
+                <Text style={styles.pantryText}>Pantry</Text>
+              </View>
+            ) : null}
           </View>
           <Text style={styles.trainName} numberOfLines={1}>
             {train.train_name}
@@ -496,12 +502,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   pantryBadge: {
-    fontSize: 10,
-    color: colors.textSecondary,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.surfaceSubtle,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: radius.sm,
+  },
+  pantryText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   trainName: {
     fontSize: 15,
