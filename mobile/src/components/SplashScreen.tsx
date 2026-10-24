@@ -13,6 +13,7 @@ import { StatusBar } from 'expo-status-bar';
 const { width } = Dimensions.get('window');
 
 interface SplashScreenProps {
+  readyToDismiss: boolean;
   onAnimationComplete: () => void;
 }
 
@@ -25,7 +26,8 @@ interface SplashScreenProps {
  * 4. Tagline fades in: "Track your seats in one-go".
  * 5. Screen dissolves seamlessly into the main app shell.
  */
-export const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete }) => {
+export const SplashScreen: React.FC<SplashScreenProps> = ({ readyToDismiss, onAnimationComplete }) => {
+  const [entranceComplete, setEntranceComplete] = useState(false);
   const [logoScale] = useState(() => new Animated.Value(0.75));
   const [logoOpacity] = useState(() => new Animated.Value(0));
   const [glowPulse] = useState(() => new Animated.Value(0.4));
@@ -53,7 +55,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete 
     ambientLoop.start();
 
     // 2. Coordinated entrance orchestration
-    Animated.sequence([
+    const entrance = Animated.sequence([
       // Stage A: Logo spring reveal
       Animated.parallel([
         Animated.spring(logoScale, {
@@ -92,31 +94,38 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onAnimationComplete 
 
       // Stage D: Lingering beat for recognition
       Animated.delay(650),
-
-      // Stage E: Smooth dissolve into app
-      Animated.timing(containerOpacity, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      ambientLoop.stop();
-      onAnimationComplete();
+    ]);
+    entrance.start(({ finished }) => {
+      if (finished) setEntranceComplete(true);
     });
 
     return () => {
+      entrance.stop();
       ambientLoop.stop();
     };
   }, [
-    containerOpacity,
     glowPulse,
     logoOpacity,
     logoScale,
-    onAnimationComplete,
     taglineOpacity,
     textOpacity,
     textTranslateY,
   ]);
+
+  useEffect(() => {
+    if (!entranceComplete || !readyToDismiss) return;
+
+    // Keep the brand visible until session restoration has selected a route.
+    const exit = Animated.timing(containerOpacity, {
+      toValue: 0,
+      duration: 400,
+      useNativeDriver: true,
+    });
+    exit.start(({ finished }) => {
+      if (finished) onAnimationComplete();
+    });
+    return () => exit.stop();
+  }, [containerOpacity, entranceComplete, onAnimationComplete, readyToDismiss]);
 
   return (
     <Animated.View style={[styles.container, { opacity: containerOpacity }]}>

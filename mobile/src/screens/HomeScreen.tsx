@@ -138,18 +138,18 @@ export const HomeScreen: React.FC = () => {
         <AppHeader variant="light" onSignOut={handleSignOut} />
       </LinearGradient>
 
+      {signOutError ? (
+        <View style={styles.errorBanner}>
+          <Text accessibilityRole="alert" style={styles.signOutError}>
+            {signOutError}
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        {signOutError ? (
-          <View style={styles.errorBanner}>
-            <Text accessibilityRole="alert" style={styles.signOutError}>
-              {signOutError}
-            </Text>
-          </View>
-        ) : null}
-
         {/* Main Hero Route Card exactly matching ref.jpg */}
         <SearchHeaderCard />
       </ScrollView>

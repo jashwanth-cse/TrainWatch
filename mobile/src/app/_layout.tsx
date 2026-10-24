@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -29,17 +29,30 @@ const AppNavigator: React.FC = () => {
   );
 };
 
+const AppContent: React.FC = () => {
+  const { isLoading } = useAuth();
+  const [showSplash, setShowSplash] = useState(true);
+  const handleAnimationComplete = useCallback(() => setShowSplash(false), []);
+
+  return (
+    <>
+      <AppNavigator />
+      {showSplash && (
+        <SplashScreen
+          readyToDismiss={!isLoading}
+          onAnimationComplete={handleAnimationComplete}
+        />
+      )}
+    </>
+  );
+};
+
 /** Provides session state, splash transition, and protected routes for TrainWatch. */
 export default function RootLayout() {
-  const [showSplash, setShowSplash] = useState(true);
-
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <AppNavigator />
-        {showSplash && (
-          <SplashScreen onAnimationComplete={() => setShowSplash(false)} />
-        )}
+        <AppContent />
       </AuthProvider>
     </SafeAreaProvider>
   );

@@ -77,6 +77,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
       {showProfile && user && (
         <View style={styles.rightSection}>
           <TouchableOpacity
+            accessibilityRole="button"
             activeOpacity={0.8}
             onPress={handleSignOut}
             style={[styles.profilePill, isLight ? styles.profilePillLight : styles.profilePillDark]}
