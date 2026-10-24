@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Animated,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { colors, typography, spacing, radius } from '../theme/tokens';
-import { useAuth } from '../services/AuthContext';
+import { spacing } from '../theme/tokens';
 import { AppHeader } from '../components/AppHeader';
 import { Station } from '../services/stationService';
 import { StationSearchModal } from '../components/StationSearchModal';
@@ -18,194 +24,45 @@ import {
   formatDateForDisplay,
 } from '../components/DatePickerModal';
 
-/**
- * Main Search Screen Header replicating ref.jpg card exactly:
- * Top gradient card with "Track your seats in one-go",
- * Interactive FROM / TO stations, Date pill, Classes & Quota pills,
- * and prominent blue "Search Trains ->" button.
- */
-export const SearchHeaderCard: React.FC<{
-  source: Station;
-  destination: Station;
-  displayDate: string;
-  travelClass: string;
-  quota: string;
-  onSelectSource: () => void;
-  onSelectDestination: () => void;
-  onSelectDate: () => void;
-  onSelectClass: () => void;
-  onSelectQuota: () => void;
-  onSwap: () => void;
-  onSearch: () => void;
-}> = ({
-  source,
-  destination,
-  displayDate,
-  travelClass,
-  quota,
-  onSelectSource,
-  onSelectDestination,
-  onSelectDate,
-  onSelectClass,
-  onSelectQuota,
-  onSwap,
-  onSearch,
-}) => {
-  return (
-    <View style={styles.cardWrapper}>
-      {/* Top Gradient Banner with headline */}
-      <LinearGradient
-        colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={styles.heroCard}
-      >
-        <Text style={styles.heroHeadline}>Track your seats{'\n'}in one-go</Text>
-      </LinearGradient>
-
-      {/* Embedded Route Selection Sheet */}
-      <View style={styles.routeContainer}>
-        {/* FROM Section */}
-        <TouchableOpacity
-          activeOpacity={0.7}
-          style={styles.stationBlock}
-          onPress={onSelectSource}
-        >
-          <Text style={styles.stationLabel}>FROM</Text>
-          <View style={styles.stationRow}>
-            <Text style={styles.stationName} numberOfLines={1}>
-              {source.name}
-            </Text>
-            <Text style={styles.stationCode}>{source.code}</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Swap Floating Action Circle */}
-        <TouchableOpacity
-          accessibilityRole="button"
-          activeOpacity={0.85}
-          style={styles.swapCircle}
-          onPress={onSwap}
-        >
-          <Text style={styles.swapIcon}>⇅</Text>
-        </TouchableOpacity>
-
-        {/* Divider */}
-        <View style={styles.divider} />
-
-        {/* TO Section */}
-        <TouchableOpacity
-          activeOpacity={0.7}
-          style={styles.stationBlock}
-          onPress={onSelectDestination}
-        >
-          <Text style={styles.stationLabel}>TO</Text>
-          <View style={styles.stationRow}>
-            <Text style={styles.stationName} numberOfLines={1}>
-              {destination.name}
-            </Text>
-            <Text style={styles.stationCode}>{destination.code}</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Date Selector Pill */}
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.pillContainer}
-          onPress={onSelectDate}
-        >
-          <View style={styles.dateBlock}>
-            <Text style={styles.metaLabel}>Journey Date</Text>
-            <Text style={styles.metaValue}>{displayDate}</Text>
-          </View>
-          <Text style={styles.calendarIcon}>📅</Text>
-        </TouchableOpacity>
-
-        {/* Filter Pills: All Classes / General */}
-        <View style={styles.filterRow}>
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={styles.filterPill}
-            onPress={onSelectClass}
-          >
-            <View style={styles.pillContent}>
-              <Text style={styles.pillMiniLabel}>CLASS</Text>
-              <Text style={styles.filterPillText} numberOfLines={1}>
-                💺 {travelClass}
-              </Text>
-            </View>
-            <Text style={styles.filterCaret}>▾</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
-            style={styles.filterPill}
-            onPress={onSelectQuota}
-          >
-            <View style={styles.pillContent}>
-              <Text style={styles.pillMiniLabel}>QUOTA</Text>
-              <Text style={styles.filterPillText} numberOfLines={1}>
-                🎫 {quota}
-              </Text>
-            </View>
-            <Text style={styles.filterCaret}>▾</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Primary CTA Search Button */}
-        <TouchableOpacity
-          activeOpacity={0.88}
-          style={styles.searchButton}
-          onPress={onSearch}
-        >
-          <Text style={styles.searchButtonText}>Search Trains</Text>
-          <Text style={styles.searchArrow}>→</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
 export const HomeScreen: React.FC = () => {
   const router = useRouter();
-  const { signOut } = useAuth();
   const insets = useSafeAreaInsets();
-  const [signOutError, setSignOutError] = useState<string | null>(null);
 
-  // Default tomorrow date for instant convenience
+  // Tomorrow as dynamic default date
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
 
   const [source, setSource] = useState<Station>({
     code: 'NDLS',
-    name: 'NEW DELHI',
+    name: 'New Delhi',
     state: 'DELHI',
   });
   const [destination, setDestination] = useState<Station>({
     code: 'CNB',
-    name: 'KANPUR CENTRAL JN.',
+    name: 'Kanpur',
     state: 'UTTAR PRADESH',
   });
   const [apiDate, setApiDate] = useState<string>(formatDateToApi(tomorrow));
   const [displayDate, setDisplayDate] = useState<string>(formatDateForDisplay(tomorrow));
   const [travelClass, setTravelClass] = useState<string>('All Classes');
-  const [quota, setQuota] = useState<string>('GN');
+  const [quota, setQuota] = useState<string>('General');
+  const [quotaCode, setQuotaCode] = useState<string>('GN');
 
-  // Modal visibility states
+  // Modals
   const [searchModalVisible, setSearchModalVisible] = useState(false);
   const [searchTarget, setSearchTarget] = useState<'source' | 'destination'>('source');
   const [dateModalVisible, setDateModalVisible] = useState(false);
   const [classModalVisible, setClassModalVisible] = useState(false);
   const [quotaModalVisible, setQuotaModalVisible] = useState(false);
 
-  // Swap animation
+  // Swap Animation
   const [swapRotate] = useState(() => new Animated.Value(0));
 
   const handleSwap = () => {
     Animated.sequence([
       Animated.timing(swapRotate, {
         toValue: 1,
-        duration: 250,
+        duration: 220,
         useNativeDriver: true,
       }),
       Animated.timing(swapRotate, {
@@ -221,10 +78,23 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleStationSelected = (station: Station) => {
+    // Format station name to Title Case for elegant presentation matching the ref image
+    const toTitleCase = (str: string) =>
+      str
+        .toLowerCase()
+        .split(' ')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+
+    const formatted: Station = {
+      ...station,
+      name: toTitleCase(station.name),
+    };
+
     if (searchTarget === 'source') {
-      setSource(station);
+      setSource(formatted);
     } else {
-      setDestination(station);
+      setDestination(formatted);
     }
   };
 
@@ -238,7 +108,8 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleQuotaSelected = (option: QuotaOption) => {
-    setQuota(option.code);
+    setQuota(option.label.split(' ')[0] || option.code);
+    setQuotaCode(option.code);
   };
 
   const handleSearchTrains = () => {
@@ -251,94 +122,168 @@ export const HomeScreen: React.FC = () => {
         destinationName: destination.name,
         date: apiDate,
         displayDate,
-        quota,
+        quota: quotaCode,
         travelClass,
       },
     });
   };
 
-  const handleSignOut = async () => {
-    setSignOutError(null);
-    try {
-      await signOut();
-    } catch {
-      setSignOutError('Sign-out failed. Please try signing out again.');
-    }
-  };
+  const rotateInterpolation = swapRotate.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Top Gradient Header enclosing AppHeader */}
+      {/* Top Gradient Banner replicating ref image */}
       <LinearGradient
-        colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+        colors={['#4382EC', '#6AA0F7', '#E8F2FE']}
+        locations={[0, 0.7, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={styles.topHeaderGradient}
+        style={[styles.heroBanner, { paddingTop: insets.top + spacing.xs }]}
       >
-        <AppHeader variant="light" onSignOut={handleSignOut} />
+        <AppHeader variant="light" />
+
+        <View style={styles.captionContainer}>
+          <Text style={styles.appCaption}>Track your seats{'\n'}in one-go</Text>
+        </View>
       </LinearGradient>
 
+      {/* Main Elevated White Form Card replicating the image layout */}
       <ScrollView
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.xl }]}
         showsVerticalScrollIndicator={false}
       >
-        {signOutError ? (
-          <View style={styles.errorBanner}>
-            <Text accessibilityRole="alert" style={styles.signOutError}>
-              {signOutError}
-            </Text>
-          </View>
-        ) : null}
-
-        {/* Main Hero Route Card exactly matching ref.jpg */}
-        <SearchHeaderCard
-          source={source}
-          destination={destination}
-          displayDate={displayDate}
-          travelClass={travelClass}
-          quota={quota}
-          onSelectSource={() => {
-            setSearchTarget('source');
-            setSearchModalVisible(true);
-          }}
-          onSelectDestination={() => {
-            setSearchTarget('destination');
-            setSearchModalVisible(true);
-          }}
-          onSelectDate={() => setDateModalVisible(true)}
-          onSelectClass={() => setClassModalVisible(true)}
-          onSelectQuota={() => setQuotaModalVisible(true)}
-          onSwap={handleSwap}
-          onSearch={handleSearchTrains}
-        />
-
-        {/* Live Features Summary Card */}
-        <View style={styles.featuresCard}>
-          <Text style={styles.featureHeading}>TrainWatch Live Benefits</Text>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureEmoji}>⚡</Text>
-            <View style={styles.featureTextGroup}>
-              <Text style={styles.featureTitle}>Sub-Second Direct Route Search</Text>
-              <Text style={styles.featureDesc}>Queries IRCTC network directly across all 8,500+ Indian railway stations.</Text>
+        <View style={styles.card}>
+          {/* FROM Section */}
+          <TouchableOpacity
+            accessibilityRole="button"
+            activeOpacity={0.7}
+            style={styles.stationBlock}
+            onPress={() => {
+              setSearchTarget('source');
+              setSearchModalVisible(true);
+            }}
+          >
+            <Text style={styles.stationLabel}>FROM</Text>
+            <View style={styles.stationRow}>
+              <Text style={styles.stationName} numberOfLines={1}>
+                {source.name}
+              </Text>
+              <Text style={styles.stationCode}>{source.code}</Text>
             </View>
+          </TouchableOpacity>
+
+          {/* Divider with Swap Floating Action Circle */}
+          <View style={styles.dividerWrapper}>
+            <View style={styles.dividerLine} />
+            <Animated.View style={[styles.swapContainer, { transform: [{ rotate: rotateInterpolation }] }]}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                activeOpacity={0.85}
+                style={styles.swapCircle}
+                onPress={handleSwap}
+              >
+                <Text style={styles.swapIcon}>⇅</Text>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
 
-          <View style={styles.featureItem}>
-            <Text style={styles.featureEmoji}>🔔</Text>
-            <View style={styles.featureTextGroup}>
-              <Text style={styles.featureTitle}>Smart Background Watching</Text>
-              <Text style={styles.featureDesc}>Set watch alerts on any waitlisted class to get notified immediately when berths open.</Text>
+          {/* TO Section */}
+          <TouchableOpacity
+            accessibilityRole="button"
+            activeOpacity={0.7}
+            style={styles.stationBlock}
+            onPress={() => {
+              setSearchTarget('destination');
+              setSearchModalVisible(true);
+            }}
+          >
+            <Text style={styles.stationLabel}>TO</Text>
+            <View style={styles.stationRow}>
+              <Text style={styles.stationName} numberOfLines={1}>
+                {destination.name}
+              </Text>
+              <Text style={styles.stationCode}>{destination.code}</Text>
             </View>
+          </TouchableOpacity>
+
+          {/* Journey Date Box */}
+          <TouchableOpacity
+            accessibilityRole="button"
+            activeOpacity={0.8}
+            style={styles.datePill}
+            onPress={() => setDateModalVisible(true)}
+          >
+            <View style={styles.dateTextGroup}>
+              <Text style={styles.dateLabel}>Journey Date</Text>
+              <Text style={styles.dateValue}>{displayDate}</Text>
+            </View>
+            <Text style={styles.calendarIcon}>📅</Text>
+          </TouchableOpacity>
+
+          {/* Two Boxes Side-by-Side: [All Classes ▾] [General ▾] */}
+          <View style={styles.twoBoxesRow}>
+            {/* Box 1: Classes */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.8}
+              style={styles.filterBox}
+              onPress={() => setClassModalVisible(true)}
+            >
+              <View style={styles.filterContent}>
+                <Text style={styles.filterIcon}>💺</Text>
+                <Text style={styles.filterText} numberOfLines={1}>
+                  {travelClass}
+                </Text>
+              </View>
+              <Text style={styles.filterChevron}>▾</Text>
+            </TouchableOpacity>
+
+            {/* Box 2: Quota */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.8}
+              style={styles.filterBox}
+              onPress={() => setQuotaModalVisible(true)}
+            >
+              <View style={styles.filterContent}>
+                <Text style={styles.filterIcon}>🚆</Text>
+                <Text style={styles.filterText} numberOfLines={1}>
+                  {quota}
+                </Text>
+              </View>
+              <Text style={styles.filterChevron}>▾</Text>
+            </TouchableOpacity>
           </View>
+
+          {/* Search Trains CTA Button */}
+          <TouchableOpacity
+            accessibilityRole="button"
+            activeOpacity={0.88}
+            style={styles.searchButton}
+            onPress={handleSearchTrains}
+          >
+            <LinearGradient
+              colors={['#3B82F6', '#5295F8']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.searchGradient}
+            >
+              <Text style={styles.searchButtonText}>Search Trains</Text>
+              <Text style={styles.searchArrow}>→</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
       {/* Station Autocomplete Modal */}
       <StationSearchModal
         visible={searchModalVisible}
-        title={searchTarget === 'source' ? 'Select Origin Station' : 'Select Destination Station'}
+        title={searchTarget === 'source' ? 'Select Departure Station' : 'Select Destination Station'}
         onClose={() => setSearchModalVisible(false)}
         onSelect={handleStationSelected}
       />
@@ -362,7 +307,7 @@ export const HomeScreen: React.FC = () => {
       {/* Quota Picker Modal */}
       <QuotaPickerModal
         visible={quotaModalVisible}
-        selectedQuota={quota}
+        selectedQuota={quotaCode}
         onSelect={handleQuotaSelected}
         onClose={() => setQuotaModalVisible(false)}
       />
@@ -373,66 +318,42 @@ export const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#FFFFFF',
   },
-  topHeaderGradient: {
-    borderBottomLeftRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
-    paddingBottom: spacing.sm,
-  },
-  scrollContent: {
-    paddingTop: spacing.sm,
-  },
-  errorBanner: {
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    padding: spacing.sm,
-    backgroundColor: colors.statusWlBg,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
-  },
-  signOutError: {
-    color: colors.statusWl,
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  cardWrapper: {
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    borderRadius: radius.xl,
-    backgroundColor: colors.cardBackground,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 8,
-    overflow: 'hidden',
-  },
-  heroCard: {
+  heroBanner: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
   },
-  heroHeadline: {
-    ...typography.hero,
-    color: colors.textInverse,
+  captionContainer: {
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
   },
-  routeContainer: {
-    backgroundColor: colors.cardBackground,
+  appCaption: {
+    fontSize: 34,
+    fontWeight: '700',
+    lineHeight: 40,
+    color: '#FFFFFF',
+    letterSpacing: -0.6,
+  },
+  scrollContent: {
+    paddingTop: spacing.xs,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
-    position: 'relative',
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxl,
   },
   stationBlock: {
-    marginVertical: spacing.xs,
-    paddingVertical: 4,
+    paddingVertical: 10,
   },
   stationLabel: {
-    ...typography.label,
-    color: colors.textMuted,
-    marginBottom: 4,
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    color: '#8E9BAE',
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
   stationRow: {
     flexDirection: 'row',
@@ -440,168 +361,147 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   stationName: {
-    ...typography.stationTitle,
-    color: colors.textPrimary,
+    fontSize: 36,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+    color: '#0F172A',
     flex: 1,
     paddingRight: spacing.sm,
   },
   stationCode: {
-    ...typography.stationCode,
-    color: colors.textSecondary,
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  dividerWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
+    marginVertical: 14,
+    height: 44,
+  },
+  dividerLine: {
+    height: 1,
+    backgroundColor: '#EEF2F6',
+  },
+  swapContainer: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    zIndex: 10,
   },
   swapCircle: {
-    position: 'absolute',
-    right: spacing.lg,
-    top: '25%',
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.swapButtonBg,
+    backgroundColor: '#3B82F6',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.swapButtonBg,
+    shadowColor: '#3B82F6',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 6,
-    zIndex: 10,
   },
   swapIcon: {
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: 'bold',
   },
-  divider: {
-    height: 1,
-    backgroundColor: colors.borderSubtle,
-    marginVertical: spacing.md,
-  },
-  pillContainer: {
+  datePill: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 2,
-    marginTop: spacing.md,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    marginTop: 22,
+    backgroundColor: '#FFFFFF',
   },
-  dateBlock: {
+  dateTextGroup: {
     flex: 1,
   },
-  metaLabel: {
-    fontSize: 11,
-    color: colors.textMuted,
-    marginBottom: 2,
+  dateLabel: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+    marginBottom: 3,
   },
-  metaValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.textPrimary,
+  dateValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0F172A',
   },
   calendarIcon: {
-    fontSize: 18,
+    fontSize: 20,
   },
-  filterRow: {
+  twoBoxesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: spacing.md,
-    gap: 8,
+    gap: 12,
+    marginTop: 14,
   },
-  filterPill: {
+  filterBox: {
     flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.pillBg,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
   },
-  pillContent: {
+  filterContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
   },
-  pillMiniLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: colors.textMuted,
-    letterSpacing: 0.5,
+  filterIcon: {
+    fontSize: 15,
+    marginRight: 8,
   },
-  filterPillText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginTop: 1,
+  filterText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
+    flex: 1,
   },
-  filterCaret: {
-    fontSize: 12,
-    color: colors.textSecondary,
+  filterChevron: {
+    fontSize: 14,
+    color: '#475569',
     marginLeft: 4,
   },
   searchButton: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-    paddingVertical: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: spacing.xl,
-    shadowColor: colors.ctaShadow,
+    marginTop: 36,
+    borderRadius: 30,
+    overflow: 'hidden',
+    shadowColor: '#2563EB',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.35,
     shadowRadius: 16,
     elevation: 6,
   },
+  searchGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+  },
   searchButtonText: {
-    ...typography.button,
-    color: colors.textInverse,
-    marginRight: spacing.sm,
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
   searchArrow: {
-    color: colors.textInverse,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  featuresCard: {
-    marginHorizontal: spacing.md,
-    marginTop: spacing.lg,
-    backgroundColor: colors.cardBackground,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-  },
-  featureHeading: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: spacing.md,
-  },
-  featureEmoji: {
     fontSize: 20,
-    marginRight: spacing.md,
-    marginTop: 2,
-  },
-  featureTextGroup: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 2,
-  },
-  featureDesc: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });

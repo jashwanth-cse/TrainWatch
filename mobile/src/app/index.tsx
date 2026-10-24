@@ -1,1 +1,1 @@
-export { LandingScreen as default } from '../screens/LandingScreen';
+export { HomeScreen as default } from '../screens/HomeScreen';
