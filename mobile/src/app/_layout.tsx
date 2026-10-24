@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../services/AuthContext';
 import { SplashScreen } from '../components/SplashScreen';
+import { initBackendWarmup } from '../services/backendWarmupService';
 
 const AppNavigator: React.FC = () => {
   return (
@@ -34,6 +35,11 @@ const AppContent: React.FC = () => {
 
 /** Provides device identity, smooth splash transition, and routes for TrainWatch. */
 export default function RootLayout() {
+  useEffect(() => {
+    const unsubscribe = initBackendWarmup();
+    return unsubscribe;
+  }, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>

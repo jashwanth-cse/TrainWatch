@@ -70,6 +70,7 @@ function fixture() {
     'expo-router': { Stack: 'Stack' },
     'react-native-safe-area-context': { SafeAreaProvider: 'SafeAreaProvider' },
     '../services/AuthContext': { AuthProvider: 'AuthProvider', useAuth: () => auth },
+    '../services/backendWarmupService': { initBackendWarmup: () => () => {} },
     '../theme/tokens': { colors: { background: '#fff' } },
     '../../assets/brand-emblem.png': 'synthetic-emblem',
   };
