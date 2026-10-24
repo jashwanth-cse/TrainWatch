@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Dimensions,
   ScrollView,
+  Image,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,6 +32,7 @@ export const LandingScreen: React.FC = () => {
     <ScrollView
       style={styles.container}
       contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom }]}
+      showsVerticalScrollIndicator={false}
     >
       <StatusBar style="light" />
 
@@ -39,7 +41,10 @@ export const LandingScreen: React.FC = () => {
         colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={[styles.heroSection, { minHeight: height * 0.46, paddingTop: spacing.xxl + insets.top }]}
+        style={[
+          styles.heroSection,
+          { minHeight: height * 0.46, paddingTop: Math.max(insets.top, 16) + spacing.md },
+        ]}
       >
         {/* Subtle dot matrix / pattern overlay representation */}
         <View style={styles.patternOverlay}>
@@ -47,8 +52,28 @@ export const LandingScreen: React.FC = () => {
         </View>
 
         <View style={styles.heroContent}>
-          <Text style={styles.timeTag}>TrainWatch</Text>
-          <Text style={styles.heroTitle}>Track your seats in one-go</Text>
+          {/* Top-Left Brand Logo & Wordmark Header */}
+          <View style={styles.brandHeader}>
+            <View style={styles.logoBadge}>
+              <Image
+                source={require('../../assets/brand-emblem.png')}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
+            </View>
+            <View style={styles.brandTextGroup}>
+              <View style={styles.brandTitleRow}>
+                <Text style={styles.brandTitleTrain}>Train</Text>
+                <Text style={styles.brandTitleWatch}>Watch</Text>
+              </View>
+              <View style={styles.liveIndicatorRow}>
+                <View style={styles.pulseDot} />
+                <Text style={styles.liveIndicatorText}>LIVE TRACKER</Text>
+              </View>
+            </View>
+          </View>
+
+          <Text style={styles.heroTitle}>Track your seats{'\n'}in one-go</Text>
           <Text style={styles.heroSubtitle}>
             Never miss a confirmed berth. Automated IRCTC availability tracking and proactive seat alerts.
           </Text>
@@ -146,13 +171,65 @@ const styles = StyleSheet.create({
     zIndex: 2,
     marginBottom: spacing.xl,
   },
-  timeTag: {
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontSize: 14,
+  brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  logoBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  logoImage: {
+    width: 32,
+    height: 32,
+  },
+  brandTextGroup: {
+    justifyContent: 'center',
+  },
+  brandTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  brandTitleTrain: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.4,
+  },
+  brandTitleWatch: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#BAE6FD',
+    letterSpacing: -0.4,
+  },
+  liveIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  pulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginRight: 6,
+  },
+  liveIndicatorText: {
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: spacing.sm,
+    color: 'rgba(255, 255, 255, 0.85)',
+    letterSpacing: 0.8,
   },
   heroTitle: {
     ...typography.hero,
