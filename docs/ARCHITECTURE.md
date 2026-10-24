@@ -1,6 +1,6 @@
 # Architecture
 
-## Current Phase 4 shape
+## Current Phase 5 shape
 
 ```text
 repository root
@@ -15,11 +15,21 @@ repository root
     │   ├── domain/               pure queries, watches, snapshots, and alerts
     │   ├── ports/                provider, repository, and identity protocols
     │   └── infrastructure/
-    │       └── firestore/        guarded client factory, codecs, watch adapter
+    │       ├── firestore/        guarded client factory, codecs, watch adapter
+    │       └── train_api/        typed, retry-bounded Dream Destiny adapter
     └── tests/                    offline unit and provider-contract tests
 ```
 
 The domain layer uses only the Python standard library. It has no FastAPI, persistence, provider client, background-task, authentication SDK, or notification dependency. The API layer owns HTTP concerns and depends on an identity port; ports initialize nothing and perform no I/O.
+
+## Train-provider boundary
+
+- `DreamDestinyClient` implements the search and availability ports through an injected `httpx.AsyncClient`; constructing the adapter performs no I/O.
+- Station and train searches use the source-verified endpoints and parameter names. Journey dates are serialized as `DD-MM-YYYY`; normalized class/quota codes and train-number strings remain intact.
+- Provider responses are mapped into immutable application-facing DTOs. Extra provider fields are discarded, optional malformed values become `None`, and malformed required structures fail closed.
+- Network exceptions and HTTP failures become stable error categories without returning provider bodies or exception text. Availability failures become unsuccessful observations and can never be interpreted as an improved seat state.
+- The production HTTP-client factory applies strict timeout and connection-pool limits. Retries are bounded and limited to transport failures and the transient status set `429`, `502`, `503`, and `504`.
+- Tests inject `httpx.MockTransport`; the default test suite cannot reach the deployed provider.
 
 ## Firestore boundary
 
