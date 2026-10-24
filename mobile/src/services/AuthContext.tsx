@@ -4,6 +4,7 @@ import { authService } from '../services/authService';
 
 interface AuthContextValue extends AuthState {
   signInWithGoogle: () => Promise<void>;
+  continueAsGuest: () => void;
   signOut: () => Promise<void>;
 }
 
@@ -58,8 +59,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const continueAsGuest = () => {
+    setState({
+      user: {
+        uid: 'guest-traveler',
+        displayName: 'Guest Traveler',
+        email: 'guest@trainwatch.app',
+        photoURL: null,
+        createdAt: new Date().toISOString(),
+      },
+      isAuthenticated: true,
+      isLoading: false,
+      error: null,
+    });
+  };
+
   const signOut = async () => {
-    await authService.signOut();
+    try {
+      await authService.signOut();
+    } catch {
+      // Allow sign out to reset state even if upstream fails
+    }
     setState({
       user: null,
       isAuthenticated: false,
@@ -69,7 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ ...state, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ ...state, signInWithGoogle, continueAsGuest, signOut }}>
       {children}
     </AuthContext.Provider>
   );
