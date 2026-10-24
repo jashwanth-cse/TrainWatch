@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Phase 4 keeps Firestore server-only. The mobile app must use the
+    // authenticated TrainWatch API; no direct client access is approved.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

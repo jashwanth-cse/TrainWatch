@@ -1,6 +1,6 @@
 # Architecture
 
-## Current Phase 3 shape
+## Current Phase 4 shape
 
 ```text
 repository root
@@ -13,11 +13,23 @@ repository root
     │   ├── main.py               FastAPI app factory and dependency wiring
     │   ├── api/                  versioned routes, auth, errors, request IDs
     │   ├── domain/               pure queries, watches, snapshots, and alerts
-    │   └── ports/                provider, repository, and identity protocols
+    │   ├── ports/                provider, repository, and identity protocols
+    │   └── infrastructure/
+    │       └── firestore/        guarded client factory, codecs, watch adapter
     └── tests/                    offline unit and provider-contract tests
 ```
 
 The domain layer uses only the Python standard library. It has no FastAPI, persistence, provider client, background-task, authentication SDK, or notification dependency. The API layer owns HTTP concerns and depends on an identity port; ports initialize nothing and perform no I/O.
+
+## Firestore boundary
+
+- `FirestoreWatchRepository` implements the existing `WatchRepository` port; domain and application code remain unaware of Google Cloud types.
+- Documents live at `users/{uid}/reminders/{watchId}`. The verified owner ID selects the parent path, so the adapter never performs a global watch lookup.
+- Stored data carries a schema version and is decoded back through domain constructors. Unknown versions, invalid types, invalid enums, and broken invariants raise a sanitized `WatchDataError`.
+- The adapter receives a narrow client interface. Unit tests provide an in-memory fake and never construct a Google client.
+- The production client factory uses Application Default Credentials only after an explicit `allow_live_access=True` call with non-placeholder project and database IDs.
+- Direct mobile access is not approved, so committed Firestore rules deny all reads and writes. Server SDK calls must still enforce ownership because Admin clients bypass rules.
+- No composite index exists yet because Phase 4 implements only direct document reads and writes.
 
 ## API and identity boundary
 
