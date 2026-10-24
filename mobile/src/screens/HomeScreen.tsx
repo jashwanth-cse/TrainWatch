@@ -158,7 +158,6 @@ export const HomeScreen: React.FC = () => {
         <View style={styles.captionContainer}>
           <Text style={styles.captionMain}>Track your seats</Text>
           <View style={styles.onTheGoRow}>
-            <Text style={styles.captionIn}>in</Text>
             <View style={styles.onTheGoBadge}>
               <Text style={styles.onTheGoText}>on-the-go</Text>
             </View>

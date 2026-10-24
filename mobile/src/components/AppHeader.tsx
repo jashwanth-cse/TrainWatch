@@ -1,7 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, spacing } from '../theme/tokens';
+import { spacing } from '../theme/tokens';
 
 interface AppHeaderProps {
   variant?: 'light' | 'dark';
@@ -9,28 +9,20 @@ interface AppHeaderProps {
 
 /**
  * Top Adaptive App Header
- * Displays the centered colorful TrainWatch wordmark blending seamlessly with the blue theme.
- * Clean, minimal, adaptive to notch/status-bar cutouts without clutter.
+ * Displays the centered colorful TrainWatch wordmark blending seamlessly with the blue atmosphere.
  */
-export const AppHeader: React.FC<AppHeaderProps> = ({ variant = 'light' }) => {
+export const AppHeader: React.FC<AppHeaderProps> = () => {
   const insets = useSafeAreaInsets();
-  const isLight = variant === 'light';
 
   return (
-    <View
-      style={[
-        styles.container,
-        { paddingTop: Math.max(insets.top, 12) },
-      ]}
-    >
-      <View style={styles.centerBrand}>
-        <Text style={[styles.titleTrain, isLight ? styles.textWhite : styles.textDark]}>
-          Train
-        </Text>
-        <Text style={[styles.titleWatch, isLight ? styles.textCyan : styles.textPrimary]}>
-          Watch
-        </Text>
-      </View>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 10) }]}>
+      <Image
+        source={require('../../assets/brand-wordmark.png')}
+        style={styles.wordmarkImage}
+        resizeMode="contain"
+        accessibilityRole="image"
+        accessibilityLabel="TrainWatch"
+      />
     </View>
   );
 };
@@ -42,37 +34,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xs,
   },
-  centerBrand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  titleTrain: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  titleWatch: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  textWhite: {
-    color: '#FFFFFF',
-    textShadowColor: 'rgba(0, 0, 0, 0.15)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  textDark: {
-    color: colors.textPrimary,
-  },
-  textCyan: {
-    color: '#BAE6FD',
-    textShadowColor: 'rgba(30, 58, 138, 0.25)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  textPrimary: {
-    color: colors.primary,
+  wordmarkImage: {
+    width: 220,
+    height: 42.5,
   },
 });

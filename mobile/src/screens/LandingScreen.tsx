@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -12,21 +12,26 @@ export const LandingScreen: React.FC = () => {
 
   return (
     <LinearGradient
-      colors={['#1E3A8A', '#2563EB', '#3B82F6']}
+      colors={['#0F172A', '#1E3A8A', '#2563EB']}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
-      style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + 20 }]}
+      style={[styles.container, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 24 }]}
     >
       <StatusBar style="light" />
 
-      <View style={styles.contentCenter}>
-        {/* Actual Colorful Logo Text Alone */}
-        <View style={styles.brandRow}>
-          <Text style={styles.brandTrain}>Train</Text>
-          <Text style={styles.brandWatch}>Watch</Text>
+      {/* Top Center: Unique Logo Wordmark design blending with the blue */}
+      <View style={styles.topCenterContainer}>
+        <View style={styles.wordmarkContainer}>
+          <Image
+            source={require('../../assets/brand-wordmark.png')}
+            style={styles.brandWordmark}
+            resizeMode="contain"
+            accessibilityRole="image"
+            accessibilityLabel="TrainWatch Logo"
+          />
         </View>
 
-        {/* Tagline matching the exclusive on-the-go styling */}
+        {/* Tagline aligned for a vibeful matching of the word on-the-go */}
         <View style={styles.captionContainer}>
           <Text style={styles.captionMain}>Track your seats</Text>
           <View style={styles.onTheGoRow}>
@@ -38,6 +43,8 @@ export const LandingScreen: React.FC = () => {
         </View>
       </View>
 
+      <View style={styles.middleSpace} />
+
       {/* Primary CTA Button */}
       <View style={styles.footer}>
         <TouchableOpacity
@@ -46,7 +53,7 @@ export const LandingScreen: React.FC = () => {
           activeOpacity={0.88}
         >
           <Text style={styles.buttonText}>Search Trains</Text>
-          <ArrowRight size={20} color="#2563EB" strokeWidth={2.4} style={styles.buttonArrow} />
+          <ArrowRight size={20} color="#1E3A8A" strokeWidth={2.4} style={styles.buttonArrow} />
         </TouchableOpacity>
       </View>
     </LinearGradient>
@@ -59,49 +66,43 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 28,
   },
-  contentCenter: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  brandRow: {
-    flexDirection: 'row',
+  topCenterContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginTop: 18,
   },
-  brandTrain: {
-    fontSize: 44,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -1,
-    textShadowColor: 'rgba(0, 0, 0, 0.25)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
+  wordmarkContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    shadowColor: '#38BDF8',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
   },
-  brandWatch: {
-    fontSize: 44,
-    fontWeight: '800',
-    color: '#BAE6FD',
-    letterSpacing: -1,
-    textShadowColor: 'rgba(30, 58, 138, 0.35)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 8,
+  brandWordmark: {
+    width: 280,
+    height: 54,
   },
   captionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 20,
   },
   captionMain: {
-    fontSize: 26,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: -0.5,
+    letterSpacing: -0.6,
     textAlign: 'center',
-    textShadowColor: 'rgba(0, 0, 0, 0.15)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.25)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 6,
   },
   onTheGoRow: {
     flexDirection: 'row',
@@ -111,7 +112,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   captionIn: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '600',
     color: 'rgba(255, 255, 255, 0.92)',
     fontStyle: 'italic',
@@ -123,20 +124,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 4,
     borderRadius: 22,
-    shadowColor: '#1E3A8A',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
   onTheGoText: {
-    fontSize: 19,
+    fontSize: 20,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
+  middleSpace: {
+    flex: 1,
+  },
   footer: {
     width: '100%',
-    paddingBottom: 24,
+    paddingBottom: 16,
   },
   button: {
     backgroundColor: '#FFFFFF',
@@ -152,7 +156,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   buttonText: {
-    color: '#2563EB',
+    color: '#1E3A8A',
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.3,
