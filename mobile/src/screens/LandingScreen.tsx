@@ -53,7 +53,6 @@ export const LandingScreen: React.FC = () => {
         <View style={styles.captionContainer}>
           <Text style={styles.captionMain}>Track your seats</Text>
           <View style={styles.onTheGoRow}>
-            <Text style={styles.captionIn}>in</Text>
             <View style={styles.onTheGoBadge}>
               <Text style={styles.onTheGoText}>on-the-go</Text>
             </View>
@@ -127,31 +126,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,
-    gap: 8,
-  },
-  captionIn: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.92)',
-    fontStyle: 'italic',
   },
   onTheGoBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     borderWidth: 1.2,
-    borderColor: 'rgba(255, 255, 255, 0.55)',
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    borderColor: 'rgba(4, 245, 174, 0.5)',
+    paddingHorizontal: 18,
+    paddingVertical: 5,
     borderRadius: 22,
-    shadowColor: '#000000',
+    shadowColor: '#04F5AE',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 3,
   },
   onTheGoText: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
+    color: '#04F5AE',
+    letterSpacing: 0.6,
+    textShadowColor: 'rgba(4, 245, 174, 0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
   middleSpace: {
     flex: 1,

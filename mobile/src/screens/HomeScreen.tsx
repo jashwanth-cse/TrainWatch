@@ -175,7 +175,6 @@ export const HomeScreen: React.FC = () => {
           <View style={styles.captionContainer}>
             <Text style={styles.captionMain}>Track your seats</Text>
             <View style={styles.onTheGoRow}>
-              <Text style={styles.captionIn}>in</Text>
               <View style={styles.onTheGoBadge}>
                 <Text style={styles.onTheGoText}>on-the-go</Text>
               </View>
@@ -353,12 +352,12 @@ const styles = StyleSheet.create({
   },
   mainLayout: {
     flex: 1,
-    justifyContent: 'space-between',
     paddingHorizontal: 20,
   },
   topSection: {
     alignItems: 'center',
     paddingTop: 4,
+    marginBottom: 14,
   },
   captionContainer: {
     alignItems: 'center',
@@ -366,7 +365,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   captionMain: {
-    fontSize: 27,
+    fontSize: 28,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.6,
@@ -380,35 +379,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 6,
-    gap: 8,
-  },
-  captionIn: {
-    fontSize: 23,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.92)',
-    fontStyle: 'italic',
   },
   onTheGoBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     borderWidth: 1.2,
-    borderColor: 'rgba(255, 255, 255, 0.55)',
-    paddingHorizontal: 14,
-    paddingVertical: 3,
+    borderColor: 'rgba(4, 245, 174, 0.5)',
+    paddingHorizontal: 16,
+    paddingVertical: 4,
     borderRadius: 20,
-    shadowColor: '#1E3A8A',
+    shadowColor: '#04F5AE',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 3,
   },
   onTheGoText: {
     fontSize: 19,
     fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.4,
+    color: '#04F5AE',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(4, 245, 174, 0.45)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
   formSection: {
     backgroundColor: 'transparent',
-    paddingBottom: 4,
+    marginTop: 2,
   },
   stationBlock: {
     paddingVertical: 6,
