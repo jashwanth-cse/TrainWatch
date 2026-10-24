@@ -24,6 +24,7 @@ class FakeSnapshot:
     """In-memory snapshot matching the adapter's narrow protocol."""
 
     def __init__(self, data: dict[str, object] | None) -> None:
+        """Represent a stored document or an absent snapshot."""
         self.exists = data is not None
         self._data = data
 
@@ -36,6 +37,7 @@ class FakeDocument:
     """In-memory document with child-collection support."""
 
     def __init__(self, store: dict[str, dict[str, object]], path: str) -> None:
+        """Bind a document path to the shared in-memory store."""
         self._store = store
         self._path = path
 
@@ -62,6 +64,7 @@ class FakeCollection:
     """In-memory collection used to validate generated paths."""
 
     def __init__(self, store: dict[str, dict[str, object]], path: str) -> None:
+        """Bind a collection path to the shared in-memory store."""
         self._store = store
         self._path = path
 
@@ -74,6 +77,7 @@ class FakeClient:
     """Credential-free Firestore-shaped client."""
 
     def __init__(self) -> None:
+        """Create an empty store for isolated repository tests."""
         self.store: dict[str, dict[str, object]] = {}
 
     def collection(self, collection_path: str) -> FakeCollection:
@@ -154,7 +158,19 @@ async def test_delete_is_idempotent_and_owner_scoped() -> None:
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "field,value",
-    [("owner_id", "bad/user"), ("watch_id", " "), ("owner_id", "__reserved__")],
+    [
+        ("owner_id", "bad/user"),
+        ("watch_id", " "),
+        ("owner_id", "__reserved__"),
+        ("owner_id", "."),
+        ("owner_id", ".."),
+        ("watch_id", "."),
+        ("watch_id", ".."),
+        ("owner_id", " . "),
+        ("owner_id", " .. "),
+        ("watch_id", " . "),
+        ("watch_id", " .. "),
+    ],
 )
 async def test_unsafe_document_ids_are_rejected(field: str, value: str) -> None:
     """Reject identifiers that could alter the intended document path."""
@@ -177,6 +193,11 @@ async def test_overlong_document_id_is_rejected() -> None:
     ("mutation"),
     [
         {"schemaVersion": 2},
+        {"schemaVersion": True},
+        {"schemaVersion": False},
+        {"schemaVersion": 1.0},
+        {"schemaVersion": "1"},
+        {"schemaVersion": None},
         {"query": "not-a-map"},
         {"condition": "not-a-map"},
         {
@@ -210,22 +231,27 @@ async def test_existing_snapshot_without_fields_is_malformed() -> None:
 
     class EmptySnapshot(FakeSnapshot):
         def __init__(self) -> None:
+            """Simulate an existing document whose fields are unavailable."""
             super().__init__(None)
             self.exists = True
 
     class EmptyDocument(FakeDocument):
         def collection(self, collection_path: str) -> FakeCollection:
+            """Keep child paths attached to the contradictory snapshot fake."""
             return EmptyCollection(self._store, f"{self._path}/{collection_path}")
 
         async def get(self) -> FakeSnapshot:
+            """Return an existing snapshot without document fields."""
             return EmptySnapshot()
 
     class EmptyCollection(FakeCollection):
         def document(self, document_id: str) -> FakeDocument:
+            """Select a document that returns the contradictory snapshot."""
             return EmptyDocument(self._store, f"{self._path}/{document_id}")
 
     class EmptyClient(FakeClient):
         def collection(self, collection_path: str) -> FakeCollection:
+            """Select a collection of contradictory snapshot documents."""
             return EmptyCollection(self.store, collection_path)
 
     repository = FirestoreWatchRepository(EmptyClient())
@@ -259,6 +285,7 @@ def test_production_client_forwards_explicit_configuration(
     captured: dict[str, str] = {}
 
     def fake_async_client(*, project: str, database: str) -> FirestoreClient:
+        """Capture client configuration without discovering credentials."""
         captured.update(project=project, database=database)
         return cast(FirestoreClient, FakeClient())
 

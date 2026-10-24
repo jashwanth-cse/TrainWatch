@@ -68,6 +68,7 @@ def _document_id(value: str, *, field: str) -> str:
     normalized = value.strip()
     if (
         not normalized
+        or normalized in {".", ".."}
         or "/" in normalized
         or len(normalized) > _MAX_DOCUMENT_ID_LENGTH
         or _RESERVED_DOCUMENT_ID.fullmatch(normalized)
@@ -140,7 +141,8 @@ def _timestamp(value: object, *, field: str) -> datetime:
 
 def _decode(data: Mapping[str, object], *, watch_id: str, owner_id: str) -> Watch:
     """Decode and revalidate a versioned Firestore watch document."""
-    if data.get("schemaVersion") != _SCHEMA_VERSION:
+    version = data.get("schemaVersion")
+    if isinstance(version, bool) or not isinstance(version, int) or version != _SCHEMA_VERSION:
         raise ValueError("unsupported watch schema version")
     query = _mapping(data.get("query"), field="query")
     condition = _mapping(data.get("condition"), field="condition")
@@ -173,9 +175,11 @@ class FirestoreWatchRepository:
     """Store watches below their verified owner's user document."""
 
     def __init__(self, client: FirestoreClient) -> None:
+        """Use the injected client without initiating credential discovery."""
         self._client = client
 
     def _reference(self, *, watch_id: str, owner_id: str) -> DocumentReference:
+        """Validate both identifiers before selecting an owned reminder path."""
         owner = _document_id(owner_id, field="owner_id")
         watch = _document_id(watch_id, field="watch_id")
         return (
