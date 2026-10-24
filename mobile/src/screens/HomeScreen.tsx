@@ -156,7 +156,13 @@ export const HomeScreen: React.FC = () => {
         <AppHeader variant="light" />
 
         <View style={styles.captionContainer}>
-          <Text style={styles.appCaption}>Track your seats{'\n'}in one-go</Text>
+          <Text style={styles.captionMain}>Track your seats</Text>
+          <View style={styles.onTheGoRow}>
+            <Text style={styles.captionIn}>in</Text>
+            <View style={styles.onTheGoBadge}>
+              <Text style={styles.onTheGoText}>on-the-go</Text>
+            </View>
+          </View>
         </View>
       </LinearGradient>
 
@@ -338,15 +344,51 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   captionContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: spacing.md,
     marginBottom: spacing.xs,
   },
-  appCaption: {
-    fontSize: 34,
-    fontWeight: '700',
-    lineHeight: 40,
+  captionMain: {
+    fontSize: 30,
+    fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.6,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.12)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  onTheGoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+    gap: 8,
+  },
+  captionIn: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.92)',
+    fontStyle: 'italic',
+  },
+  onTheGoBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.24)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 255, 255, 0.55)',
+    paddingHorizontal: 14,
+    paddingVertical: 3,
+    borderRadius: 20,
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+  onTheGoText: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
   },
   scrollContent: {
     paddingTop: spacing.xs,

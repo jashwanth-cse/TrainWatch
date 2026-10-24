@@ -1,18 +1,16 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing } from '../theme/tokens';
-import { Zap } from 'lucide-react-native';
 
 interface AppHeaderProps {
   variant?: 'light' | 'dark';
 }
 
 /**
- * Top App Bar with TrainWatch Branding
- * Follows Google Play Store Best UI/UX Award design standards:
- * - Top-left: High-resolution brand emblem + dual-tone wordmark ("TrainWatch") + live sync indicator.
- * - Dynamic status bar safe-area padding for notch/cutout compatibility.
+ * Top Adaptive App Header
+ * Displays the centered colorful TrainWatch wordmark blending seamlessly with the blue theme.
+ * Clean, minimal, adaptive to notch/status-bar cutouts without clutter.
  */
 export const AppHeader: React.FC<AppHeaderProps> = ({ variant = 'light' }) => {
   const insets = useSafeAreaInsets();
@@ -22,43 +20,15 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ variant = 'light' }) => {
     <View
       style={[
         styles.container,
-        { paddingTop: Math.max(insets.top, 14) },
-        isLight ? styles.containerLight : styles.containerDark,
+        { paddingTop: Math.max(insets.top, 12) },
       ]}
     >
-      {/* Top-Left Brand Cluster */}
-      <View style={styles.brandCluster}>
-        <View style={[styles.emblemBadge, isLight ? styles.emblemBadgeLight : styles.emblemBadgeDark]}>
-          <Image
-            source={require('../../assets/brand-emblem.png')}
-            style={styles.emblemImage}
-            resizeMode="contain"
-          />
-        </View>
-
-        <View style={styles.titleColumn}>
-          <View style={styles.wordmarkRow}>
-            <Text style={[styles.titleTrain, isLight ? styles.textWhite : styles.textDark]}>
-              Train
-            </Text>
-            <Text style={[styles.titleWatch, isLight ? styles.textCyan : styles.textPrimary]}>
-              Watch
-            </Text>
-          </View>
-          <View style={styles.liveBadge}>
-            <View style={styles.pulseDot} />
-            <Text style={[styles.liveText, isLight ? styles.liveTextLight : styles.liveTextDark]}>
-              LIVE IRCTC TRACKER
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Top-Right Status Pill */}
-      <View style={[styles.statusPill, isLight ? styles.statusPillLight : styles.statusPillDark]}>
-        <Zap size={11} color={isLight ? '#FFFFFF' : colors.primary} strokeWidth={2.6} style={{ marginRight: 4 }} />
-        <Text style={[styles.statusPillText, isLight ? styles.textWhite : styles.textPrimary]}>
-          Direct Sync
+      <View style={styles.centerBrand}>
+        <Text style={[styles.titleTrain, isLight ? styles.textWhite : styles.textDark]}>
+          Train
+        </Text>
+        <Text style={[styles.titleWatch, isLight ? styles.textCyan : styles.textPrimary]}>
+          Watch
         </Text>
       </View>
     </View>
@@ -67,116 +37,42 @@ export const AppHeader: React.FC<AppHeaderProps> = ({ variant = 'light' }) => {
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    paddingBottom: spacing.xs,
   },
-  containerLight: {
-    backgroundColor: 'transparent',
-  },
-  containerDark: {
-    backgroundColor: colors.cardBackground,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderSubtle,
-  },
-  brandCluster: {
+  centerBrand: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  emblemBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  emblemBadgeLight: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000000',
-  },
-  emblemBadgeDark: {
-    backgroundColor: colors.surfaceSubtle,
-    shadowColor: colors.primary,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-  },
-  emblemImage: {
-    width: 26,
-    height: 26,
-  },
-  titleColumn: {
-    justifyContent: 'center',
-  },
-  wordmarkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   titleTrain: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '800',
-    letterSpacing: -0.4,
+    letterSpacing: -0.5,
   },
   titleWatch: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '800',
-    letterSpacing: -0.4,
+    letterSpacing: -0.5,
   },
   textWhite: {
     color: '#FFFFFF',
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   textDark: {
     color: colors.textPrimary,
   },
   textCyan: {
     color: '#BAE6FD',
+    textShadowColor: 'rgba(30, 58, 138, 0.25)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   textPrimary: {
     color: colors.primary,
-  },
-  liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 1,
-  },
-  pulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-    marginRight: 5,
-  },
-  liveText: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  liveTextLight: {
-    color: 'rgba(255, 255, 255, 0.85)',
-  },
-  liveTextDark: {
-    color: colors.textSecondary,
-  },
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-  },
-  statusPillLight: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  statusPillDark: {
-    backgroundColor: colors.primaryLight,
-  },
-  statusPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
 });

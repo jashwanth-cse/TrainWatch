@@ -16,7 +16,7 @@ import {
   searchStations,
   POPULAR_STATIONS,
 } from '../services/stationService';
-import { Search, X, TrainFront } from 'lucide-react-native';
+import { Search, X, TrainFront, ChevronRight } from 'lucide-react-native';
 
 interface StationSearchModalProps {
   visible: boolean;
@@ -154,7 +154,7 @@ export const StationSearchModal: React.FC<StationSearchModalProps> = ({
                   <Text style={styles.itemState}>{item.state}</Text>
                 ) : null}
               </View>
-              <Text style={styles.selectArrow}>›</Text>
+              <ChevronRight size={18} color={colors.textMuted} strokeWidth={2} />
             </TouchableOpacity>
           )}
         />
