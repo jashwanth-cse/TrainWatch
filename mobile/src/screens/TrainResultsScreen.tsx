@@ -27,7 +27,6 @@ import {
   IndianRupee,
   AlertCircle,
   TrainFront,
-  Bell,
   Utensils,
 } from 'lucide-react-native';
 
@@ -265,9 +264,6 @@ export const TrainResultsScreen: React.FC = () => {
             <TrainCard
               train={item}
               getStatusBadgeStyle={getStatusBadgeStyle}
-              onWatchSeat={(trainNo, cls, fare, avail) => {
-                // Navigate or trigger watch creation modal
-              }}
             />
           )}
         />
@@ -279,10 +275,9 @@ export const TrainResultsScreen: React.FC = () => {
 interface TrainCardProps {
   train: TrainItem;
   getStatusBadgeStyle: (avail: string) => { bg: string; text: string; dot: string };
-  onWatchSeat: (trainNo: string, cls: string, fare: number, avail: string) => void;
 }
 
-const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onWatchSeat }) => {
+const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle }) => {
   return (
     <View style={styles.card}>
       {/* Train Identification */}
@@ -335,16 +330,11 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onWat
       <View style={styles.classesRow}>
         {train.classes.map((cls: TravelClassInfo) => {
           const badge = getStatusBadgeStyle(cls.availability);
-          const isAvailable =
-            cls.availability.toUpperCase().includes('AVL') ||
-            cls.availability.toUpperCase().includes('AVAILABLE');
 
           return (
-            <TouchableOpacity
+            <View
               key={cls.travel_class}
               style={styles.classBox}
-              activeOpacity={0.8}
-              onPress={() => onWatchSeat(train.train_number, cls.travel_class, cls.fare, cls.availability)}
             >
               <View style={styles.classTopRow}>
                 <Text style={styles.classTitle}>{cls.travel_class}</Text>
@@ -357,14 +347,7 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onWat
                   {cls.availability}
                 </Text>
               </View>
-
-              {!isAvailable && (
-                <View style={styles.watchHintRow}>
-                  <Bell size={11} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 3 }} />
-                  <Text style={styles.watchHintText}>Watch</Text>
-                </View>
-              )}
-            </TouchableOpacity>
+            </View>
           );
         })}
       </View>
@@ -630,21 +613,6 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 10,
-    fontWeight: '700',
-  },
-  watchHintRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 4,
-    gap: 3,
-  },
-  watchHintIcon: {
-    fontSize: 9,
-  },
-  watchHintText: {
-    fontSize: 9,
-    color: colors.primary,
     fontWeight: '700',
   },
   centerContainer: {
