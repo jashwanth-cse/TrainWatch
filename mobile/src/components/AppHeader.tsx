@@ -37,7 +37,7 @@ const styles = StyleSheet.create({
     paddingBottom: 2,
   },
   brandLogo: {
-    width: 130,
-    height: 130,
+    width: 205,
+    height: 205,
   },
 });
