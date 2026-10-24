@@ -46,5 +46,12 @@ to sign-in. This repair does not implement the backend API client.
 - `node --test tests/auth.test.cjs`
 - `npx expo export --platform web` (requires no live credentials)
 
+### Android Release Builds
+
+For release APK compilation (`gradlew app:assembleRelease`), R8 code shrinking and optimization requires expanded JVM Metaspace in `android/gradle.properties`:
+```properties
+org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1536m -XX:+HeapDumpOnOutOfMemoryError
+```
+
 Real Google sign-in, restart, cancellation, and sign-out still require verification
 with approved project configuration on each target device/browser.
