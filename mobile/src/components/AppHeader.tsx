@@ -9,13 +9,21 @@ interface AppHeaderProps {
 
 /**
  * Top Adaptive App Header
- * Displays the centered colorful TrainWatch wordmark blending seamlessly with the blue atmosphere.
+ * Displays the transparent brand icon (somewhat smaller-to-middle size) centered above
+ * the TrainWatch wordmark logo, smoothly blending into the blue atmosphere.
  */
 export const AppHeader: React.FC<AppHeaderProps> = () => {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, 10) }]}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, 8) }]}>
+      <Image
+        source={require('../../assets/android-icon-foreground.png')}
+        style={styles.brandIcon}
+        resizeMode="contain"
+        accessibilityRole="image"
+        accessibilityLabel="TrainWatch Icon"
+      />
       <Image
         source={require('../../assets/brand-wordmark.png')}
         style={styles.wordmarkImage}
@@ -34,8 +42,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xs,
   },
+  brandIcon: {
+    width: 68,
+    height: 68,
+    marginBottom: -4,
+  },
   wordmarkImage: {
-    width: 220,
-    height: 42.5,
+    width: 210,
+    height: 40.5,
   },
 });

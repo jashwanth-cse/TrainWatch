@@ -39,6 +39,13 @@ export const LandingScreen: React.FC = () => {
 
       {/* Top Center: Unique Logo Wordmark design blending with the blue */}
       <View style={styles.topCenterContainer}>
+        <Image
+          source={require('../../assets/android-icon-foreground.png')}
+          style={styles.brandIcon}
+          resizeMode="contain"
+          accessibilityRole="image"
+          accessibilityLabel="TrainWatch Icon"
+        />
         <View style={styles.wordmarkContainer}>
           <Image
             source={require('../../assets/brand-wordmark.png')}
@@ -88,6 +95,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 18,
   },
+  brandIcon: {
+    width: 72,
+    height: 72,
+    marginBottom: -4,
+  },
   wordmarkContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -109,7 +121,7 @@ const styles = StyleSheet.create({
   captionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
+    marginTop: 18,
   },
   captionMain: {
     fontSize: 28,
@@ -128,26 +140,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   onTheGoBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    backgroundColor: 'rgba(255, 255, 255, 0.45)',
     borderWidth: 1.2,
-    borderColor: 'rgba(4, 245, 174, 0.5)',
+    borderColor: 'rgba(255, 255, 255, 0.75)',
     paddingHorizontal: 18,
     paddingVertical: 5,
     borderRadius: 22,
-    shadowColor: '#04F5AE',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 2,
   },
   onTheGoText: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#04F5AE',
-    letterSpacing: 0.6,
-    textShadowColor: 'rgba(4, 245, 174, 0.45)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
+    color: '#0A1E4A',
+    letterSpacing: 0.5,
   },
   middleSpace: {
     flex: 1,
