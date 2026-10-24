@@ -41,7 +41,7 @@ all direct client reads and writes. An Admin/ADC client bypasses these rules, so
 backend ownership checks remain mandatory.
 
 `firestore.indexes.json` contains no composite indexes because direct document
-reads and writes require none. Add an index only alongside the concrete query
+reads, writes, and deletes require none. Add an index only alongside the concrete query
 that needs it in a later approved phase.
 
 ## Credential and validation status
@@ -51,6 +51,8 @@ reference it through `GOOGLE_APPLICATION_CREDENTIALS`; deployed environments
 should prefer workload identity/Application Default Credentials or Secret
 Manager-backed configuration.
 
-Phase 4 automated tests use an in-memory fake and make no database calls. A live
-integration test has not been run and must not be run until the user privately
-configures credentials and explicitly approves access to the intended database.
+Phase 4 automated tests use an in-memory fake and make no database calls. On 24
+October 2026, an explicitly approved smoke check created, read, updated, and
+deleted one randomly named document beneath `users/trainwatch-connection-test` in
+project `trainwatch`, database `(default)`. Cleanup succeeded. The check did not
+list or inspect existing data, and it did not validate deployed client rules.

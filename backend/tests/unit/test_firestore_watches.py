@@ -52,6 +52,11 @@ class FakeDocument:
         self._store[self._path] = dict(document_data)
         return object()
 
+    async def delete(self) -> object:
+        """Delete one stored document without I/O."""
+        self._store.pop(self._path, None)
+        return object()
+
 
 class FakeCollection:
     """In-memory collection used to validate generated paths."""
@@ -132,7 +137,25 @@ async def test_owner_path_prevents_cross_user_reads() -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("field,value", [("owner_id", "bad/user"), ("watch_id", " ")])
+async def test_delete_is_idempotent_and_owner_scoped() -> None:
+    """Delete only the selected owner's document and tolerate a missing document."""
+    client = FakeClient()
+    repository = FirestoreWatchRepository(client)
+    await repository.save(watch(owner_id="user-a"))
+    await repository.save(watch(owner_id="user-b"))
+
+    await repository.delete(watch_id="watch-1", owner_id="user-a")
+    await repository.delete(watch_id="watch-1", owner_id="user-a")
+
+    assert await repository.get(watch_id="watch-1", owner_id="user-a") is None
+    assert await repository.get(watch_id="watch-1", owner_id="user-b") == watch(owner_id="user-b")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "field,value",
+    [("owner_id", "bad/user"), ("watch_id", " "), ("owner_id", "__reserved__")],
+)
 async def test_unsafe_document_ids_are_rejected(field: str, value: str) -> None:
     """Reject identifiers that could alter the intended document path."""
     repository = FirestoreWatchRepository(FakeClient())

@@ -19,7 +19,7 @@ The complete, authoritative plan is [`../TrainWatch_Full_Implementation_Plan.md`
 | 1 | Upstream R&D and API contract | Complete; merged in PR #2 |
 | 2 | Domain model | Complete; merged in PR #3 |
 | 3 | FastAPI skeleton and auth boundary | Complete; merged in PR #4 |
-| 4 | Firestore repository boundary | In progress; mocked validation complete, live integration deferred |
+| 4 | Firestore repository boundary | Implemented; mocked suite and disposable live CRUD smoke check pass |
 | 5-15 | Adapters, features, hardening, deployment, mobile, release | Not approved / not started |
 
 ## Phase 0 acceptance criteria
@@ -56,4 +56,4 @@ Phase 0 explicitly excludes train API contracts/integration, Firestore, authenti
 - Client construction requires an explicit live-access opt-in; imports and default tests cannot discover credentials or access Firestore.
 - Firestore rules deny all direct client access because Phase 4 approves only backend-owned persistence.
 - No composite indexes are declared until an implemented query requires one.
-- Unit tests use an in-memory Firestore-shaped fake. Live repository and deployed-rules checks remain pending until credentials are configured privately and access is separately approved.
+- Unit tests use an in-memory Firestore-shaped fake. An explicitly approved disposable live CRUD check passed against project `trainwatch` and database `(default)` on 24 October 2026; deployed-rules verification remains pending.

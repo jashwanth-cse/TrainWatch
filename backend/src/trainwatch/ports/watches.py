@@ -19,3 +19,7 @@ class WatchRepository(Protocol):
     async def save(self, watch: Watch) -> None:
         """Persist a validated watch."""
         ...
+
+    async def delete(self, *, watch_id: str, owner_id: str) -> None:
+        """Delete one owned watch when present."""
+        ...
