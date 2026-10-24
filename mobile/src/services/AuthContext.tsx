@@ -3,9 +3,8 @@ import { AuthState } from '../types/auth';
 import { authService } from '../services/authService';
 
 interface AuthContextValue extends AuthState {
-  signInWithGoogle: () => Promise<void>;
-  continueAsGuest: () => void;
-  signOut: () => Promise<void>;
+  getDeviceId: () => Promise<string>;
+  resetDeviceSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -19,77 +18,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   useEffect(() => {
+    let active = true;
     const bootstrap = async () => {
       try {
         const user = await authService.loadPersistedSession();
-        setState({
-          user,
-          isAuthenticated: !!user,
-          isLoading: false,
-          error: null,
-        });
-      } catch (err: any) {
-        setState({
-          user: null,
-          isAuthenticated: false,
-          isLoading: false,
-          error: err?.message || 'Failed to restore session',
-        });
+        if (active) {
+          setState({
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+            error: null,
+          });
+        }
+      } catch (err: unknown) {
+        if (active) {
+          const message = err instanceof Error ? err.message : 'Failed to initialize session';
+          setState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: message,
+          });
+        }
       }
     };
+
     bootstrap();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const signInWithGoogle = async () => {
-    setState((prev) => ({ ...prev, isLoading: true, error: null }));
-    try {
-      const user = await authService.signInWithGoogle();
-      setState({
-        user,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null,
-      });
-    } catch (err: any) {
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: err?.message || 'Google Sign-In failed',
-      }));
-    }
+  const getDeviceId = async (): Promise<string> => {
+    return authService.getDeviceId();
   };
 
-  const continueAsGuest = () => {
+  const resetDeviceSession = async (): Promise<void> => {
+    await authService.signOut();
+    const user = authService.getCurrentUser();
     setState({
-      user: {
-        uid: 'guest-traveler',
-        displayName: 'Guest Traveler',
-        email: 'guest@trainwatch.app',
-        photoURL: null,
-        createdAt: new Date().toISOString(),
-      },
+      user,
       isAuthenticated: true,
       isLoading: false,
       error: null,
     });
   };
 
-  const signOut = async () => {
-    try {
-      await authService.signOut();
-    } catch {
-      // Allow sign out to reset state even if upstream fails
-    }
-    setState({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-    });
-  };
-
   return (
-    <AuthContext.Provider value={{ ...state, signInWithGoogle, continueAsGuest, signOut }}>
+    <AuthContext.Provider value={{ ...state, getDeviceId, resetDeviceSession }}>
       {children}
     </AuthContext.Provider>
   );

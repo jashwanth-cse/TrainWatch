@@ -24,12 +24,14 @@ export function formatDateToApi(date: Date): string {
   return `${d}-${m}-${y}`;
 }
 
+const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 export function formatDateForDisplay(date: Date): string {
   const d = String(date.getDate()).padStart(2, '0');
-  const m = MONTHS[date.getMonth()];
+  const m = String(date.getMonth() + 1).padStart(2, '0');
   const y = date.getFullYear();
-  const day = DAYS[date.getDay()];
-  return `${d} ${m} ${y}, ${day}`;
+  const day = FULL_DAYS[date.getDay()];
+  return `${d}/${m}/${y} (${day})`;
 }
 
 interface DatePickerModalProps {

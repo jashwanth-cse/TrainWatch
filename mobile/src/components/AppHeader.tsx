@@ -1,47 +1,27 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius, spacing } from '../theme/tokens';
-import { useAuth } from '../services/AuthContext';
+import { colors, spacing } from '../theme/tokens';
 
 interface AppHeaderProps {
   variant?: 'light' | 'dark';
-  onSignOut?: () => void;
-  showProfile?: boolean;
 }
 
 /**
  * Top App Bar with TrainWatch Branding
  * Follows Google Play Store Best UI/UX Award design standards:
  * - Top-left: High-resolution brand emblem + dual-tone wordmark ("TrainWatch") + live sync indicator.
- * - Top-right: User avatar / sign-out action with clean micro-interactions.
  * - Dynamic status bar safe-area padding for notch/cutout compatibility.
  */
-export const AppHeader: React.FC<AppHeaderProps> = ({
-  variant = 'light',
-  onSignOut,
-  showProfile = true,
-}) => {
+export const AppHeader: React.FC<AppHeaderProps> = ({ variant = 'light' }) => {
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuth();
-
   const isLight = variant === 'light';
-  const handleSignOut = onSignOut || signOut;
-
-  const initials = user?.displayName
-    ? user.displayName
-        .split(' ')
-        .map((n) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : 'TW';
 
   return (
     <View
       style={[
         styles.container,
-        { paddingTop: Math.max(insets.top, 12) + spacing.xs },
+        { paddingTop: Math.max(insets.top, 14) },
         isLight ? styles.containerLight : styles.containerDark,
       ]}
     >
@@ -67,36 +47,18 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <View style={styles.liveBadge}>
             <View style={styles.pulseDot} />
             <Text style={[styles.liveText, isLight ? styles.liveTextLight : styles.liveTextDark]}>
-              LIVE TRACKER
+              LIVE IRCTC TRACKER
             </Text>
           </View>
         </View>
       </View>
 
-      {/* Top-Right Profile / Actions */}
-      {showProfile && user && (
-        <View style={styles.rightSection}>
-          <TouchableOpacity
-            accessibilityRole="button"
-            activeOpacity={0.8}
-            onPress={handleSignOut}
-            style={[styles.profilePill, isLight ? styles.profilePillLight : styles.profilePillDark]}
-          >
-            <View style={[styles.avatarCircle, isLight ? styles.avatarLight : styles.avatarDark]}>
-              {user.photoURL ? (
-                <Image source={{ uri: user.photoURL }} style={styles.avatarPhoto} />
-              ) : (
-                <Text style={[styles.avatarText, isLight ? styles.textWhite : styles.textDark]}>
-                  {initials}
-                </Text>
-              )}
-            </View>
-            <Text style={[styles.signOutLabel, isLight ? styles.textWhite : styles.textDark]}>
-              Sign Out
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      {/* Top-Right Status Pill */}
+      <View style={[styles.statusPill, isLight ? styles.statusPillLight : styles.statusPillDark]}>
+        <Text style={[styles.statusPillText, isLight ? styles.textWhite : styles.textPrimary]}>
+          ⚡ Direct Sync
+        </Text>
+      </View>
     </View>
   );
 };
@@ -106,7 +68,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.md + 2,
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
   },
   containerLight: {
@@ -136,8 +98,6 @@ const styles = StyleSheet.create({
   emblemBadgeLight: {
     backgroundColor: '#FFFFFF',
     shadowColor: '#000000',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.4)',
   },
   emblemBadgeDark: {
     backgroundColor: colors.surfaceSubtle,
@@ -146,8 +106,8 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
   },
   emblemImage: {
-    width: 28,
-    height: 28,
+    width: 26,
+    height: 26,
   },
   titleColumn: {
     justifyContent: 'center',
@@ -201,53 +161,20 @@ const styles = StyleSheet.create({
   liveTextDark: {
     color: colors.textSecondary,
   },
-  rightSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  statusPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
   },
-  profilePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-    paddingLeft: 4,
-    paddingRight: 10,
-    borderRadius: radius.full,
+  statusPillLight: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
-  profilePillLight: {
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+  statusPillDark: {
+    backgroundColor: colors.primaryLight,
   },
-  profilePillDark: {
-    backgroundColor: colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-  },
-  avatarCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 6,
-    overflow: 'hidden',
-  },
-  avatarLight: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  avatarDark: {
-    backgroundColor: colors.primary,
-  },
-  avatarPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  avatarText: {
+  statusPillText: {
     fontSize: 11,
     fontWeight: '700',
-  },
-  signOutLabel: {
-    fontSize: 11,
-    fontWeight: '600',
+    letterSpacing: 0.2,
   },
 });

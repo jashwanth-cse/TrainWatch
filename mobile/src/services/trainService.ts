@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 export interface StationSimple {
   code: string;
   name: string;
@@ -73,10 +75,14 @@ export interface LiveAvailabilityResult {
   };
 }
 
-const DEFAULT_BASE_URL = 'https://transport-service-914040989396.asia-south1.run.app';
-
 export function getTransportApiBaseUrl(): string {
-  return process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL || DEFAULT_BASE_URL;
+  if (process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL) {
+    return process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL;
+  }
+  if (Platform.OS === 'android') {
+    return 'http://10.57.32.178:8005';
+  }
+  return 'http://localhost:8005';
 }
 
 /**

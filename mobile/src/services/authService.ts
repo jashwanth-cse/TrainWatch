@@ -1,57 +1,53 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserProfile } from '../types/auth';
-import type { User } from 'firebase/auth';
-import { isFirebaseConfigured } from './firebaseApp';
-import { getFirebaseAuth } from './firebaseClient';
-import { signInGoogleIdentity, signOutGoogleIdentity } from './googleIdentity';
 
-const USER_SESSION_KEY = '@trainwatch_user_session';
+const DEVICE_ID_KEY = '@trainwatch_device_id';
 const FCM_TOKEN_KEY = '@trainwatch_fcm_token';
 
 /**
- * Authentication & Session Management Service
- * Manages Google Sign-In state and local persistence.
+ * Generate a unique, stable device installation identifier
+ */
+function generateDeviceId(): string {
+  const timestamp = Date.now().toString(36);
+  const randomPart = Math.random().toString(36).substring(2, 10);
+  return `tw_${timestamp}_${randomPart}`;
+}
+
+/**
+ * Device-Based Session & Authentication Service
+ * Automatically assigns a persistent device identifier to each installation.
+ * Eliminates login friction while preserving user identity for background watch alerts.
  */
 class AuthService {
   private currentUser: UserProfile | null = null;
 
-  async loadPersistedSession(): Promise<UserProfile | null> {
-    this.currentUser = null;
-    // Old demo profiles are not proof of identity. Never restore them.
-    await AsyncStorage.removeItem(USER_SESSION_KEY);
-    if (!isFirebaseConfigured()) return null;
-    const auth = getFirebaseAuth();
-    await auth.authStateReady();
-    if (!auth.currentUser) return null;
-    await auth.currentUser.getIdToken(true);
-    this.currentUser = await this.toProfile(auth.currentUser);
+  async loadPersistedSession(): Promise<UserProfile> {
+    let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
+    if (!deviceId) {
+      deviceId = generateDeviceId();
+      await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
+    }
+
+    const fcmToken = await this.getFcmToken();
+    this.currentUser = {
+      uid: deviceId,
+      email: null,
+      displayName: 'Traveler',
+      photoURL: null,
+      fcmToken,
+      createdAt: new Date().toISOString(),
+    };
+
     return this.currentUser;
   }
 
-  async signInWithGoogle(): Promise<UserProfile> {
-    const user = await signInGoogleIdentity(getFirebaseAuth());
-    const profile = await this.toProfile(user);
-    this.currentUser = profile;
-    return profile;
-  }
-
-  private async toProfile(user: User): Promise<UserProfile> {
-    if (!user.providerData.some((provider) => provider.providerId === 'google.com')) {
-      throw new Error('A verified Google account is required.');
+  async getDeviceId(): Promise<string> {
+    let deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
+    if (!deviceId) {
+      deviceId = generateDeviceId();
+      await AsyncStorage.setItem(DEVICE_ID_KEY, deviceId);
     }
-    return {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName,
-      photoURL: user.photoURL,
-      fcmToken: await this.getFcmToken(),
-      createdAt: new Date(user.metadata.creationTime!).toISOString(),
-    };
-  }
-
-  async signOut(): Promise<void> {
-    await signOutGoogleIdentity(getFirebaseAuth());
-    this.currentUser = null;
+    return deviceId;
   }
 
   async setFcmToken(token: string): Promise<void> {
@@ -67,6 +63,19 @@ class AuthService {
 
   getCurrentUser(): UserProfile | null {
     return this.currentUser;
+  }
+
+  async signOut(): Promise<void> {
+    // Generate a fresh session identifier
+    const newDeviceId = generateDeviceId();
+    await AsyncStorage.setItem(DEVICE_ID_KEY, newDeviceId);
+    this.currentUser = {
+      uid: newDeviceId,
+      email: null,
+      displayName: 'Traveler',
+      photoURL: null,
+      createdAt: new Date().toISOString(),
+    };
   }
 }
 

@@ -18,8 +18,15 @@ function loadTrainService(mockFetch) {
   });
 
   const exports = {};
+  const modules = {
+    'react-native': { Platform: { OS: 'android' } },
+  };
   vm.runInNewContext(outputText, {
     exports,
+    require(name) {
+      if (name in modules) return modules[name];
+      return require(name);
+    },
     fetch: mockFetch,
     process: { env: { EXPO_PUBLIC_TRANSPORT_SERVICE_URL: 'https://test-transport.run.app' } },
     URL,
