@@ -48,11 +48,12 @@ def availability_query() -> TrainQuery:
 
 
 @pytest.mark.anyio
-async def test_http_client_factory_is_bounded_and_normalizes_base_url() -> None:
+@pytest.mark.parametrize("scheme", ["https", "http"])
+async def test_http_client_factory_is_bounded_and_normalizes_base_url(scheme: str) -> None:
     """Construct an HTTP client without sending a request."""
-    client = create_train_api_http_client(base_url=" https://provider.example.test/ ")
+    client = create_train_api_http_client(base_url=f" {scheme}://provider.example.test/ ")
     try:
-        assert str(client.base_url) == "https://provider.example.test"
+        assert str(client.base_url) == f"{scheme}://provider.example.test"
         assert client.follow_redirects is False
     finally:
         await client.aclose()
@@ -62,6 +63,15 @@ def test_http_client_factory_rejects_non_http_url() -> None:
     """Reject unusable endpoint configuration before network access."""
     with pytest.raises(ValueError, match="HTTP"):
         create_train_api_http_client(base_url="provider.example.test")
+
+
+@pytest.mark.parametrize("scheme", ["https", "http"])
+@pytest.mark.parametrize("userinfo", ["user:synthetic", "user", ":synthetic", "", "u%40ser:p%40ss"])
+def test_http_client_factory_rejects_url_credentials(scheme: str, userinfo: str) -> None:
+    """Reject URL userinfo without including it in the public error."""
+    with pytest.raises(ValueError) as captured:
+        create_train_api_http_client(base_url=f" {scheme}://{userinfo}@provider.example.test/ ")
+    assert str(captured.value) == "TRAIN_API_BASE_URL must not contain credentials"
 
 
 @pytest.mark.parametrize(
@@ -351,24 +361,36 @@ async def _no_sleep() -> None:
     [
         (httpx.ReadTimeout("timeout"), TrainApiFailure.TIMEOUT),
         (httpx.ConnectError("offline"), TrainApiFailure.TRANSPORT),
+        (httpx.DecodingError("sensitive provider detail"), TrainApiFailure.TRANSPORT),
+        (httpx.TooManyRedirects("sensitive provider detail"), TrainApiFailure.TRANSPORT),
     ],
 )
 async def test_transport_failures_are_bounded(
-    exception: httpx.TransportError, expected: TrainApiFailure
+    exception: httpx.RequestError, expected: TrainApiFailure
 ) -> None:
     """Retry transport failures without leaking exception messages."""
 
+    calls = 0
+    delays: list[float] = []
+
+    async def sleep(delay: float) -> None:
+        delays.append(delay)
+
     def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
         exception.request = request
         raise exception
 
     async with http_client(httpx.MockTransport(handler)) as http:
         with pytest.raises(TrainApiError) as captured:
             await DreamDestinyClient(
-                http, max_attempts=1, sleep=lambda delay: _no_sleep()
+                http, max_attempts=3, sleep=sleep, jitter=lambda: 0.0
             ).search_stations("test")
     assert captured.value.failure is expected
-    assert "offline" not in str(captured.value)
+    assert str(captured.value) == expected.value
+    assert calls == 3
+    assert delays == [0.1, 0.2]
 
 
 @pytest.mark.anyio
@@ -447,15 +469,44 @@ async def test_availability_failures_never_become_snapshots(
 
 
 @pytest.mark.anyio
-async def test_availability_transport_failure_maps_to_upstream() -> None:
+@pytest.mark.parametrize(
+    "error_type", [httpx.ConnectError, httpx.DecodingError, httpx.TooManyRedirects]
+)
+async def test_availability_transport_failure_maps_to_upstream(
+    error_type: type[httpx.RequestError],
+) -> None:
     """Hide connection exceptions behind the domain failure category."""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("offline", request=request)
+        raise error_type("sensitive provider detail", request=request)
 
     async with http_client(httpx.MockTransport(handler)) as http:
         observation = await DreamDestinyClient(http, max_attempts=1).fetch(availability_query())
     assert observation.failure is ProviderFailure.UPSTREAM
+    assert observation.snapshot is None
+
+
+@pytest.mark.anyio
+async def test_corrupt_encoded_availability_response_fails_closed() -> None:
+    """Handle an actual HTTPX decoding failure before response mapping."""
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            headers={"Content-Encoding": "gzip"},
+            stream=httpx.ByteStream(b"invalid gzip provider body"),
+        )
+
+    async with http_client(httpx.MockTransport(handler)) as http:
+        observation = await DreamDestinyClient(
+            http, max_attempts=2, sleep=lambda delay: _no_sleep()
+        ).fetch(availability_query())
+    assert calls == 2
+    assert observation.failure is ProviderFailure.UPSTREAM
+    assert observation.snapshot is None
 
 
 @pytest.mark.anyio
