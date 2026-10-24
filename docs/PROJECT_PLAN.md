@@ -2,7 +2,7 @@
 
 ## Source of truth
 
-The complete, authoritative plan is [`../TrainWatch_Project_RnD_and_Implementation_Plan.md`](../TrainWatch_Project_RnD_and_Implementation_Plan.md). This file is a progress index, not a replacement for it. If the two disagree, the authoritative plan wins.
+The complete, authoritative plan is [`../TrainWatch_Full_Implementation_Plan.md`](../TrainWatch_Full_Implementation_Plan.md). This file is a progress index, not a replacement for it. If the two disagree, the authoritative plan wins.
 
 ## Delivery rules
 
@@ -18,8 +18,9 @@ The complete, authoritative plan is [`../TrainWatch_Project_RnD_and_Implementati
 | 0 | Safe repository baseline | Complete; merged in PR #1 |
 | 1 | Upstream R&D and API contract | Complete; merged in PR #2 |
 | 2 | Domain model | Complete; merged in PR #3 |
-| 3 | FastAPI skeleton and auth boundary | Complete locally; awaiting phase-gate review |
-| 4-15 | Adapters, features, hardening, deployment, mobile, release | Not approved / not started |
+| 3 | FastAPI skeleton and auth boundary | Complete; merged in PR #4 |
+| 4 | Firestore repository boundary | In progress; mocked validation complete, live integration deferred |
+| 5-15 | Adapters, features, hardening, deployment, mobile, release | Not approved / not started |
 
 ## Phase 0 acceptance criteria
 
@@ -47,3 +48,12 @@ Phase 0 explicitly excludes train API contracts/integration, Firestore, authenti
 - Missing, malformed, and invalid bearer tokens return the same sanitized `401` response.
 - Cross-user resource access uses a non-enumerating `404` policy.
 - The default verifier fails closed without Firebase credentials, SDK initialization, or network access.
+
+## Phase 4 acceptance criteria
+
+- The Firestore adapter stores watches only at owner-scoped reminder paths and reconstructs them through the validated Phase 2 domain model.
+- Unsafe path segments and malformed or unsupported stored schemas fail closed.
+- Client construction requires an explicit live-access opt-in; imports and default tests cannot discover credentials or access Firestore.
+- Firestore rules deny all direct client access because Phase 4 approves only backend-owned persistence.
+- No composite indexes are declared until an implemented query requires one.
+- Unit tests use an in-memory Firestore-shaped fake. Live repository and deployed-rules checks remain pending until credentials are configured privately and access is separately approved.

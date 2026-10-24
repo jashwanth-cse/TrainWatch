@@ -1,15 +1,15 @@
 # TrainWatch
 
-TrainWatch is a planned Indian train-seat-availability monitoring application. The repository has completed the local work for **Phase 3: FastAPI Skeleton and Authentication Boundary**. It contains a credential-free versioned API, injectable token verification, ownership policy, sanitized errors, request IDs, offline provider-contract fixtures, and pure domain rules. Real Firebase verification, provider adapters, persistence, queues, notifications, cloud configuration, and the mobile client are intentionally not implemented.
+TrainWatch is a planned Indian train-seat-availability monitoring application. The repository is implementing **Phase 4: Firestore Repositories** after completing Phases 0-3. It contains a credential-free versioned API, injectable token verification, ownership policy, pure domain rules, and an owner-scoped Firestore adapter. Real Firebase verification, live database validation, provider adapters, queues, notifications, cloud deployment, and the mobile client are intentionally not implemented.
 
-The authoritative implementation plan is [`TrainWatch_Project_RnD_and_Implementation_Plan.md`](TrainWatch_Project_RnD_and_Implementation_Plan.md). Each phase requires an explicit approval gate.
+The authoritative implementation plan is [`TrainWatch_Full_Implementation_Plan.md`](TrainWatch_Full_Implementation_Plan.md). Each phase requires an explicit approval gate.
 
 ## Prerequisites
 
 - Python 3.13 (the supported project baseline)
 - uv 0.13.5
 
-No database, cloud account, credentials, Firebase configuration, or live train API is required.
+No database, cloud account, credentials, Firebase configuration, or live train API is required for the default application or test suite.
 
 ## Local setup
 
@@ -20,6 +20,8 @@ uv sync --extra dev --locked
 ```
 
 Do not create a populated `.env` in the repository. `.env.example` documents placeholders only. Configuration is read from the process environment and defaults to safe local values.
+
+The Phase 4 repository accepts an injected Firestore client. Its production factory refuses to discover Application Default Credentials unless the caller explicitly opts in. Keep service-account files outside this repository.
 
 ## Run locally
 
@@ -52,4 +54,4 @@ CI runs the same gates. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`do
 
 The verified external-service boundary is documented in [`docs/API_CONTRACTS.md`](docs/API_CONTRACTS.md). Contract tests use sanitized local fixtures and never call the deployed service.
 
-Domain and API tests are fully offline. Authentication tests use synthetic tokens and an in-memory verifier; no Firebase SDK or credential is required.
+Domain, API, and persistence tests are fully offline. Authentication tests use synthetic tokens, and persistence tests use an in-memory Firestore-shaped fake; no Firebase credential is required.

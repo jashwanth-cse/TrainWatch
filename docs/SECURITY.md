@@ -30,9 +30,20 @@ The local scanner is defense in depth, not proof that a repository contains no s
 - Validation, framework, and unexpected errors use a stable envelope with no stack trace or raw exception detail.
 - Tests use synthetic tokens and a fake verifier. No Firebase SDK or credential is present.
 
+## Phase 4 controls
+
+- Firestore watch paths are owner scoped: `users/{uid}/reminders/{watchId}`.
+- Owner and watch identifiers are bounded and cannot contain path separators.
+- Stored documents are schema-versioned and revalidated through domain constructors; malformed data produces a sanitized persistence error.
+- The Firestore client is injected. Importing the application, constructing the repository, and running tests do not discover credentials or open network connections.
+- The ADC-backed client factory fails closed unless live access is explicitly enabled and project/database identifiers are non-placeholder values.
+- Firestore rules deny all direct client reads and writes. The backend is the only approved persistence boundary at this phase.
+- Service-account JSON must stay outside the repository. Ignore rules cover common service-account and Firebase Admin filenames in addition to general credential patterns.
+- Live Firestore and deployed-rule tests were deliberately not run; they require separately configured credentials and explicit authorization.
+
 ## Future controls (not implemented)
 
-The real Firebase verification adapter, service-to-service authentication, least-privilege identities, rate limiting, retention, encryption configuration, dependency scanning, container scanning, and cloud policy belong to later approval-gated phases.
+The real Firebase verification adapter, service-to-service authentication, least-privilege identities, live Firestore validation, rate limiting, retention, encryption configuration, dependency scanning, container scanning, and cloud policy belong to later approval-gated work.
 
 ## Reporting
 
