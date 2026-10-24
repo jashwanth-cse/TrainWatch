@@ -1,5 +1,3 @@
-import { Platform } from 'react-native';
-
 export interface StationSimple {
   code: string;
   name: string;
@@ -77,12 +75,9 @@ export interface LiveAvailabilityResult {
 
 export function getTransportApiBaseUrl(): string {
   if (process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL) {
-    return process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL;
+    return process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL.replace(/\/+$/, '');
   }
-  if (Platform.OS === 'android') {
-    return 'http://10.57.32.178:8005';
-  }
-  return 'http://localhost:8005';
+  return 'https://dreamdestiny.cloud.run';
 }
 
 /**
