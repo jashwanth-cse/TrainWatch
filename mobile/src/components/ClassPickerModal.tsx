@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Modal, StyleSheet, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../theme/tokens';
+import { Check } from 'lucide-react-native';
 
 export interface ClassOption {
   code: string;
@@ -70,7 +71,7 @@ export const ClassPickerModal: React.FC<ClassPickerModalProps> = ({
                     </Text>
                     <Text style={styles.itemDesc}>{item.description}</Text>
                   </View>
-                  {isSelected && <Text style={styles.checkmark}>✓</Text>}
+                  {isSelected && <Check size={18} color={colors.primary} strokeWidth={2.5} />}
                 </TouchableOpacity>
               );
             })}

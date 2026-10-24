@@ -16,6 +16,7 @@ import {
   searchStations,
   POPULAR_STATIONS,
 } from '../services/stationService';
+import { Search, X, TrainFront } from 'lucide-react-native';
 
 interface StationSearchModalProps {
   visible: boolean;
@@ -70,7 +71,7 @@ export const StationSearchModal: React.FC<StationSearchModalProps> = ({
 
         {/* Search Input Bar */}
         <View style={styles.searchBar}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Search size={18} color={colors.textMuted} style={styles.searchIconStyle} />
           <TextInput
             style={styles.input}
             placeholder="Search by station name or code (e.g. NDLS, Pune)"
@@ -87,7 +88,7 @@ export const StationSearchModal: React.FC<StationSearchModalProps> = ({
               onPress={() => setQuery('')}
               style={styles.clearBtn}
             >
-              <Text style={styles.clearBtnText}>✕</Text>
+              <X size={16} color={colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -131,7 +132,7 @@ export const StationSearchModal: React.FC<StationSearchModalProps> = ({
           ]}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>🚉</Text>
+              <TrainFront size={44} color={colors.textMuted} strokeWidth={1.8} style={{ marginBottom: 12 }} />
               <Text style={styles.emptyTitle}>No Stations Found</Text>
               <Text style={styles.emptySubtitle}>
                 Try searching with station code (e.g. CNB) or city name.
@@ -200,8 +201,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderSubtle,
     height: 48,
   },
-  searchIcon: {
-    fontSize: 16,
+  searchIconStyle: {
     marginRight: spacing.sm,
   },
   input: {
