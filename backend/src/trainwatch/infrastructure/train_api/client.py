@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from random import random
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -61,6 +62,9 @@ def create_train_api_http_client(*, base_url: str) -> httpx.AsyncClient:
     normalized = base_url.strip().rstrip("/")
     if not normalized.startswith(("https://", "http://")):
         raise ValueError("TRAIN_API_BASE_URL must be an HTTP(S) URL")
+    parsed = urlsplit(normalized)
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("TRAIN_API_BASE_URL must not contain credentials")
     return httpx.AsyncClient(
         base_url=normalized,
         timeout=httpx.Timeout(10.0, connect=3.0),
@@ -177,7 +181,7 @@ class DreamDestinyClient:
             except httpx.TimeoutException as exc:
                 failure = TrainApiFailure.TIMEOUT
                 last_error: Exception = exc
-            except httpx.TransportError as exc:
+            except httpx.RequestError as exc:
                 failure = TrainApiFailure.TRANSPORT
                 last_error = exc
             else:
