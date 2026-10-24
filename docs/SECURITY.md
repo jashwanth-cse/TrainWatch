@@ -41,9 +41,18 @@ The local scanner is defense in depth, not proof that a repository contains no s
 - Service-account JSON must stay outside the repository. Ignore rules cover common service-account and Firebase Admin filenames in addition to general credential patterns.
 - An explicitly approved live CRUD smoke check used one randomly named document beneath the dedicated `trainwatch-connection-test` owner and deleted it in a `finally` cleanup. It did not list or inspect existing data. Deployed-rule verification was not run.
 
+## Phase 5 controls
+
+- The provider base URL is centralized, must use HTTP or HTTPS, and defaults to the non-routable placeholder `https://example.invalid`.
+- The adapter receives its HTTP client through dependency injection. Tests use a mock transport and make no live provider calls.
+- Explicit timeouts and pool limits bound resource use. Retries are finite and apply only to transport failures and known transient response codes.
+- Provider response bodies and exception messages are never placed in public adapter errors. Only stable failure categories cross the boundary.
+- Correlation IDs are forwarded only when they match the bounded opaque request-ID syntax; authorization headers and credentials are not accepted by this adapter.
+- Required response fields are type checked and malformed envelopes fail closed. Provider failures cannot produce a successful availability observation or alert.
+
 ## Future controls (not implemented)
 
-The real Firebase verification adapter, service-to-service authentication, least-privilege identities, deployed-rule validation, rate limiting, retention, encryption configuration, dependency scanning, container scanning, and cloud policy belong to later approval-gated work.
+The real Firebase verification adapter, service-to-service authentication, least-privilege identities, deployed-rule validation, API rate limiting, retention, encryption configuration, dependency scanning, container scanning, and cloud policy belong to later approval-gated work.
 
 ## Reporting
 
