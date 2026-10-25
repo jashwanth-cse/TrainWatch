@@ -34,6 +34,7 @@ export interface TrainSearchResults {
   total_trains: number;
   trains: TrainItem[];
   route_type: string;
+  result_type?: string;
   fallback_reason?: string;
   latency_ms?: number;
 }
@@ -125,12 +126,15 @@ export async function searchTrains(params: SearchTrainsParams): Promise<TrainSea
     throw new Error(json.message || 'No trains found for selected route.');
   }
 
+  const resultType = (json.data.result_type || json.data.route_type || 'direct').toLowerCase();
+
   return {
     source: json.data.source,
     destination: json.data.destination,
     total_trains: json.data.total_trains,
     trains: json.data.trains || [],
-    route_type: json.data.route_type || 'direct',
+    route_type: resultType,
+    result_type: resultType,
     fallback_reason: json.data.fallback_reason,
     latency_ms: json.data.latency_ms,
   };

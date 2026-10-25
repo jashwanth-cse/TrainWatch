@@ -1,11 +1,13 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  ActivityIndicator,
+  Dimensions,
+  Animated,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -19,6 +21,18 @@ import {
   TrainSearchResults,
 } from '../services/trainService';
 import {
+  Station,
+  addRecentStation,
+  saveLastSearch,
+} from '../services/stationService';
+import { AvailabilityDetailModal } from '../components/AvailabilityDetailModal';
+import { DatePickerModal, DateItem } from '../components/DatePickerModal';
+import { StationSearchModal } from '../components/StationSearchModal';
+import { TrainWatchLoader } from '../components/TrainWatchLoader';
+import { ResponsiveButton } from '../components/ResponsiveButton';
+import { resolveQuota } from '../utils/quota';
+import { parseAvailabilityStatus } from '../utils/availabilityHelper';
+import {
   ArrowLeft,
   ArrowRight,
   RotateCcw,
@@ -28,7 +42,14 @@ import {
   AlertCircle,
   TrainFront,
   Utensils,
+  Compass,
+  CheckCircle2,
+  CalendarDays,
+  ChevronDown,
+  ArrowLeftRight,
 } from 'lucide-react-native';
+
+const { height: windowHeight } = Dimensions.get('window');
 
 export const TrainResultsScreen: React.FC = () => {
   const router = useRouter();
@@ -44,12 +65,20 @@ export const TrainResultsScreen: React.FC = () => {
     travelClass?: string;
   }>();
 
-  const sourceCode = params.source || 'NDLS';
-  const destinationCode = params.destination || 'CNB';
-  const journeyDate = params.date || '';
-  const displayDate = params.displayDate || journeyDate;
+  // Active query state allowing live in-screen updates
+  const [currentSource, setCurrentSource] = useState(params.source || 'NDLS');
+  const [currentSourceName, setCurrentSourceName] = useState(params.sourceName || 'New Delhi');
+  const [currentDestination, setCurrentDestination] = useState(params.destination || 'CNB');
+  const [currentDestinationName, setCurrentDestinationName] = useState(params.destinationName || 'Kanpur');
+  const [currentDate, setCurrentDate] = useState(params.date || '');
+  const [currentDisplayDate, setCurrentDisplayDate] = useState(params.displayDate || params.date || '');
   const quota = params.quota || 'GN';
   const selectedClass = params.travelClass || 'All Classes';
+
+  // Responsive page size based on device height (typically 6-8 on standard mobile screens)
+  const pageSize = useMemo(() => {
+    return Math.max(5, Math.min(10, Math.floor((windowHeight - 200) / 95)));
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +86,134 @@ export const TrainResultsScreen: React.FC = () => {
   const [selectedSort, setSelectedSort] = useState<'departure' | 'duration' | 'fare'>('departure');
   const [refreshIndex, setRefreshIndex] = useState(0);
 
-  const handleRefresh = () => setRefreshIndex((prev) => prev + 1);
+  // Nearby trains reveal states
+  const [showNearby, setShowNearby] = useState(false);
+  const [revealingNearby, setRevealingNearby] = useState(false);
+
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMoreTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nearbyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Availability & Alert Modal State
+  const [selectedTrainForModal, setSelectedTrainForModal] = useState<TrainItem | null>(null);
+  const [selectedClassForModal, setSelectedClassForModal] = useState<TravelClassInfo | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+
+  // Half-screen date picker modal
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+
+  // Dynamic Island route switcher states
+  const [islandVisible, setIslandVisible] = useState(false);
+  const [islandSource, setIslandSource] = useState<Station>({
+    code: currentSource,
+    name: currentSourceName,
+    state: '',
+  });
+  const [islandDestination, setIslandDestination] = useState<Station>({
+    code: currentDestination,
+    name: currentDestinationName,
+    state: '',
+  });
+  const [stationModalVisible, setStationModalVisible] = useState(false);
+  const [stationTarget, setStationTarget] = useState<'source' | 'destination'>('source');
+
+  // Animation values for Dynamic Island
+  const [islandAnim] = useState(() => new Animated.Value(0));
+  const [islandSwapRotate] = useState(() => new Animated.Value(0));
+
+  const handleRefresh = () => {
+    setPage(1);
+    setShowNearby(false);
+    setRevealingNearby(false);
+    setRefreshIndex((prev) => prev + 1);
+  };
+
+  const handleOpenDetailModal = (train: TrainItem, cls: TravelClassInfo) => {
+    setSelectedTrainForModal(train);
+    setSelectedClassForModal(cls);
+    setDetailModalVisible(true);
+  };
+
+  // Dynamic Island Route Switcher Controls
+  const handleOpenDynamicIsland = () => {
+    setIslandSource({ code: currentSource, name: currentSourceName, state: '' });
+    setIslandDestination({ code: currentDestination, name: currentDestinationName, state: '' });
+    setIslandVisible(true);
+    Animated.spring(islandAnim, {
+      toValue: 1,
+      friction: 8,
+      tension: 45,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleCloseDynamicIsland = () => {
+    Animated.timing(islandAnim, {
+      toValue: 0,
+      duration: 170,
+      useNativeDriver: true,
+    }).start(() => {
+      setIslandVisible(false);
+    });
+  };
+
+  const handleSwapIslandStations = () => {
+    Animated.sequence([
+      Animated.timing(islandSwapRotate, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(islandSwapRotate, {
+        toValue: 0,
+        duration: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const temp = islandSource;
+    setIslandSource(islandDestination);
+    setIslandDestination(temp);
+  };
+
+  const handleCommitDynamicIsland = () => {
+    if (islandSource.code === islandDestination.code) {
+      Alert.alert('Invalid Route', 'Departure and destination stations must be different.');
+      return;
+    }
+    setCurrentSource(islandSource.code);
+    setCurrentSourceName(islandSource.name);
+    setCurrentDestination(islandDestination.code);
+    setCurrentDestinationName(islandDestination.name);
+
+    void saveLastSearch({
+      source: islandSource,
+      destination: islandDestination,
+      travelClass: selectedClass,
+      quota: resolveQuota(quota).label,
+      quotaCode: quota,
+    });
+    void addRecentStation(islandSource);
+    void addRecentStation(islandDestination);
+
+    handleCloseDynamicIsland();
+    setPage(1);
+    setShowNearby(false);
+    setRevealingNearby(false);
+    setRefreshIndex((prev) => prev + 1);
+  };
+
+  const handleDateSelected = (dateItem: DateItem) => {
+    setCurrentDate(dateItem.apiFormat);
+    setCurrentDisplayDate(dateItem.displayFormat);
+    setDatePickerVisible(false);
+    setPage(1);
+    setShowNearby(false);
+    setRevealingNearby(false);
+    setRefreshIndex((prev) => prev + 1);
+  };
 
   useEffect(() => {
     let active = true;
@@ -65,13 +221,16 @@ export const TrainResultsScreen: React.FC = () => {
       if (active) {
         setLoading(true);
         setError(null);
+        setPage(1);
+        setShowNearby(false);
+        setRevealingNearby(false);
       }
     });
 
     void searchTrains({
-      source: sourceCode,
-      destination: destinationCode,
-      date: journeyDate,
+      source: currentSource,
+      destination: currentDestination,
+      date: currentDate,
       quota,
       travelClass: selectedClass,
     })
@@ -91,9 +250,45 @@ export const TrainResultsScreen: React.FC = () => {
 
     return () => {
       active = false;
+      if (loadMoreTimeout.current !== null) {
+        clearTimeout(loadMoreTimeout.current);
+        loadMoreTimeout.current = null;
+      }
+      if (nearbyTimeout.current !== null) {
+        clearTimeout(nearbyTimeout.current);
+        nearbyTimeout.current = null;
+      }
+      setLoadingMore(false);
+      setRevealingNearby(false);
     };
-  }, [sourceCode, destinationCode, journeyDate, quota, selectedClass, refreshIndex]);
+  }, [currentSource, currentDestination, currentDate, quota, selectedClass, refreshIndex]);
 
+  // Determine whether direct trains exist
+  const isDirectRoute = useMemo(() => {
+    if (!results) return false;
+    const rType = (results.result_type || results.route_type || '').toLowerCase();
+    return rType === 'direct' && results.trains.length > 0;
+  }, [results]);
+
+  const hasNearbyTrains = useMemo(() => {
+    if (!results) return false;
+    const rType = (results.result_type || results.route_type || '').toLowerCase();
+    return (rType === 'nearby' || rType === 'alternate') && results.trains.length > 0;
+  }, [results]);
+
+  // Handle user tapping "Show trains from Nearby Stations"
+  const handleRevealNearby = () => {
+    if (nearbyTimeout.current !== null) return;
+    setRevealingNearby(true);
+    nearbyTimeout.current = setTimeout(() => {
+      nearbyTimeout.current = null;
+      setRevealingNearby(false);
+      setShowNearby(true);
+      setPage(1);
+    }, 750);
+  };
+
+  // Sort trains
   const sortedTrains = useMemo(() => {
     if (!results?.trains) return [];
     const list = [...results.trains];
@@ -113,33 +308,31 @@ export const TrainResultsScreen: React.FC = () => {
     return list;
   }, [results, selectedSort]);
 
+  // Paginated visible trains subset
+  const visibleTrains = useMemo(() => {
+    return sortedTrains.slice(0, page * pageSize);
+  }, [sortedTrains, page, pageSize]);
+
+  const hasMorePages = visibleTrains.length < sortedTrains.length;
+
+  const handleLoadMore = () => {
+    if (!hasMorePages || loadingMore || loading || revealingNearby) return;
+
+    setLoadingMore(true);
+    loadMoreTimeout.current = setTimeout(() => {
+      loadMoreTimeout.current = null;
+      setPage((prev) => prev + 1);
+      setLoadingMore(false);
+    }, 450);
+  };
+
   const getStatusBadgeStyle = (avail: string) => {
-    const upper = avail.toUpperCase();
-    if (upper.includes('AVL') || upper.includes('AVAILABLE') || upper.includes('CURR_AVBL')) {
-      return {
-        bg: colors.statusAvailableBg,
-        text: colors.statusAvailable,
-        dot: '#10B981',
-      };
-    }
-    if (upper.includes('RAC')) {
-      return {
-        bg: colors.statusRacBg,
-        text: colors.statusRac,
-        dot: '#F59E0B',
-      };
-    }
-    if (upper.includes('WL') || upper.includes('RLWL') || upper.includes('GNWL') || upper.includes('PQWL')) {
-      return {
-        bg: colors.statusWlBg,
-        text: colors.statusWl,
-        dot: '#EF4444',
-      };
-    }
+    const parsed = parseAvailabilityStatus(avail);
     return {
-      bg: colors.surfaceSubtle,
-      text: colors.textSecondary,
-      dot: colors.textMuted,
+      bg: parsed.bgColor,
+      text: parsed.textColor,
+      dot: parsed.dotColor,
+      label: parsed.badgeLabel,
     };
   };
 
@@ -147,48 +340,88 @@ export const TrainResultsScreen: React.FC = () => {
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Top Gradient Route Header */}
+      {/* Top Route Header matching HomeScreen gradient palette */}
       <LinearGradient
-        colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+        colors={colors.headerGradient}
         start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[styles.headerBanner, { paddingTop: Math.max(insets.top, 16) + spacing.xs }]}
+        end={{ x: 0.8, y: 1 }}
+        style={[styles.headerBanner, { paddingTop: Math.max(insets.top, 20) + spacing.xs }]}
       >
         <View style={styles.topNavRow}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.back()}
+            delayPressIn={0}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
-            <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2.4} />
+            <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
           </TouchableOpacity>
 
           <View style={styles.headerTitleGroup}>
-            <View style={styles.routePill}>
-              <Text style={styles.routeCode}>{sourceCode}</Text>
+            {/* Dynamic Island Trigger Pill */}
+            <TouchableOpacity
+              style={styles.routePill}
+              onPress={handleOpenDynamicIsland}
+              activeOpacity={0.82}
+              delayPressIn={0}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={styles.routeCode}>{currentSource}</Text>
               <ArrowRight size={13} color="rgba(255,255,255,0.85)" strokeWidth={2.5} style={{ marginHorizontal: 6 }} />
-              <Text style={styles.routeCode}>{destinationCode}</Text>
-            </View>
+              <Text style={styles.routeCode}>{currentDestination}</Text>
+              <ChevronDown size={13} color="rgba(255,255,255,0.75)" strokeWidth={2.5} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
             <Text style={styles.headerSubtitle}>
-              {displayDate} • {quota} Quota
+              {currentDisplayDate} • {quota} Quota
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.refreshBtn} onPress={handleRefresh} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={handleRefresh}
+            delayPressIn={0}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh train results"
+          >
             <RotateCcw size={18} color="#FFFFFF" strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
+
+        {/* Quick Date Switcher Bar with Half-Screen Calendar Trigger */}
+        <TouchableOpacity
+          style={styles.dateBar}
+          onPress={() => setDatePickerVisible(true)}
+          activeOpacity={0.85}
+          delayPressIn={0}
+        >
+          <View style={styles.dateBarLeft}>
+            <CalendarDays size={14} color="#93C5FD" strokeWidth={2.4} style={{ marginRight: 6 }} />
+            <Text style={styles.dateBarLabel}>Journey Date:</Text>
+            <Text style={styles.dateBarValue}>{currentDisplayDate}</Text>
+          </View>
+          <View style={styles.dateBarChangeBadge}>
+            <Text style={styles.dateBarChangeText}>Change</Text>
+            <ChevronDown size={11} color="#FFFFFF" strokeWidth={2.6} style={{ marginLeft: 3 }} />
+          </View>
+        </TouchableOpacity>
 
         {/* Sort Pills Row */}
         <View style={styles.sortBar}>
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'departure' && styles.sortPillActive]}
             onPress={() => setSelectedSort('departure')}
+            delayPressIn={0}
+            activeOpacity={0.8}
           >
             <Clock
-              size={13}
-              color={selectedSort === 'departure' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
-              strokeWidth={2.2}
+              size={12}
+              color={selectedSort === 'departure' ? colors.brandNavy : 'rgba(255,255,255,0.85)'}
+              strokeWidth={2.4}
               style={{ marginRight: 5 }}
             />
             <Text
@@ -201,11 +434,13 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'duration' && styles.sortPillActive]}
             onPress={() => setSelectedSort('duration')}
+            delayPressIn={0}
+            activeOpacity={0.8}
           >
             <Zap
-              size={13}
-              color={selectedSort === 'duration' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
-              strokeWidth={2.2}
+              size={12}
+              color={selectedSort === 'duration' ? colors.brandNavy : 'rgba(255,255,255,0.85)'}
+              strokeWidth={2.4}
               style={{ marginRight: 5 }}
             />
             <Text
@@ -218,11 +453,13 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'fare' && styles.sortPillActive]}
             onPress={() => setSelectedSort('fare')}
+            delayPressIn={0}
+            activeOpacity={0.8}
           >
             <IndianRupee
-              size={13}
-              color={selectedSort === 'fare' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
-              strokeWidth={2.2}
+              size={12}
+              color={selectedSort === 'fare' ? colors.brandNavy : 'rgba(255,255,255,0.85)'}
+              strokeWidth={2.4}
               style={{ marginRight: 5 }}
             />
             <Text style={[styles.sortPillText, selectedSort === 'fare' && styles.sortPillTextActive]}>
@@ -235,54 +472,307 @@ export const TrainResultsScreen: React.FC = () => {
       {/* Body Content */}
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Searching live trains between {sourceCode} & {destinationCode}...</Text>
+          <TrainWatchLoader
+            size="lg"
+            message={`Searching live trains between ${currentSource} & ${currentDestination}...`}
+            subMessage="Checking direct rail availability"
+          />
         </View>
       ) : error ? (
         <View style={styles.centerContainer}>
-          <AlertCircle size={40} color={colors.statusWl} style={{ marginBottom: 12 }} />
+          <AlertCircle size={44} color={colors.statusWl} strokeWidth={2} style={{ marginBottom: 12 }} />
           <Text style={styles.errorTitle}>Search Failed</Text>
           <Text style={styles.errorMessage}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={handleRefresh}>
-            <Text style={styles.retryText}>Retry Search</Text>
-          </TouchableOpacity>
+          <ResponsiveButton
+            title="Retry Search"
+            onPress={handleRefresh}
+            variant="primary"
+            style={{ minWidth: 160 }}
+          />
+        </View>
+      ) : !isDirectRoute && !showNearby ? (
+        // NO DIRECT TRAINS FOUND STATE
+        <View style={styles.fallbackCenterContainer}>
+          <View style={styles.noDirectCard}>
+            <View style={styles.noDirectIconCircle}>
+              <Compass size={28} color={colors.primary} strokeWidth={2.2} />
+            </View>
+            <Text style={styles.noDirectTitle}>No direct trains found for this route!</Text>
+            <Text style={styles.noDirectSubtitle}>
+              Direct trains between {currentSource} and {currentDestination} are not available on this date.
+              Nearby connecting stations may have active trains.
+            </Text>
+
+            {hasNearbyTrains ? (
+              <View style={styles.nearbyActionArea}>
+                <Text style={styles.nearbyHintText}>
+                  {results?.trains.length} alternate train routes available via neighboring hubs
+                </Text>
+                <ResponsiveButton
+                  title={revealingNearby ? 'Finding Alternate Routes...' : 'Show trains from Nearby Stations'}
+                  onPress={handleRevealNearby}
+                  variant="primary"
+                  loading={revealingNearby}
+                  icon={<ArrowRight size={17} color="#FFFFFF" strokeWidth={2.4} />}
+                  style={{ width: '100%' }}
+                />
+              </View>
+            ) : (
+              <Text style={styles.noNearbyNotice}>
+                No alternate nearby stations available for this specific query.
+              </Text>
+            )}
+          </View>
+        </View>
+      ) : revealingNearby ? (
+        <View style={styles.centerContainer}>
+          <TrainWatchLoader
+            size="lg"
+            message="Discovering Trains from Nearby Stations..."
+            subMessage="Scanning neighboring junctions & connecting rail hubs"
+          />
         </View>
       ) : sortedTrains.length === 0 ? (
         <View style={styles.centerContainer}>
-          <TrainFront size={48} color={colors.textMuted} strokeWidth={1.8} style={{ marginBottom: 12 }} />
-          <Text style={styles.emptyTitle}>No Trains Found</Text>
-          <Text style={styles.emptySubtitle}>
-            No direct trains operate between {sourceCode} and {destinationCode} on {displayDate}.
+          <TrainFront size={44} color={colors.textMuted} strokeWidth={1.8} style={{ marginBottom: 12 }} />
+          <Text style={styles.errorTitle}>No Trains Scheduled</Text>
+          <Text style={styles.errorMessage}>
+            No trains found operating between {currentSource} and {currentDestination} on {currentDisplayDate}.
           </Text>
         </View>
       ) : (
         <FlatList
-          data={sortedTrains}
+          data={visibleTrains}
           keyExtractor={(item) => item.train_number}
-          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xl }]}
+          contentContainerStyle={[
+            styles.listContainer,
+            { paddingBottom: insets.bottom + spacing.xl },
+          ]}
+          showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListHeaderComponent={
+            showNearby ? (
+              <View style={styles.nearbyNoticeBanner}>
+                <Compass size={15} color={colors.primaryDark} strokeWidth={2.4} style={{ marginRight: 6 }} />
+                <Text style={styles.nearbyNoticeBannerText}>
+                  Showing trains from nearby connecting stations ({sortedTrains.length} found)
+                </Text>
+              </View>
+            ) : undefined
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.listFooterLoader}>
+                <TrainWatchLoader size="sm" message="Loading more trains..." />
+              </View>
+            ) : !hasMorePages && sortedTrains.length > 5 ? (
+              <View style={styles.endOfListRow}>
+                <CheckCircle2 size={14} color={colors.textSecondary} strokeWidth={2} style={{ marginRight: 6 }} />
+                <Text style={styles.endOfListText}>
+                  All {sortedTrains.length} {showNearby ? 'nearby' : 'direct'} trains displayed
+                </Text>
+              </View>
+            ) : undefined
+          }
           renderItem={({ item }) => (
             <TrainCard
               train={item}
               getStatusBadgeStyle={getStatusBadgeStyle}
+              onSelectClass={(cls) => handleOpenDetailModal(item, cls)}
             />
           )}
         />
       )}
+
+      {/* Dynamic Island Route Switcher Overlay */}
+      {islandVisible && (
+        <View style={styles.islandOverlay}>
+          <TouchableOpacity
+            style={styles.islandBackdrop}
+            activeOpacity={1}
+            onPress={handleCloseDynamicIsland}
+            accessibilityRole="button"
+            accessibilityLabel="Close route switcher"
+          />
+
+          <Animated.View
+            style={[
+              styles.islandCardWrapper,
+              {
+                marginTop: Math.max(insets.top, 24) + 8,
+                opacity: islandAnim,
+                transform: [
+                  {
+                    scale: islandAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.92, 1],
+                    }),
+                  },
+                  {
+                    translateY: islandAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-20, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <LinearGradient
+              colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']}
+              locations={[0, 0.45, 1.0]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.islandCardGradient}
+            >
+              {/* Minimal centered drag indicator */}
+              <View style={styles.islandHeader}>
+                <View style={styles.islandDragHandle} />
+              </View>
+
+              {/* Station Selector Cards Row with Symmetrical Swap Toggle */}
+              <View style={styles.islandRouteRow}>
+                {/* Departure Station Card */}
+                <TouchableOpacity
+                  style={styles.islandStationCard}
+                  onPress={() => {
+                    setStationTarget('source');
+                    setStationModalVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                  delayPressIn={0}
+                  accessibilityRole="button"
+                  accessibilityLabel="Select departure station"
+                >
+                  <Text style={styles.islandStationTag}>FROM</Text>
+                  <Text style={styles.islandStationCode} numberOfLines={1}>
+                    {islandSource.code}
+                  </Text>
+                  <Text style={styles.islandStationName} numberOfLines={1}>
+                    {islandSource.name}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Symmetrical Center Swap Toggle */}
+                <TouchableOpacity
+                  style={styles.islandSwapBtn}
+                  onPress={handleSwapIslandStations}
+                  activeOpacity={0.85}
+                  delayPressIn={0}
+                  accessibilityRole="button"
+                  accessibilityLabel="Swap departure and destination stations"
+                >
+                  <Animated.View
+                    style={{
+                      transform: [
+                        {
+                          rotate: islandSwapRotate.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '180deg'],
+                          }),
+                        },
+                      ],
+                    }}
+                  >
+                    <ArrowLeftRight size={16} color="#FFFFFF" strokeWidth={2.4} />
+                  </Animated.View>
+                </TouchableOpacity>
+
+                {/* Destination Station Card */}
+                <TouchableOpacity
+                  style={styles.islandStationCard}
+                  onPress={() => {
+                    setStationTarget('destination');
+                    setStationModalVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                  delayPressIn={0}
+                  accessibilityRole="button"
+                  accessibilityLabel="Select destination station"
+                >
+                  <Text style={styles.islandStationTag}>TO</Text>
+                  <Text style={styles.islandStationCode} numberOfLines={1}>
+                    {islandDestination.code}
+                  </Text>
+                  <Text style={styles.islandStationName} numberOfLines={1}>
+                    {islandDestination.name}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Update Route CTA */}
+              <TouchableOpacity
+                style={styles.islandCommitBtn}
+                onPress={handleCommitDynamicIsland}
+                activeOpacity={0.88}
+                delayPressIn={0}
+              >
+                <LinearGradient
+                  colors={['#2563EB', '#1D4ED8']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.islandCommitGradient}
+                >
+                  <Text style={styles.islandCommitText}>Update Route & Search</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </LinearGradient>
+          </Animated.View>
+        </View>
+      )}
+
+      {/* Half-Screen Journey Date Picker Modal */}
+      <DatePickerModal
+        visible={datePickerVisible}
+        halfScreen={true}
+        selectedApiDate={currentDate}
+        onClose={() => setDatePickerVisible(false)}
+        onSelect={handleDateSelected}
+      />
+
+      {/* Adaptive Half-Screen Station Search Modal for Route Switcher */}
+      <StationSearchModal
+        visible={stationModalVisible}
+        halfScreen={true}
+        title={stationTarget === 'source' ? 'Select Departure Station' : 'Select Destination'}
+        onClose={() => setStationModalVisible(false)}
+        onSelect={(station) => {
+          if (stationTarget === 'source') {
+            setIslandSource(station);
+          } else {
+            setIslandDestination(station);
+          }
+          setStationModalVisible(false);
+        }}
+      />
+
+      {/* Availability Detail & Alert Modal */}
+      <AvailabilityDetailModal
+        visible={detailModalVisible}
+        train={selectedTrainForModal}
+        selectedClass={selectedClassForModal}
+        journeyDate={currentDate}
+        displayDate={currentDisplayDate}
+        quota={quota}
+        onClose={() => setDetailModalVisible(false)}
+      />
     </View>
   );
 };
 
 interface TrainCardProps {
   train: TrainItem;
-  getStatusBadgeStyle: (avail: string) => { bg: string; text: string; dot: string };
+  getStatusBadgeStyle: (avail: string) => { bg: string; text: string; dot: string; label: string };
+  onSelectClass: (cls: TravelClassInfo) => void;
 }
 
-const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle }) => {
+const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onSelectClass }) => {
   return (
     <View style={styles.card}>
       {/* Train Identification */}
       <View style={styles.trainHeader}>
-        <View>
+        <View style={{ flex: 1, marginRight: 8 }}>
           <View style={styles.trainNumberRow}>
             <Text style={styles.trainNumber}>{train.train_number}</Text>
             {train.has_pantry ? (
@@ -332,9 +822,13 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle }) => 
           const badge = getStatusBadgeStyle(cls.availability);
 
           return (
-            <View
+            <TouchableOpacity
               key={cls.travel_class}
               style={styles.classBox}
+              onPress={() => onSelectClass(cls)}
+              delayPressIn={0}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              activeOpacity={0.72}
             >
               <View style={styles.classTopRow}>
                 <Text style={styles.classTitle}>{cls.travel_class}</Text>
@@ -344,10 +838,10 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle }) => 
               <View style={[styles.statusPill, { backgroundColor: badge.bg }]}>
                 <View style={[styles.statusDot, { backgroundColor: badge.dot }]} />
                 <Text style={[styles.statusText, { color: badge.text }]} numberOfLines={1}>
-                  {cls.availability}
+                  {badge.label}
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -362,110 +856,147 @@ const styles = StyleSheet.create({
   },
   headerBanner: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-    borderBottomLeftRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
+    paddingBottom: spacing.sm + 2,
+    borderBottomLeftRadius: radius.xl,
+    borderBottomRightRadius: radius.xl,
   },
   topNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backArrow: {
-    fontSize: 20,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
   headerTitleGroup: {
     alignItems: 'center',
+    flex: 1,
+    marginHorizontal: spacing.xs,
   },
   routePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
   },
   routeCode: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
-  routeArrow: {
-    fontSize: 14,
-    color: '#BAE6FD',
-    marginHorizontal: 8,
-  },
   headerSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontWeight: '500',
-    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.88)',
+    marginTop: 2,
   },
   refreshBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  refreshText: {
-    fontSize: 20,
-    color: '#FFFFFF',
-    fontWeight: '700',
+
+  // Date Switcher Bar
+  dateBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: spacing.xs + 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
+  dateBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  dateBarLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginRight: 4,
+  },
+  dateBarValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  dateBarChangeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+  },
+  dateBarChangeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
   sortBar: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: spacing.xs,
+    marginTop: 2,
   },
   sortPill: {
     flex: 1,
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     paddingVertical: 6,
     borderRadius: radius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   sortPillActive: {
     backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
   },
   sortPillText: {
     fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   sortPillTextActive: {
-    color: colors.primary,
+    color: colors.brandNavy,
   },
-  listContent: {
+
+  listContainer: {
     padding: spacing.md,
-    gap: 12,
+    gap: spacing.md,
   },
   card: {
     backgroundColor: colors.cardBackground,
     borderRadius: radius.lg,
     padding: spacing.md,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: colors.borderSubtle,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   trainHeader: {
     flexDirection: 'row',
@@ -476,13 +1007,13 @@ const styles = StyleSheet.create({
   trainNumberRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 2,
   },
   trainNumber: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: colors.primary,
-    letterSpacing: 0.5,
+    marginRight: 6,
   },
   pantryBadge: {
     flexDirection: 'row',
@@ -501,20 +1032,19 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginTop: 2,
-    maxWidth: 220,
   },
   fareContainer: {
     alignItems: 'flex-end',
   },
   fromFareLabel: {
     fontSize: 10,
-    color: colors.textMuted,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   fareAmount: {
     fontSize: 16,
     fontWeight: '800',
-    color: colors.textPrimary,
+    color: colors.brandNavy,
   },
   scheduleRow: {
     flexDirection: 'row',
@@ -524,7 +1054,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: colors.borderSubtle,
-    marginVertical: spacing.xs,
+    marginBottom: spacing.sm,
   },
   timeBlock: {
     minWidth: 60,
@@ -541,14 +1071,14 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   durationBlock: {
-    alignItems: 'center',
     flex: 1,
-    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
   },
   durationText: {
     fontSize: 11,
-    color: colors.textSecondary,
     fontWeight: '600',
+    color: colors.textSecondary,
     marginBottom: 4,
   },
   timelineLine: {
@@ -571,13 +1101,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: spacing.sm,
   },
   classBox: {
     flex: 1,
-    minWidth: '22%',
-    backgroundColor: colors.pillBg,
-    borderRadius: radius.sm,
+    minWidth: 72,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.md,
     padding: 8,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
@@ -585,17 +1114,17 @@ const styles = StyleSheet.create({
   classTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
+    alignItems: 'center',
     marginBottom: 4,
   },
   classTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: colors.textPrimary,
   },
   classFare: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textSecondary,
   },
   statusPill: {
@@ -604,6 +1133,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: radius.sm,
+    alignSelf: 'flex-start',
   },
   statusDot: {
     width: 5,
@@ -613,61 +1143,243 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   centerContainer: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     padding: spacing.xl,
   },
-  loadingText: {
-    marginTop: spacing.md,
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
-  errorIcon: {
-    fontSize: 40,
-    marginBottom: spacing.sm,
+  fallbackCenterContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
   },
   errorTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
+    marginBottom: 8,
   },
   errorMessage: {
     fontSize: 13,
-    color: colors.statusWl,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-  },
-  retryBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.full,
-  },
-  retryText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: spacing.sm,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.xs,
-  },
-  emptySubtitle: {
-    fontSize: 13,
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
+    lineHeight: 19,
+    marginBottom: spacing.lg,
+  },
+  noDirectCard: {
+    width: '100%',
+    backgroundColor: colors.cardBackground,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.borderSubtle,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  noDirectIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  noDirectTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    textAlign: 'center',
+    letterSpacing: -0.4,
+    marginBottom: spacing.xs,
+  },
+  noDirectSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: spacing.md,
+  },
+  nearbyActionArea: {
+    width: '100%',
+    marginTop: spacing.xs,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    alignItems: 'center',
+  },
+  nearbyHintText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  noNearbyNotice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  nearbyNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.35)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginBottom: 6,
+  },
+  nearbyNoticeBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  listFooterLoader: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  endOfListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+  },
+  endOfListText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+
+  // Dynamic Island Overlay & Card
+  islandOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  islandBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+  },
+  islandCardWrapper: {
+    backgroundColor: 'transparent',
+    marginHorizontal: spacing.md,
+    borderRadius: 24,
+    overflow: 'hidden',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  islandCardGradient: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    borderRadius: 24,
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
+  },
+  islandHeader: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+    paddingTop: 2,
+  },
+  islandDragHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#93C5FD',
+  },
+  islandRouteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  islandStationCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderWidth: 1.2,
+    borderColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 74,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+  islandStationTag: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.8,
+    marginBottom: 3,
+  },
+  islandStationCode: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 0.5,
+  },
+  islandStationName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    marginTop: 2,
+  },
+  islandSwapBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  islandCommitBtn: {
+    borderRadius: radius.md,
+    marginTop: spacing.md,
+    overflow: 'hidden',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  islandCommitGradient: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
+  islandCommitText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
 });

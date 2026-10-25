@@ -81,3 +81,25 @@ The future public API, dispatcher, worker, data store, provider, and notificatio
 ## Configuration
 
 `config.py` reads a small, explicitly allowed set of non-secret startup settings from the process environment. It does not read `.env` files, discover cloud projects, or initialize SDK clients. Future sensitive settings must remain externally supplied and must never be returned by health endpoints or emitted in logs.
+
+### Watch scheduling integration
+
+Applications accepting watch creation or pause-to-active transitions must inject
+`job_repository` into `create_app`, using the same repository as the dispatcher
+and worker. These operations return 503 before modifying the watch when scheduling
+is unconfigured. Read, pause, cancel and delete operations retain their existing
+repository requirements.
+
+`JobRepository.ensure_pending` must atomically create or reactivate the stable
+per-watch job ID, preserving an existing pending schedule or active lease. A
+resumed completed/failed job starts with a fresh retry budget. Concrete external
+job persistence and queue adapters remain injectable; the default app initializes
+no cloud clients.
+
+Successful recurring checks reset the attempt budget; lease recovery preserves it.
+Execution failures use sanitized, bounded retries. To preserve alerts across
+partial writes, the worker persists a qualifying outbox item before advancing the
+observation baseline. Its idempotency key includes the previous observation time,
+so a retry deduplicates the same transition and a later qualifying transition can
+notify again. This refines the operation ordering listed in implementation plan
+section 8 while preserving its reliable-outbox requirement.

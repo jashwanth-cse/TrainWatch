@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,8 +11,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { resolveQuota } from '../utils/quota';
 import { AppHeader } from '../components/AppHeader';
-import { Station } from '../services/stationService';
+import {
+  Station,
+  getLastSearch,
+  saveLastSearch,
+  addRecentStation,
+} from '../services/stationService';
 import { StationSearchModal } from '../components/StationSearchModal';
 import { ClassPickerModal, ClassOption } from '../components/ClassPickerModal';
 import { QuotaPickerModal, QuotaOption } from '../components/QuotaPickerModal';
@@ -54,6 +60,24 @@ export const HomeScreen: React.FC = () => {
   const [travelClass, setTravelClass] = useState<string>('All Classes');
   const [quota, setQuota] = useState<string>('General');
   const [quotaCode, setQuotaCode] = useState<string>('GN');
+
+  // Restore persisted last search on launch
+  useEffect(() => {
+    let isMounted = true;
+    getLastSearch().then((last) => {
+      if (isMounted && last) {
+        if (last.source) setSource(last.source);
+        if (last.destination) setDestination(last.destination);
+        if (last.travelClass) setTravelClass(last.travelClass);
+        const restoredQuota = resolveQuota(last.quotaCode, last.quota);
+        setQuota(restoredQuota.label);
+        setQuotaCode(restoredQuota.code);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Modals
   const [searchModalVisible, setSearchModalVisible] = useState(false);
@@ -100,8 +124,10 @@ export const HomeScreen: React.FC = () => {
 
     if (searchTarget === 'source') {
       setSource(formatted);
+      void addRecentStation(formatted);
     } else {
       setDestination(formatted);
+      void addRecentStation(formatted);
     }
   };
 
@@ -124,6 +150,14 @@ export const HomeScreen: React.FC = () => {
       Alert.alert('Invalid route', 'Departure and destination stations must be different.');
       return;
     }
+
+    void saveLastSearch({
+      source,
+      destination,
+      travelClass,
+      quota,
+      quotaCode,
+    });
 
     router.push({
       pathname: '/results',
