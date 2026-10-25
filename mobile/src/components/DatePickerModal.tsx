@@ -39,6 +39,7 @@ interface DatePickerModalProps {
   selectedApiDate: string; // "DD-MM-YYYY"
   onSelect: (dateItem: DateItem) => void;
   onClose: () => void;
+  halfScreen?: boolean;
 }
 
 export const DatePickerModal: React.FC<DatePickerModalProps> = ({
@@ -46,6 +47,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
   selectedApiDate,
   onSelect,
   onClose,
+  halfScreen = false,
 }) => {
   const insets = useSafeAreaInsets();
 
@@ -78,7 +80,13 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
         <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose} />
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <View
+          style={[
+            styles.sheet,
+            halfScreen && { maxHeight: '52%' },
+            { paddingBottom: Math.max(insets.bottom, 20) },
+          ]}
+        >
           <View style={styles.dragHandle} />
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Select Journey Date</Text>

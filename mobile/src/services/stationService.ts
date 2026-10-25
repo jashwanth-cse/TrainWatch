@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import stationsData from '../data/stations.json';
 
 export interface Station {
@@ -135,3 +136,77 @@ export function searchStations(query: string, limit = 25): Station[] {
 
   return combined.slice(0, limit);
 }
+
+const RECENT_STATIONS_STORAGE_KEY = '@trainwatch_recent_stations';
+const LAST_SEARCH_STORAGE_KEY = '@trainwatch_last_search';
+
+export interface LastSearchData {
+  source: Station;
+  destination: Station;
+  travelClass?: string;
+  quota?: string;
+  quotaCode?: string;
+}
+
+/**
+ * Retrieve user's recently searched/selected railway stations.
+ */
+export async function getRecentStations(): Promise<Station[]> {
+  try {
+    const raw = await AsyncStorage.getItem(RECENT_STATIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is Station => Boolean(item?.code && item?.name));
+    }
+  } catch {
+    // Fail safe to empty list
+  }
+  return [];
+}
+
+/**
+ * Prepend a station to the user's recent stations list (deduplicated, keeping top 8).
+ */
+export async function addRecentStation(station: Station): Promise<void> {
+  if (!station?.code) return;
+  try {
+    const current = await getRecentStations();
+    const filtered = current.filter(
+      (s) => s.code.toUpperCase() !== station.code.toUpperCase()
+    );
+    const updated = [station, ...filtered].slice(0, 8);
+    await AsyncStorage.setItem(RECENT_STATIONS_STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    // Silently continue
+  }
+}
+
+/**
+ * Retrieve the user's last searched stations and parameters.
+ */
+export async function getLastSearch(): Promise<LastSearchData | null> {
+  try {
+    const raw = await AsyncStorage.getItem(LAST_SEARCH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.source?.code && parsed?.destination?.code) {
+      return parsed as LastSearchData;
+    }
+  } catch {
+    // Fail safe to null
+  }
+  return null;
+}
+
+/**
+ * Persist the user's last searched stations and route parameters.
+ */
+export async function saveLastSearch(data: LastSearchData): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LAST_SEARCH_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // Silently continue
+  }
+}
+

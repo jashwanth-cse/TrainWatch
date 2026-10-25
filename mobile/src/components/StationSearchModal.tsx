@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,8 +15,10 @@ import {
   Station,
   searchStations,
   POPULAR_STATIONS,
+  getRecentStations,
+  addRecentStation,
 } from '../services/stationService';
-import { Search, X, TrainFront, ChevronRight } from 'lucide-react-native';
+import { Search, X, TrainFront, ChevronRight, History } from 'lucide-react-native';
 
 interface StationSearchModalProps {
   visible: boolean;
@@ -33,12 +35,35 @@ export const StationSearchModal: React.FC<StationSearchModalProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
+  const [recentStations, setRecentStations] = useState<Station[]>([]);
+
+  useEffect(() => {
+    if (visible) {
+      let isMounted = true;
+      getRecentStations().then((list) => {
+        if (isMounted) {
+          setRecentStations(list);
+        }
+      });
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [visible]);
 
   const stations = useMemo(() => {
-    return searchStations(query, 40);
-  }, [query]);
+    const list = searchStations(query, 40);
+    if (!query.trim() && recentStations.length > 0) {
+      // Prioritize recently searched stations at the top of default list
+      const recentCodes = new Set(recentStations.map((r) => r.code));
+      const remaining = list.filter((s) => !recentCodes.has(s.code));
+      return [...recentStations, ...remaining];
+    }
+    return list;
+  }, [query, recentStations]);
 
   const handleSelect = (station: Station) => {
+    void addRecentStation(station);
     onSelect(station);
     setQuery('');
     onClose();
@@ -93,31 +118,63 @@ export const StationSearchModal: React.FC<StationSearchModalProps> = ({
           )}
         </View>
 
-        {/* Quick Picks / Popular Stations Row when query is empty */}
+        {/* Quick Picks / Popular Stations & Recent Searches when query is empty */}
         {query.trim().length === 0 && (
-          <View style={styles.popularSection}>
-            <Text style={styles.sectionSubtitle}>POPULAR STATIONS</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.popularRow}
-            >
-              {POPULAR_STATIONS.slice(0, 8).map((station) => (
-                <TouchableOpacity
-                  key={station.code}
-                  style={styles.popularChip}
-                  onPress={() => handleSelect(station)}
-                  activeOpacity={0.75}
+          <View>
+            <View style={styles.popularSection}>
+              <Text style={styles.sectionSubtitle}>POPULAR STATIONS</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.popularRow}
+              >
+                {POPULAR_STATIONS.slice(0, 8).map((station) => (
+                  <TouchableOpacity
+                    key={`popular-${station.code}`}
+                    style={styles.popularChip}
+                    onPress={() => handleSelect(station)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.chipCode}>{station.code}</Text>
+                    <Text style={styles.chipName} numberOfLines={1}>
+                      {station.name.length > 14
+                        ? `${station.name.slice(0, 13)}...`
+                        : station.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {recentStations.length > 0 && (
+              <View style={styles.recentSection}>
+                <View style={styles.recentHeaderRow}>
+                  <History size={12} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 5 }} />
+                  <Text style={[styles.sectionSubtitle, styles.recentSubtitle]}>RECENT SEARCHES</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.popularRow}
                 >
-                  <Text style={styles.chipCode}>{station.code}</Text>
-                  <Text style={styles.chipName} numberOfLines={1}>
-                    {station.name.length > 14
-                      ? `${station.name.slice(0, 13)}...`
-                      : station.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                  {recentStations.map((station) => (
+                    <TouchableOpacity
+                      key={`recent-${station.code}`}
+                      style={[styles.popularChip, styles.recentChip]}
+                      onPress={() => handleSelect(station)}
+                      activeOpacity={0.75}
+                    >
+                      <Text style={[styles.chipCode, styles.recentChipCode]}>{station.code}</Text>
+                      <Text style={styles.chipName} numberOfLines={1}>
+                        {station.name.length > 14
+                          ? `${station.name.slice(0, 13)}...`
+                          : station.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
           </View>
         )}
 
@@ -226,6 +283,28 @@ const styles = StyleSheet.create({
   popularSection: {
     marginTop: spacing.sm,
     paddingBottom: spacing.xs,
+  },
+  recentSection: {
+    marginTop: spacing.xs,
+    paddingBottom: spacing.xs,
+  },
+  recentHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  recentSubtitle: {
+    paddingHorizontal: 0,
+    marginBottom: 0,
+    color: colors.primary,
+  },
+  recentChip: {
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.surfaceSubtle,
+  },
+  recentChipCode: {
+    color: colors.primary,
   },
   sectionSubtitle: {
     fontSize: 11,
