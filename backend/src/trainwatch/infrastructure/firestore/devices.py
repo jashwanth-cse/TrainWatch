@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Any
 
 from trainwatch.domain.notifications import DevicePlatform, DeviceRecord
-from trainwatch.infrastructure.firestore.watches import CollectionReference, FirestoreClient
 
 
 class FirestoreDeviceRepository:

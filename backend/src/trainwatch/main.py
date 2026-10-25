@@ -4,7 +4,14 @@ from fastapi import FastAPI
 
 from trainwatch.api.auth import RejectingTokenVerifier, build_current_user_dependency
 from trainwatch.api.errors import install_error_handlers
+from trainwatch.api.logging import structured_logging_middleware
+from trainwatch.api.metrics import MetricsRegistry
+from trainwatch.api.rate_limit import (
+    SlidingWindowRateLimiter,
+    rate_limit_middleware,
+)
 from trainwatch.api.request_id import request_id_middleware
+from trainwatch.api.timeout import timeout_middleware
 from trainwatch.api.v1 import router as api_v1_router
 from trainwatch.config import AppSettings
 from trainwatch.ports.devices import DeviceRepository
@@ -23,6 +30,8 @@ def create_app(
     dispatcher_service: DispatcherService | None = None,
     worker_service: WorkerService | None = None,
     notification_dispatcher_service: NotificationDispatcherService | None = None,
+    metrics_registry: MetricsRegistry | None = None,
+    rate_limiter: SlidingWindowRateLimiter | None = None,
 ) -> FastAPI:
     """Create an isolated application without initializing external clients."""
     resolved_settings = settings or AppSettings.from_environment()
@@ -41,7 +50,31 @@ def create_app(
     application.state.dispatcher_service = dispatcher_service
     application.state.worker_service = worker_service
     application.state.notification_dispatcher_service = notification_dispatcher_service
+    application.state.metrics = metrics_registry or MetricsRegistry()
+    application.state.rate_limiter = rate_limiter or SlidingWindowRateLimiter(window_seconds=60)
+
+    @application.get("/healthz", tags=["health"])
+    def root_liveness() -> dict[str, str]:
+        return {
+            "status": "ok",
+            "service": "trainwatch-api",
+            "environment": resolved_settings.app_env,
+        }
+
+    @application.get("/readyz", tags=["health"])
+    def root_readiness() -> dict[str, str]:
+        return {
+            "status": "ready",
+            "service": "trainwatch-api",
+            "environment": resolved_settings.app_env,
+        }
+
+    # Middlewares execute from bottom to top (innermost to outermost)
+    application.middleware("http")(timeout_middleware)
+    application.middleware("http")(rate_limit_middleware)
+    application.middleware("http")(structured_logging_middleware)
     application.middleware("http")(request_id_middleware)
+
     install_error_handlers(application)
     application.include_router(api_v1_router)
     return application
