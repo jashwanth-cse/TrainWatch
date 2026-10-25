@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from math import isfinite
 from typing import Literal, cast
 
 AppEnvironment = Literal["local", "test", "staging", "production"]
@@ -44,16 +45,18 @@ class AppSettings:
         timeout_raw = os.getenv("REQUEST_TIMEOUT_SECONDS", "15.0").strip()
         try:
             request_timeout_seconds = float(timeout_raw)
-            if request_timeout_seconds <= 0:
+            if not isfinite(request_timeout_seconds) or request_timeout_seconds <= 0:
                 raise ValueError
         except ValueError as err:
             raise ValueError("REQUEST_TIMEOUT_SECONDS must be a positive number") from err
 
-        enable_rate_limiter = os.getenv("ENABLE_RATE_LIMITER", "true").lower() in {
-            "1",
-            "true",
-            "yes",
-        }
+        limiter_raw = os.getenv("ENABLE_RATE_LIMITER", "true").strip().lower()
+        if limiter_raw in {"1", "true", "yes"}:
+            enable_rate_limiter = True
+        elif limiter_raw in {"0", "false", "no"}:
+            enable_rate_limiter = False
+        else:
+            raise ValueError("ENABLE_RATE_LIMITER must be one of: 1, true, yes, 0, false, no")
 
         if app_env not in _APP_ENVIRONMENTS:
             raise ValueError("APP_ENV must be one of: local, test, staging, production")

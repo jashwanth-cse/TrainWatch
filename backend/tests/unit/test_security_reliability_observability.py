@@ -21,10 +21,14 @@ from trainwatch.ports.identity import AuthenticatedUser
 
 
 class MockTokenVerifier:
+    """Map synthetic bearer tickets to trusted test identities."""
+
     def __init__(self, users: dict[str, AuthenticatedUser]) -> None:
+        """Store the synthetic ticket-to-user mapping."""
         self.users = users
 
     async def verify(self, bearer_value: str) -> AuthenticatedUser:
+        """Resolve a known ticket or reject it without external calls."""
         if bearer_value in self.users:
             return self.users[bearer_value]
         from trainwatch.ports.identity import TokenVerificationError
@@ -33,16 +37,22 @@ class MockTokenVerifier:
 
 
 class MockWatchRepository:
+    """Store watches by owner and watch ID for isolation checks."""
+
     def __init__(self) -> None:
+        """Create an empty owner-scoped watch store."""
         self.watches: dict[tuple[str, str], Watch] = {}
 
     async def get(self, *, watch_id: str, owner_id: str) -> Watch | None:
+        """Read a watch only within the requested owner namespace."""
         return self.watches.get((owner_id, watch_id))
 
     async def save(self, watch: Watch) -> None:
+        """Save a watch under its trusted owner and identifier."""
         self.watches[(watch.owner_id, watch.watch_id)] = watch
 
     async def delete(self, *, watch_id: str, owner_id: str) -> None:
+        """Delete a watch only from the requested owner namespace."""
         self.watches.pop((owner_id, watch_id), None)
 
 
@@ -51,6 +61,7 @@ class MockWatchRepository:
 
 @pytest.mark.anyio
 async def test_root_liveness_and_readiness() -> None:
+    """Check local probe responses and request ID propagation."""
     app = create_app(AppSettings(app_env="test"))
 
     live_res = await request(app, "GET", "/healthz")
@@ -74,6 +85,7 @@ async def test_root_liveness_and_readiness() -> None:
 
 
 def test_metrics_registry_recording_and_formatting() -> None:
+    """Verify request aggregation, legacy ID normalization, counters, and reset."""
     registry = MetricsRegistry()
 
     # Record normal requests
@@ -121,6 +133,7 @@ def test_metrics_registry_recording_and_formatting() -> None:
 
 @pytest.mark.anyio
 async def test_metrics_endpoint_exposition() -> None:
+    """Check Prometheus, JSON, and unconfigured metrics responses."""
     registry = MetricsRegistry()
     registry.record_request(method="GET", path="/healthz", status_code=200, duration_seconds=0.01)
     app = create_app(AppSettings(app_env="test"), metrics_registry=registry)
@@ -155,6 +168,7 @@ async def test_metrics_endpoint_exposition() -> None:
 
 
 def test_sanitize_headers_redaction() -> None:
+    """Redact known credentials and custom secret headers while retaining safe values."""
     headers = {
         "Authorization": "Bearer sensitive-auth-value",
         "X-Internal-Token": "placeholder",
@@ -180,6 +194,7 @@ def test_sanitize_headers_redaction() -> None:
 
 
 def test_format_log_entry_structure() -> None:
+    """Verify deterministic structured log fields and optional context."""
     now = datetime.now(UTC)
     entry = format_log_entry(
         timestamp=now,
@@ -200,6 +215,7 @@ def test_format_log_entry_structure() -> None:
 
 @pytest.mark.anyio
 async def test_structured_logging_middleware_execution(caplog: pytest.LogCaptureFixture) -> None:
+    """Check access logs for successful and unmatched requests."""
     import logging
 
     caplog.set_level(logging.INFO, logger="trainwatch.access")
@@ -220,6 +236,7 @@ async def test_structured_logging_middleware_execution(caplog: pytest.LogCapture
 
 
 def test_sliding_window_rate_limiter_logic() -> None:
+    """Verify remaining quota, denial, expiration, and explicit reset."""
     limiter = SlidingWindowRateLimiter(window_seconds=10)
 
     # 3 requests allowed with limit of 3
@@ -254,6 +271,7 @@ def test_sliding_window_rate_limiter_logic() -> None:
 
 def test_resolve_client_key() -> None:
     # Authenticated user
+    """Prefer trusted user identity and fall back to client IP or an unknown marker."""
     req_auth = MagicMock()
     req_auth.state.user = AuthenticatedUser(uid="user_abc")
     assert resolve_client_key(req_auth) == "user:user_abc"
@@ -273,6 +291,7 @@ def test_resolve_client_key() -> None:
 
 @pytest.mark.anyio
 async def test_rate_limit_middleware_enforcement() -> None:
+    """Check exemptions, quota headers, rejection, and disabled limiting."""
     limiter = SlidingWindowRateLimiter(window_seconds=60)
     settings = AppSettings(
         app_env="test",
@@ -326,6 +345,7 @@ async def test_rate_limit_middleware_enforcement() -> None:
 @pytest.mark.anyio
 async def test_request_timeout_middleware() -> None:
     # Fast request passes
+    """Allow fast requests and return a bounded timeout for slow handlers."""
     app = create_app(AppSettings(app_env="test", request_timeout_seconds=5.0))
     res = await request(app, "GET", "/healthz")
     assert res.status_code == 200
@@ -335,6 +355,7 @@ async def test_request_timeout_middleware() -> None:
 
     @app_slow.get("/slow-route")
     async def slow_route() -> dict[str, str]:
+        """Delay a synthetic handler beyond its configured request deadline."""
         await asyncio.sleep(0.2)
         return {"status": "too late"}
 
@@ -348,6 +369,7 @@ async def test_request_timeout_middleware() -> None:
 
 
 def test_app_settings_from_environment_extended() -> None:
+    """Validate observability settings and reject malformed numeric values."""
     import os
     from unittest.mock import patch
 
@@ -401,6 +423,7 @@ def test_app_settings_from_environment_extended() -> None:
 
 @pytest.mark.anyio
 async def test_authorization_coverage_and_cross_user_isolation() -> None:
+    """Reject invalid credentials and hide watches belonging to another user."""
     user_a = AuthenticatedUser(uid="user_alice")
     user_b = AuthenticatedUser(uid="user_bob")
     verifier = MockTokenVerifier(

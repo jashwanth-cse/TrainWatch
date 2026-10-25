@@ -55,6 +55,7 @@ def create_app(
 
     @application.get("/healthz", tags=["health"])
     def root_liveness() -> dict[str, str]:
+        """Report local process health without contacting external services."""
         return {
             "status": "ok",
             "service": "trainwatch-api",
@@ -63,6 +64,7 @@ def create_app(
 
     @application.get("/readyz", tags=["health"])
     def root_readiness() -> dict[str, str]:
+        """Report local readiness using non-secret process configuration."""
         return {
             "status": "ready",
             "service": "trainwatch-api",
@@ -70,8 +72,8 @@ def create_app(
         }
 
     # Middlewares execute from bottom to top (innermost to outermost)
-    application.middleware("http")(timeout_middleware)
     application.middleware("http")(rate_limit_middleware)
+    application.middleware("http")(timeout_middleware)
     application.middleware("http")(structured_logging_middleware)
     application.middleware("http")(request_id_middleware)
 
