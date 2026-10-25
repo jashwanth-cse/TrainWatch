@@ -69,10 +69,23 @@ def iter_text_files() -> list[Path]:
 
 
 def is_allowed_placeholder(match: re.Match[str]) -> bool:
-    """Allow explicit non-secret sample values in documentation and templates."""
+    """Allow sample values and complete GitHub Actions secret references."""
     if match.lastindex is None:
         return False
     value = match.group(1).strip().lower()
+    if value == "$":
+        start = match.start(1)
+        opening_quote = match.string[start - 1] if start else ""
+        closing_quote = re.escape(opening_quote) if opening_quote in {"'", '"'} else ""
+        return (
+            re.fullmatch(
+                r"\$\{\{[ \t]*secrets\.[A-Za-z_][A-Za-z0-9_]*[ \t]*\}\}"
+                + closing_quote
+                + r"[ \t]*",
+                match.string[start:],
+            )
+            is not None
+        )
     return value in PLACEHOLDERS or value.startswith("https://example.invalid")
 
 
