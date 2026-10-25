@@ -20,6 +20,7 @@ class AppSettings:
     app_env: AppEnvironment = "local"
     log_level: LogLevel = "INFO"
     train_api_base_url: str = "https://example.invalid"
+    internal_service_key: str = ""
 
     @classmethod
     def from_environment(cls) -> AppSettings:
@@ -27,6 +28,7 @@ class AppSettings:
         app_env = os.getenv("APP_ENV", "local").lower()
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         train_api_base_url = os.getenv("TRAIN_API_BASE_URL", "https://example.invalid").strip()
+        internal_service_key = os.getenv("INTERNAL_SERVICE_KEY", "").strip()
 
         if app_env not in _APP_ENVIRONMENTS:
             raise ValueError("APP_ENV must be one of: local, test, staging, production")
@@ -39,4 +41,5 @@ class AppSettings:
             app_env=cast(AppEnvironment, app_env),
             log_level=cast(LogLevel, log_level),
             train_api_base_url=train_api_base_url.rstrip("/"),
+            internal_service_key=internal_service_key,
         )

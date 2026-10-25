@@ -1,4 +1,4 @@
-"""Port for retrieving one availability observation."""
+"""Port for retrieving and persisting availability observations."""
 
 from typing import Protocol
 
@@ -11,4 +11,25 @@ class AvailabilityProvider(Protocol):
 
     async def fetch(self, query: TrainQuery) -> AvailabilityObservation:
         """Fetch one observation for a canonical train query."""
+        ...
+
+
+class ObservationRepository(Protocol):
+    """Persist and retrieve historical availability observations for condition evaluation."""
+
+    async def save_observation(
+        self,
+        *,
+        watch_id: str,
+        observation: AvailabilityObservation,
+    ) -> None:
+        """Store an observation for the watch."""
+        ...
+
+    async def get_latest_observation(
+        self,
+        *,
+        watch_id: str,
+    ) -> AvailabilityObservation | None:
+        """Return the most recent observation for baseline comparison."""
         ...

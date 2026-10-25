@@ -9,6 +9,7 @@ from trainwatch.domain.availability import (
     compare_availability,
     parse_availability,
 )
+from trainwatch.domain.jobs import JobRecord, JobStatus
 from trainwatch.domain.watch import TrainQuery, Watch, WatchStatus
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     "AvailabilityObservation",
     "AvailabilitySnapshot",
     "AvailabilityStatus",
+    "JobRecord",
+    "JobStatus",
     "ProviderFailure",
     "TrainQuery",
     "Watch",
