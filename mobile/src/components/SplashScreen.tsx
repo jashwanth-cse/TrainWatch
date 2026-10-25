@@ -193,7 +193,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ readyToDismiss, onAn
       {/* Bottom Subtle Trust Badge */}
       <View style={styles.footer}>
         <View style={styles.liveIndicator} />
-        <Text style={styles.footerText}>Real-Time IRCTC Seat Intelligence</Text>
+        <Text style={styles.footerText}>Real-Time Seat Intelligence</Text>
       </View>
     </Animated.View>
   );

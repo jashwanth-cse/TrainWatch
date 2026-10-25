@@ -9,7 +9,18 @@ export const signInGoogleIdentity = async (auth: Auth) => {
   }
 
   // Load only when requested so Expo Go can display the sign-in screen and error.
-  const { GoogleSignin, isSuccessResponse } = await import('@react-native-google-signin/google-signin');
+  let GoogleSignin;
+  let isSuccessResponse;
+  try {
+    const mod = await import('@react-native-google-signin/google-signin');
+    GoogleSignin = mod.GoogleSignin;
+    isSuccessResponse = mod.isSuccessResponse;
+  } catch {
+    throw new Error(
+      'Native Google Sign-In is unavailable in Expo Go. Please use a native development build (npx expo run:android) or Continue as Guest.'
+    );
+  }
+
   GoogleSignin.configure({ webClientId, iosClientId });
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
   const response = await GoogleSignin.signIn();
@@ -25,7 +36,11 @@ export const signInGoogleIdentity = async (auth: Auth) => {
 };
 
 export const signOutGoogleIdentity = async (auth: Auth) => {
-  const { GoogleSignin } = await import('@react-native-google-signin/google-signin');
-  await GoogleSignin.signOut();
+  try {
+    const { GoogleSignin } = await import('@react-native-google-signin/google-signin');
+    await GoogleSignin.signOut();
+  } catch {
+    // Silently continue if native Google module is not present in runtime (e.g. Expo Go)
+  }
   await signOut(auth);
 };
