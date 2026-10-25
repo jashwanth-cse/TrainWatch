@@ -45,6 +45,7 @@ import {
   CheckCircle2,
   CalendarDays,
   ChevronDown,
+  ArrowLeftRight,
 } from 'lucide-react-native';
 
 const { height: windowHeight } = Dimensions.get('window');
@@ -116,8 +117,9 @@ export const TrainResultsScreen: React.FC = () => {
   const [stationModalVisible, setStationModalVisible] = useState(false);
   const [stationTarget, setStationTarget] = useState<'source' | 'destination'>('source');
 
-  // Animation value for Dynamic Island
+  // Animation values for Dynamic Island
   const [islandAnim] = useState(() => new Animated.Value(0));
+  const [islandSwapRotate] = useState(() => new Animated.Value(0));
 
   const handleRefresh = () => {
     setPage(1);
@@ -153,6 +155,25 @@ export const TrainResultsScreen: React.FC = () => {
     }).start(() => {
       setIslandVisible(false);
     });
+  };
+
+  const handleSwapIslandStations = () => {
+    Animated.sequence([
+      Animated.timing(islandSwapRotate, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(islandSwapRotate, {
+        toValue: 0,
+        duration: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const temp = islandSource;
+    setIslandSource(islandDestination);
+    setIslandDestination(temp);
   };
 
   const handleCommitDynamicIsland = () => {
@@ -595,7 +616,7 @@ export const TrainResultsScreen: React.FC = () => {
                 <View style={styles.islandDragHandle} />
               </View>
 
-              {/* Station Selector Cards Row: Symmetrical side-by-side cards without cross arrow */}
+              {/* Station Selector Cards Row with Symmetrical Swap Toggle */}
               <View style={styles.islandRouteRow}>
                 {/* Departure Station Card */}
                 <TouchableOpacity
@@ -616,6 +637,31 @@ export const TrainResultsScreen: React.FC = () => {
                   <Text style={styles.islandStationName} numberOfLines={1}>
                     {islandSource.name}
                   </Text>
+                </TouchableOpacity>
+
+                {/* Symmetrical Center Swap Toggle */}
+                <TouchableOpacity
+                  style={styles.islandSwapBtn}
+                  onPress={handleSwapIslandStations}
+                  activeOpacity={0.85}
+                  delayPressIn={0}
+                  accessibilityRole="button"
+                  accessibilityLabel="Swap departure and destination stations"
+                >
+                  <Animated.View
+                    style={{
+                      transform: [
+                        {
+                          rotate: islandSwapRotate.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '180deg'],
+                          }),
+                        },
+                      ],
+                    }}
+                  >
+                    <ArrowLeftRight size={16} color="#FFFFFF" strokeWidth={2.4} />
+                  </Animated.View>
                 </TouchableOpacity>
 
                 {/* Destination Station Card */}
@@ -1247,19 +1293,19 @@ const styles = StyleSheet.create({
   islandRouteRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent: 'center',
   },
   islandStationCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: radius.md,
     paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 8,
     borderWidth: 1.2,
     borderColor: '#DBEAFE',
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 74,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -1284,6 +1330,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#475569',
     marginTop: 2,
+  },
+  islandSwapBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 4,
   },
   islandCommitBtn: {
     borderRadius: radius.md,
