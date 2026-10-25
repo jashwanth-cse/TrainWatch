@@ -13,14 +13,7 @@ COPY src ./src
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir hatchling && \
-    pip wheel --no-cache-dir --no-deps --wheel-dir /build/wheels . && \
-    pip wheel --no-cache-dir --wheel-dir /build/wheels -r <(python -c '
-import tomllib
-with open("pyproject.toml", "rb") as f:
-    cfg = tomllib.load(f)
-for dep in cfg.get("project", {}).get("dependencies", []):
-    print(dep)
-')
+    pip wheel --no-cache-dir --wheel-dir /build/wheels .
 
 # Stage 2: Runtime
 FROM python:3.13-slim AS runtime
