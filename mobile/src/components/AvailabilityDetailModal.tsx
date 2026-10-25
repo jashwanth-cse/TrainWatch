@@ -23,7 +23,9 @@ import {
   CalendarDays,
   CheckCircle2,
   X,
+  AlertCircle,
 } from 'lucide-react-native';
+import { parseAvailabilityStatus } from '../utils/availabilityHelper';
 
 interface AvailabilityDetailModalProps {
   visible: boolean;
@@ -57,42 +59,14 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   if (!train || !selectedClass) return null;
 
   const currentStatus = liveAvailability || selectedClass.availability;
+  const parsedStatus = parseAvailabilityStatus(currentStatus);
 
-  const getStatusBadge = (avail: string) => {
-    const upper = avail.toUpperCase();
-    if (upper.includes('AVL') || upper.includes('AVAILABLE') || upper.includes('CURR_AVBL')) {
-      return {
-        bg: colors.statusAvailableBg,
-        text: colors.statusAvailable,
-        dot: colors.statusAvailable,
-        label: 'AVAILABLE',
-      };
-    }
-    if (upper.includes('RAC')) {
-      return {
-        bg: colors.statusRacBg,
-        text: colors.statusRac,
-        dot: colors.statusRac,
-        label: 'RAC (RESERVATION AGAINST CANCELLATION)',
-      };
-    }
-    if (upper.includes('WL') || upper.includes('RLWL') || upper.includes('GNWL') || upper.includes('PQWL')) {
-      return {
-        bg: colors.statusWlBg,
-        text: colors.statusWl,
-        dot: colors.statusWl,
-        label: 'WAITLISTED',
-      };
-    }
-    return {
-      bg: colors.surfaceSubtle,
-      text: colors.textSecondary,
-      dot: colors.textMuted,
-      label: 'STATUS UNKNOWN',
-    };
+  const badge = {
+    bg: parsedStatus.bgColor,
+    text: parsedStatus.textColor,
+    dot: parsedStatus.dotColor,
+    label: parsedStatus.modalLabel,
   };
-
-  const badge = getStatusBadge(currentStatus);
 
   const handleCheckLive = async () => {
     setCheckingLive(true);
@@ -288,7 +262,14 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               </Text>
             ) : null}
 
-            {alertConfigured ? (
+            {!parsedStatus.canTrack ? (
+              <View style={styles.alertDisabledBox}>
+                <AlertCircle size={16} color={colors.textSecondary} strokeWidth={2.2} style={{ marginRight: 8 }} />
+                <Text style={styles.alertDisabledText}>
+                  {parsedStatus.untrackableReason || 'Tracking unavailable for this seat status.'}
+                </Text>
+              </View>
+            ) : alertConfigured ? (
               <View style={styles.alertActiveRow}>
                 <CheckCircle2 size={18} color={colors.statusAvailable} strokeWidth={2.4} style={{ marginRight: 8 }} />
                 <Text style={styles.alertActiveText}>
@@ -602,5 +583,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.statusAvailable,
     flex: 1,
+  },
+  alertDisabledBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    padding: 12,
+    borderRadius: radius.md,
+    marginTop: 4,
+  },
+  alertDisabledText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    flex: 1,
+    lineHeight: 17,
   },
 });

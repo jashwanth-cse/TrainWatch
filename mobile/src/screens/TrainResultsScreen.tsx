@@ -6,21 +6,33 @@ import {
   TouchableOpacity,
   FlatList,
   Dimensions,
+  Animated,
+  ScrollView,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors, radius, spacing, shadows } from '../theme/tokens';
+import { colors, radius, spacing } from '../theme/tokens';
 import {
   searchTrains,
   TrainItem,
   TravelClassInfo,
   TrainSearchResults,
 } from '../services/trainService';
+import {
+  Station,
+  getRecentStations,
+  addRecentStation,
+  saveLastSearch,
+} from '../services/stationService';
 import { AvailabilityDetailModal } from '../components/AvailabilityDetailModal';
+import { DatePickerModal, DateItem } from '../components/DatePickerModal';
+import { StationSearchModal } from '../components/StationSearchModal';
 import { TrainWatchLoader } from '../components/TrainWatchLoader';
 import { ResponsiveButton } from '../components/ResponsiveButton';
+import { parseAvailabilityStatus } from '../utils/availabilityHelper';
 import {
   ArrowLeft,
   ArrowRight,
@@ -33,6 +45,11 @@ import {
   Utensils,
   Compass,
   CheckCircle2,
+  CalendarDays,
+  ChevronDown,
+  ArrowUpDown,
+  X,
+  History,
 } from 'lucide-react-native';
 
 const { height: windowHeight } = Dimensions.get('window');
@@ -51,10 +68,13 @@ export const TrainResultsScreen: React.FC = () => {
     travelClass?: string;
   }>();
 
-  const sourceCode = params.source || 'NDLS';
-  const destinationCode = params.destination || 'CNB';
-  const journeyDate = params.date || '';
-  const displayDate = params.displayDate || journeyDate;
+  // Active query state allowing live in-screen updates
+  const [currentSource, setCurrentSource] = useState(params.source || 'NDLS');
+  const [currentSourceName, setCurrentSourceName] = useState(params.sourceName || 'New Delhi');
+  const [currentDestination, setCurrentDestination] = useState(params.destination || 'CNB');
+  const [currentDestinationName, setCurrentDestinationName] = useState(params.destinationName || 'Kanpur');
+  const [currentDate, setCurrentDate] = useState(params.date || '');
+  const [currentDisplayDate, setCurrentDisplayDate] = useState(params.displayDate || params.date || '');
   const quota = params.quota || 'GN';
   const selectedClass = params.travelClass || 'All Classes';
 
@@ -83,6 +103,29 @@ export const TrainResultsScreen: React.FC = () => {
   const [selectedClassForModal, setSelectedClassForModal] = useState<TravelClassInfo | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
+  // Half-screen date picker modal
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+
+  // Dynamic Island route switcher states
+  const [islandVisible, setIslandVisible] = useState(false);
+  const [islandSource, setIslandSource] = useState<Station>({
+    code: currentSource,
+    name: currentSourceName,
+    state: '',
+  });
+  const [islandDestination, setIslandDestination] = useState<Station>({
+    code: currentDestination,
+    name: currentDestinationName,
+    state: '',
+  });
+  const [recentStations, setRecentStations] = useState<Station[]>([]);
+  const [stationModalVisible, setStationModalVisible] = useState(false);
+  const [stationTarget, setStationTarget] = useState<'source' | 'destination'>('source');
+
+  // Animation values for Dynamic Island
+  const [islandAnim] = useState(() => new Animated.Value(0));
+  const [islandSwapRotate] = useState(() => new Animated.Value(0));
+
   const handleRefresh = () => {
     setPage(1);
     setShowNearby(false);
@@ -94,6 +137,85 @@ export const TrainResultsScreen: React.FC = () => {
     setSelectedTrainForModal(train);
     setSelectedClassForModal(cls);
     setDetailModalVisible(true);
+  };
+
+  // Dynamic Island Controls
+  const handleOpenDynamicIsland = () => {
+    setIslandSource({ code: currentSource, name: currentSourceName, state: '' });
+    setIslandDestination({ code: currentDestination, name: currentDestinationName, state: '' });
+    void getRecentStations().then(setRecentStations);
+    setIslandVisible(true);
+    Animated.spring(islandAnim, {
+      toValue: 1,
+      friction: 8,
+      tension: 45,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handleCloseDynamicIsland = () => {
+    Animated.timing(islandAnim, {
+      toValue: 0,
+      duration: 170,
+      useNativeDriver: true,
+    }).start(() => {
+      setIslandVisible(false);
+    });
+  };
+
+  const handleSwapIslandStations = () => {
+    Animated.sequence([
+      Animated.timing(islandSwapRotate, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(islandSwapRotate, {
+        toValue: 0,
+        duration: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const temp = islandSource;
+    setIslandSource(islandDestination);
+    setIslandDestination(temp);
+  };
+
+  const handleCommitDynamicIsland = () => {
+    if (islandSource.code === islandDestination.code) {
+      Alert.alert('Invalid Route', 'Departure and destination stations must be different.');
+      return;
+    }
+    setCurrentSource(islandSource.code);
+    setCurrentSourceName(islandSource.name);
+    setCurrentDestination(islandDestination.code);
+    setCurrentDestinationName(islandDestination.name);
+
+    void saveLastSearch({
+      source: islandSource,
+      destination: islandDestination,
+      travelClass: selectedClass,
+      quota,
+    });
+    void addRecentStation(islandSource);
+    void addRecentStation(islandDestination);
+
+    handleCloseDynamicIsland();
+    setPage(1);
+    setShowNearby(false);
+    setRevealingNearby(false);
+    setRefreshIndex((prev) => prev + 1);
+  };
+
+  const handleDateSelected = (dateItem: DateItem) => {
+    setCurrentDate(dateItem.apiFormat);
+    setCurrentDisplayDate(dateItem.displayFormat);
+    setDatePickerVisible(false);
+    setPage(1);
+    setShowNearby(false);
+    setRevealingNearby(false);
+    setRefreshIndex((prev) => prev + 1);
   };
 
   useEffect(() => {
@@ -109,9 +231,9 @@ export const TrainResultsScreen: React.FC = () => {
     });
 
     void searchTrains({
-      source: sourceCode,
-      destination: destinationCode,
-      date: journeyDate,
+      source: currentSource,
+      destination: currentDestination,
+      date: currentDate,
       quota,
       travelClass: selectedClass,
     })
@@ -133,7 +255,7 @@ export const TrainResultsScreen: React.FC = () => {
       active = false;
       if (loadMoreTimeout.current) clearTimeout(loadMoreTimeout.current);
     };
-  }, [sourceCode, destinationCode, journeyDate, quota, selectedClass, refreshIndex]);
+  }, [currentSource, currentDestination, currentDate, quota, selectedClass, refreshIndex]);
 
   // Determine whether direct trains exist
   const isDirectRoute = useMemo(() => {
@@ -151,7 +273,6 @@ export const TrainResultsScreen: React.FC = () => {
   // Handle user tapping "Show trains from Nearby Stations"
   const handleRevealNearby = () => {
     setRevealingNearby(true);
-    // Smooth transition with innovative loader
     setTimeout(() => {
       setRevealingNearby(false);
       setShowNearby(true);
@@ -197,32 +318,12 @@ export const TrainResultsScreen: React.FC = () => {
   };
 
   const getStatusBadgeStyle = (avail: string) => {
-    const upper = avail.toUpperCase();
-    if (upper.includes('AVL') || upper.includes('AVAILABLE') || upper.includes('CURR_AVBL')) {
-      return {
-        bg: colors.statusAvailableBg,
-        text: colors.statusAvailable,
-        dot: colors.statusAvailable,
-      };
-    }
-    if (upper.includes('RAC')) {
-      return {
-        bg: colors.statusRacBg,
-        text: colors.statusRac,
-        dot: colors.statusRac,
-      };
-    }
-    if (upper.includes('WL') || upper.includes('RLWL') || upper.includes('GNWL') || upper.includes('PQWL')) {
-      return {
-        bg: colors.statusWlBg,
-        text: colors.statusWl,
-        dot: colors.statusWl,
-      };
-    }
+    const parsed = parseAvailabilityStatus(avail);
     return {
-      bg: colors.surfaceSubtle,
-      text: colors.textSecondary,
-      dot: colors.textMuted,
+      bg: parsed.bgColor,
+      text: parsed.textColor,
+      dot: parsed.dotColor,
+      label: parsed.badgeLabel,
     };
   };
 
@@ -251,13 +352,21 @@ export const TrainResultsScreen: React.FC = () => {
           </TouchableOpacity>
 
           <View style={styles.headerTitleGroup}>
-            <View style={styles.routePill}>
-              <Text style={styles.routeCode}>{sourceCode}</Text>
+            {/* Dynamic Island Trigger Pill */}
+            <TouchableOpacity
+              style={styles.routePill}
+              onPress={handleOpenDynamicIsland}
+              activeOpacity={0.82}
+              delayPressIn={0}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={styles.routeCode}>{currentSource}</Text>
               <ArrowRight size={13} color="rgba(255,255,255,0.85)" strokeWidth={2.5} style={{ marginHorizontal: 6 }} />
-              <Text style={styles.routeCode}>{destinationCode}</Text>
-            </View>
+              <Text style={styles.routeCode}>{currentDestination}</Text>
+              <ChevronDown size={13} color="rgba(255,255,255,0.75)" strokeWidth={2.5} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
             <Text style={styles.headerSubtitle}>
-              {displayDate} • {quota} Quota
+              {currentDisplayDate} • {quota} Quota
             </Text>
           </View>
 
@@ -273,6 +382,24 @@ export const TrainResultsScreen: React.FC = () => {
             <RotateCcw size={18} color="#FFFFFF" strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
+
+        {/* Quick Date Switcher Bar with Half-Screen Calendar Trigger */}
+        <TouchableOpacity
+          style={styles.dateBar}
+          onPress={() => setDatePickerVisible(true)}
+          activeOpacity={0.85}
+          delayPressIn={0}
+        >
+          <View style={styles.dateBarLeft}>
+            <CalendarDays size={14} color="#93C5FD" strokeWidth={2.4} style={{ marginRight: 6 }} />
+            <Text style={styles.dateBarLabel}>Journey Date:</Text>
+            <Text style={styles.dateBarValue}>{currentDisplayDate}</Text>
+          </View>
+          <View style={styles.dateBarChangeBadge}>
+            <Text style={styles.dateBarChangeText}>Change</Text>
+            <ChevronDown size={11} color="#FFFFFF" strokeWidth={2.6} style={{ marginLeft: 3 }} />
+          </View>
+        </TouchableOpacity>
 
         {/* Sort Pills Row */}
         <View style={styles.sortBar}>
@@ -338,7 +465,7 @@ export const TrainResultsScreen: React.FC = () => {
         <View style={styles.centerContainer}>
           <TrainWatchLoader
             size="lg"
-            message={`Searching live trains between ${sourceCode} & ${destinationCode}...`}
+            message={`Searching live trains between ${currentSource} & ${currentDestination}...`}
             subMessage="Checking direct rail availability"
           />
         </View>
@@ -359,61 +486,68 @@ export const TrainResultsScreen: React.FC = () => {
         <View style={styles.fallbackCenterContainer}>
           <View style={styles.noDirectCard}>
             <View style={styles.noDirectIconCircle}>
-              <TrainFront size={32} color={colors.primary} strokeWidth={2.2} />
+              <Compass size={28} color={colors.primary} strokeWidth={2.2} />
             </View>
-            <Text style={styles.noDirectTitle}>
-              No direct trains found for this route!
-            </Text>
+            <Text style={styles.noDirectTitle}>No direct trains found for this route!</Text>
             <Text style={styles.noDirectSubtitle}>
-              There are no direct train routes between {sourceCode} and {destinationCode} on {displayDate}.
+              Direct trains between {currentSource} and {currentDestination} are not available on this date.
+              Nearby connecting stations may have active trains.
             </Text>
 
             {hasNearbyTrains ? (
               <View style={styles.nearbyActionArea}>
                 <Text style={styles.nearbyHintText}>
-                  Alternate trains are available connecting via nearby major stations.
+                  {results?.trains.length} alternate train routes available via neighboring hubs
                 </Text>
-
-                {revealingNearby ? (
-                  <View style={{ paddingVertical: 14 }}>
-                    <TrainWatchLoader
-                      size="md"
-                      message="Discovering trains from nearby stations..."
-                      subMessage="Scanning connecting junctions and hubs"
-                    />
-                  </View>
-                ) : (
-                  <ResponsiveButton
-                    title="Show trains from Nearby Stations"
-                    onPress={handleRevealNearby}
-                    variant="primary"
-                    icon={<Compass size={18} color="#FFFFFF" strokeWidth={2.4} />}
-                    style={{ width: '100%', marginTop: 8 }}
-                  />
-                )}
+                <ResponsiveButton
+                  title={revealingNearby ? 'Finding Alternate Routes...' : 'Show trains from Nearby Stations'}
+                  onPress={handleRevealNearby}
+                  variant="primary"
+                  loading={revealingNearby}
+                  icon={<ArrowRight size={17} color="#FFFFFF" strokeWidth={2.4} />}
+                  style={{ width: '100%' }}
+                />
               </View>
             ) : (
               <Text style={styles.noNearbyNotice}>
-                No alternative or nearby trains found for this date.
+                No alternate nearby stations available for this specific query.
               </Text>
             )}
           </View>
         </View>
+      ) : revealingNearby ? (
+        <View style={styles.centerContainer}>
+          <TrainWatchLoader
+            size="lg"
+            message="Discovering Trains from Nearby Stations..."
+            subMessage="Scanning neighboring junctions & connecting rail hubs"
+          />
+        </View>
+      ) : sortedTrains.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <TrainFront size={44} color={colors.textMuted} strokeWidth={1.8} style={{ marginBottom: 12 }} />
+          <Text style={styles.errorTitle}>No Trains Scheduled</Text>
+          <Text style={styles.errorMessage}>
+            No trains found operating between {currentSource} and {currentDestination} on {currentDisplayDate}.
+          </Text>
+        </View>
       ) : (
-        // TRAIN LIST (DIRECT OR NEARBY REVEALED)
         <FlatList
           data={visibleTrains}
           keyExtractor={(item) => item.train_number}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xl }]}
+          contentContainerStyle={[
+            styles.listContainer,
+            { paddingBottom: insets.bottom + spacing.xl },
+          ]}
+          showsVerticalScrollIndicator={false}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
           ListHeaderComponent={
             showNearby ? (
               <View style={styles.nearbyNoticeBanner}>
-                <Compass size={15} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 6 }} />
+                <Compass size={15} color={colors.primaryDark} strokeWidth={2.4} style={{ marginRight: 6 }} />
                 <Text style={styles.nearbyNoticeBannerText}>
-                  Showing trains from nearby stations
+                  Showing trains from nearby connecting stations ({sortedTrains.length} found)
                 </Text>
               </View>
             ) : undefined
@@ -423,9 +557,9 @@ export const TrainResultsScreen: React.FC = () => {
               <View style={styles.listFooterLoader}>
                 <TrainWatchLoader size="sm" message="Loading more trains..." />
               </View>
-            ) : visibleTrains.length > 0 && !hasMorePages ? (
+            ) : !hasMorePages && sortedTrains.length > 5 ? (
               <View style={styles.endOfListRow}>
-                <CheckCircle2 size={13} color={colors.textSecondary} strokeWidth={2.4} style={{ marginRight: 5 }} />
+                <CheckCircle2 size={14} color={colors.textSecondary} strokeWidth={2} style={{ marginRight: 6 }} />
                 <Text style={styles.endOfListText}>
                   All {sortedTrains.length} {showNearby ? 'nearby' : 'direct'} trains displayed
                 </Text>
@@ -442,13 +576,195 @@ export const TrainResultsScreen: React.FC = () => {
         />
       )}
 
+      {/* Dynamic Island Route Switcher Overlay */}
+      {islandVisible && (
+        <View style={styles.islandOverlay}>
+          <TouchableOpacity
+            style={styles.islandBackdrop}
+            activeOpacity={1}
+            onPress={handleCloseDynamicIsland}
+          />
+
+          <Animated.View
+            style={[
+              styles.islandCard,
+              {
+                paddingTop: Math.max(insets.top, 16),
+                opacity: islandAnim,
+                transform: [
+                  {
+                    scale: islandAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.88, 1],
+                    }),
+                  },
+                  {
+                    translateY: islandAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-30, 0],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            {/* Dynamic Island Top Capsule Indicator */}
+            <View style={styles.islandHeader}>
+              <View style={styles.islandCapsulePill}>
+                <View style={styles.islandPulseDot} />
+                <Text style={styles.islandCapsuleText}>DYNAMIC ROUTE SWITCHER</Text>
+              </View>
+              <TouchableOpacity
+                onPress={handleCloseDynamicIsland}
+                style={styles.islandCloseBtn}
+                delayPressIn={0}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <X size={16} color="#94A3B8" strokeWidth={2.4} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Station Selector Cards Row */}
+            <View style={styles.islandRouteRow}>
+              {/* Departure Station Card */}
+              <TouchableOpacity
+                style={styles.islandStationCard}
+                onPress={() => {
+                  setStationTarget('source');
+                  setStationModalVisible(true);
+                }}
+                activeOpacity={0.8}
+                delayPressIn={0}
+              >
+                <Text style={styles.islandStationTag}>FROM</Text>
+                <Text style={styles.islandStationCode}>{islandSource.code}</Text>
+                <Text style={styles.islandStationName} numberOfLines={1}>
+                  {islandSource.name}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Middle Swap Button */}
+              <TouchableOpacity
+                style={styles.islandSwapBtn}
+                onPress={handleSwapIslandStations}
+                activeOpacity={0.85}
+                delayPressIn={0}
+              >
+                <Animated.View
+                  style={{
+                    transform: [
+                      {
+                        rotate: islandSwapRotate.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0deg', '180deg'],
+                        }),
+                      },
+                    ],
+                  }}
+                >
+                  <ArrowUpDown size={18} color="#FFFFFF" strokeWidth={2.4} />
+                </Animated.View>
+              </TouchableOpacity>
+
+              {/* Destination Station Card */}
+              <TouchableOpacity
+                style={styles.islandStationCard}
+                onPress={() => {
+                  setStationTarget('destination');
+                  setStationModalVisible(true);
+                }}
+                activeOpacity={0.8}
+                delayPressIn={0}
+              >
+                <Text style={styles.islandStationTag}>TO</Text>
+                <Text style={styles.islandStationCode}>{islandDestination.code}</Text>
+                <Text style={styles.islandStationName} numberOfLines={1}>
+                  {islandDestination.name}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Recent Searches Chips Row */}
+            {recentStations.length > 0 && (
+              <View style={styles.islandRecentSection}>
+                <View style={styles.islandRecentHeader}>
+                  <History size={11} color="#60A5FA" strokeWidth={2.4} style={{ marginRight: 4 }} />
+                  <Text style={styles.islandRecentTitle}>RECENT STATIONS</Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.islandRecentRow}
+                >
+                  {recentStations.map((station) => (
+                    <TouchableOpacity
+                      key={`island-recent-${station.code}`}
+                      style={styles.islandRecentChip}
+                      onPress={() => {
+                        if (station.code !== islandSource.code) {
+                          setIslandDestination(station);
+                        } else {
+                          setIslandSource(station);
+                        }
+                      }}
+                      activeOpacity={0.75}
+                      delayPressIn={0}
+                    >
+                      <Text style={styles.islandRecentChipCode}>{station.code}</Text>
+                      <Text style={styles.islandRecentChipName} numberOfLines={1}>
+                        {station.name.length > 12 ? `${station.name.slice(0, 11)}...` : station.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {/* Update Route CTA */}
+            <TouchableOpacity
+              style={styles.islandCommitBtn}
+              onPress={handleCommitDynamicIsland}
+              activeOpacity={0.88}
+              delayPressIn={0}
+            >
+              <Text style={styles.islandCommitText}>Update Route & Search</Text>
+              <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.4} style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
+      )}
+
+      {/* Half-Screen Journey Date Picker Modal */}
+      <DatePickerModal
+        visible={datePickerVisible}
+        halfScreen={true}
+        selectedApiDate={currentDate}
+        onClose={() => setDatePickerVisible(false)}
+        onSelect={handleDateSelected}
+      />
+
+      {/* Station Search Modal for Dynamic Island */}
+      <StationSearchModal
+        visible={stationModalVisible}
+        title={stationTarget === 'source' ? 'Select Departure Station' : 'Select Destination'}
+        onClose={() => setStationModalVisible(false)}
+        onSelect={(station) => {
+          if (stationTarget === 'source') {
+            setIslandSource(station);
+          } else {
+            setIslandDestination(station);
+          }
+          setStationModalVisible(false);
+        }}
+      />
+
       {/* Availability Detail & Alert Modal */}
       <AvailabilityDetailModal
         visible={detailModalVisible}
         train={selectedTrainForModal}
         selectedClass={selectedClassForModal}
-        journeyDate={journeyDate}
-        displayDate={displayDate}
+        journeyDate={currentDate}
+        displayDate={currentDisplayDate}
         quota={quota}
         onClose={() => setDetailModalVisible(false)}
       />
@@ -458,7 +774,7 @@ export const TrainResultsScreen: React.FC = () => {
 
 interface TrainCardProps {
   train: TrainItem;
-  getStatusBadgeStyle: (avail: string) => { bg: string; text: string; dot: string };
+  getStatusBadgeStyle: (avail: string) => { bg: string; text: string; dot: string; label: string };
   onSelectClass: (cls: TravelClassInfo) => void;
 }
 
@@ -533,7 +849,7 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onSel
               <View style={[styles.statusPill, { backgroundColor: badge.bg }]}>
                 <View style={[styles.statusDot, { backgroundColor: badge.dot }]} />
                 <Text style={[styles.statusText, { color: badge.text }]} numberOfLines={1}>
-                  {cls.availability}
+                  {badge.label}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -559,86 +875,127 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.xs + 2,
+    marginBottom: spacing.xs,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.glassSubtleBg,
-    borderWidth: 1,
-    borderColor: colors.glassSubtleBorder,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitleGroup: {
     alignItems: 'center',
+    flex: 1,
+    marginHorizontal: spacing.xs,
   },
   routePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.glassSubtleBg,
-    borderWidth: 1,
-    borderColor: colors.glassSubtleBorder,
-    paddingHorizontal: 14,
-    paddingVertical: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
   },
   routeCode: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
   headerSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 11,
     fontWeight: '600',
-    marginTop: 3,
+    color: 'rgba(255, 255, 255, 0.88)',
+    marginTop: 2,
   },
   refreshBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: colors.glassSubtleBg,
-    borderWidth: 1,
-    borderColor: colors.glassSubtleBorder,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // Date Switcher Bar
+  dateBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginBottom: spacing.xs + 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+  },
+  dateBarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  dateBarLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginRight: 4,
+  },
+  dateBarValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  dateBarChangeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+  },
+  dateBarChangeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
   sortBar: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: spacing.xs,
+    marginTop: 2,
   },
   sortPill: {
     flex: 1,
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 7,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    paddingVertical: 6,
     borderRadius: radius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.22)',
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   sortPillActive: {
     backgroundColor: '#FFFFFF',
     borderColor: '#FFFFFF',
-    ...shadows.badge,
   },
   sortPillText: {
     fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.92)',
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   sortPillTextActive: {
     color: colors.brandNavy,
-    fontWeight: '800',
   },
-  listContent: {
+
+  listContainer: {
     padding: spacing.md,
-    gap: 12,
+    gap: spacing.md,
   },
   card: {
     backgroundColor: colors.cardBackground,
@@ -646,59 +1003,59 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1.2,
     borderColor: colors.borderSubtle,
-    ...shadows.card,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
   },
   trainHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
   trainNumberRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 2,
   },
   trainNumber: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: colors.primary,
-    letterSpacing: 0.5,
+    marginRight: 6,
   },
   pantryBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: radius.xs,
+    borderRadius: radius.sm,
   },
   pantryText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '600',
     color: colors.textSecondary,
   },
   trainName: {
     fontSize: 15,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginTop: 2,
   },
   fareContainer: {
     alignItems: 'flex-end',
   },
   fromFareLabel: {
     fontSize: 10,
-    fontWeight: '600',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   fareAmount: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
-    color: colors.textPrimary,
+    color: colors.brandNavy,
   },
   scheduleRow: {
     flexDirection: 'row',
@@ -708,31 +1065,31 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: colors.borderSubtle,
-    marginVertical: spacing.xs,
+    marginBottom: spacing.sm,
   },
   timeBlock: {
     minWidth: 60,
   },
   timeText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
     color: colors.textPrimary,
   },
   stationCodeText: {
     fontSize: 12,
     color: colors.textSecondary,
-    fontWeight: '700',
+    fontWeight: '600',
     marginTop: 2,
   },
   durationBlock: {
-    alignItems: 'center',
     flex: 1,
-    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
   },
   durationText: {
     fontSize: 11,
+    fontWeight: '600',
     color: colors.textSecondary,
-    fontWeight: '700',
     marginBottom: 4,
   },
   timelineLine: {
@@ -755,25 +1112,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: spacing.sm,
   },
   classBox: {
     flex: 1,
-    minWidth: '22%',
+    minWidth: 72,
     backgroundColor: colors.surfaceSubtle,
-    borderRadius: radius.sm + 2,
+    borderRadius: radius.md,
     padding: 8,
-    borderWidth: 1.2,
+    borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
   classTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'baseline',
+    alignItems: 'center',
     marginBottom: 4,
   },
   classTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: colors.textPrimary,
   },
@@ -787,7 +1143,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 6,
     paddingVertical: 3,
-    borderRadius: radius.xs,
+    borderRadius: radius.sm,
+    alignSelf: 'flex-start',
   },
   statusDot: {
     width: 5,
@@ -798,55 +1155,58 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 10,
     fontWeight: '800',
+    letterSpacing: 0.2,
   },
   centerContainer: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     padding: spacing.xl,
+  },
+  fallbackCenterContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
   },
   errorTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: colors.textPrimary,
-    marginBottom: spacing.xs,
+    marginBottom: 8,
   },
   errorMessage: {
     fontSize: 13,
-    fontWeight: '500',
-    color: colors.statusWl,
+    color: colors.textSecondary,
     textAlign: 'center',
+    lineHeight: 19,
     marginBottom: spacing.lg,
-  },
-  fallbackCenterContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.lg,
   },
   noDirectCard: {
     width: '100%',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.cardBackground,
     borderRadius: radius.xl,
     padding: spacing.xl,
     alignItems: 'center',
-    borderWidth: 1.2,
+    borderWidth: 1.5,
     borderColor: colors.borderSubtle,
-    ...shadows.card,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 3,
   },
   noDirectIconCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: colors.primaryLight,
-    borderWidth: 1.5,
-    borderColor: 'rgba(96, 165, 250, 0.4)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
   noDirectTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '800',
     color: colors.textPrimary,
     textAlign: 'center',
@@ -913,5 +1273,170 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: colors.textSecondary,
+  },
+
+  // Dynamic Island Overlay & Card
+  islandOverlay: {
+    ...StyleSheet.absoluteFill,
+    zIndex: 9999,
+    elevation: 9999,
+  },
+  islandBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  islandCard: {
+    backgroundColor: '#0B132B',
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.6,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  islandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  islandCapsulePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  islandPulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginRight: 6,
+  },
+  islandCapsuleText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#93C5FD',
+    letterSpacing: 0.8,
+  },
+  islandCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  islandRouteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  islandStationCard: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    borderRadius: radius.md,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+  },
+  islandStationTag: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  islandStationCode: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  islandStationName: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#CBD5E1',
+    marginTop: 2,
+  },
+  islandSwapBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 8,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.45,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  islandRecentSection: {
+    marginTop: spacing.md,
+  },
+  islandRecentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  islandRecentTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#60A5FA',
+    letterSpacing: 0.8,
+  },
+  islandRecentRow: {
+    gap: 8,
+  },
+  islandRecentChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderRadius: radius.sm,
+    paddingVertical: 5,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+  },
+  islandRecentChipCode: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#93C5FD',
+  },
+  islandRecentChipName: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  islandCommitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: 12,
+    borderRadius: radius.md,
+    marginTop: spacing.md,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  islandCommitText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
   },
 });
