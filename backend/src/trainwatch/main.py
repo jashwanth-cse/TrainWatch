@@ -9,6 +9,7 @@ from trainwatch.api.v1 import router as api_v1_router
 from trainwatch.config import AppSettings
 from trainwatch.ports.devices import DeviceRepository
 from trainwatch.ports.identity import TokenVerifier
+from trainwatch.ports.jobs import JobRepository
 from trainwatch.ports.watches import WatchRepository
 from trainwatch.services.notification_dispatcher import NotificationDispatcherService
 from trainwatch.services.worker import DispatcherService, WorkerService

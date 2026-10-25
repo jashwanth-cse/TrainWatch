@@ -47,7 +47,7 @@ class JobRepository(Protocol):
         ...
 
     async def reconcile_expired_leases(self, *, now: datetime) -> int:
-        """Reset expired leases back to pending state so they can be re-evaluated."""
+        """Reset expired leases to pending, preserving their unsuccessful attempt count."""
         ...
 
     async def get(self, *, job_id: str) -> JobRecord | None:
@@ -56,4 +56,12 @@ class JobRepository(Protocol):
 
     async def save(self, job: JobRecord) -> None:
         """Persist a job record."""
+        ...
+
+    async def ensure_pending(self, job: JobRecord) -> None:
+        """Atomically create/reactivate one job; preserve an existing pending job or lease.
+
+        The caller supplies a stable job ID per watch. Completed/failed jobs are
+        replaced with the fresh pending record, resetting the retry budget.
+        """
         ...
