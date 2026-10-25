@@ -7,7 +7,6 @@ import {
   FlatList,
   Dimensions,
   Animated,
-  ScrollView,
   Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,7 +22,6 @@ import {
 } from '../services/trainService';
 import {
   Station,
-  getRecentStations,
   addRecentStation,
   saveLastSearch,
 } from '../services/stationService';
@@ -49,7 +47,6 @@ import {
   ChevronDown,
   ArrowUpDown,
   X,
-  History,
 } from 'lucide-react-native';
 
 const { height: windowHeight } = Dimensions.get('window');
@@ -118,7 +115,6 @@ export const TrainResultsScreen: React.FC = () => {
     name: currentDestinationName,
     state: '',
   });
-  const [recentStations, setRecentStations] = useState<Station[]>([]);
   const [stationModalVisible, setStationModalVisible] = useState(false);
   const [stationTarget, setStationTarget] = useState<'source' | 'destination'>('source');
 
@@ -139,11 +135,10 @@ export const TrainResultsScreen: React.FC = () => {
     setDetailModalVisible(true);
   };
 
-  // Dynamic Island Controls
+  // Dynamic Island Route Switcher Controls
   const handleOpenDynamicIsland = () => {
     setIslandSource({ code: currentSource, name: currentSourceName, state: '' });
     setIslandDestination({ code: currentDestination, name: currentDestinationName, state: '' });
-    void getRecentStations().then(setRecentStations);
     setIslandVisible(true);
     Animated.spring(islandAnim, {
       toValue: 1,
@@ -583,153 +578,135 @@ export const TrainResultsScreen: React.FC = () => {
             style={styles.islandBackdrop}
             activeOpacity={1}
             onPress={handleCloseDynamicIsland}
+            accessibilityRole="button"
+            accessibilityLabel="Close route switcher"
           />
 
           <Animated.View
             style={[
-              styles.islandCard,
+              styles.islandCardWrapper,
               {
-                paddingTop: Math.max(insets.top, 16),
+                paddingTop: Math.max(insets.top, 14),
                 opacity: islandAnim,
                 transform: [
                   {
                     scale: islandAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0.88, 1],
+                      outputRange: [0.92, 1],
                     }),
                   },
                   {
                     translateY: islandAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [-30, 0],
+                      outputRange: [-24, 0],
                     }),
                   },
                 ],
               },
             ]}
           >
-            {/* Dynamic Island Top Capsule Indicator */}
-            <View style={styles.islandHeader}>
-              <View style={styles.islandCapsulePill}>
-                <View style={styles.islandPulseDot} />
-                <Text style={styles.islandCapsuleText}>DYNAMIC ROUTE SWITCHER</Text>
-              </View>
-              <TouchableOpacity
-                onPress={handleCloseDynamicIsland}
-                style={styles.islandCloseBtn}
-                delayPressIn={0}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <X size={16} color="#94A3B8" strokeWidth={2.4} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Station Selector Cards Row */}
-            <View style={styles.islandRouteRow}>
-              {/* Departure Station Card */}
-              <TouchableOpacity
-                style={styles.islandStationCard}
-                onPress={() => {
-                  setStationTarget('source');
-                  setStationModalVisible(true);
-                }}
-                activeOpacity={0.8}
-                delayPressIn={0}
-              >
-                <Text style={styles.islandStationTag}>FROM</Text>
-                <Text style={styles.islandStationCode}>{islandSource.code}</Text>
-                <Text style={styles.islandStationName} numberOfLines={1}>
-                  {islandSource.name}
-                </Text>
-              </TouchableOpacity>
-
-              {/* Middle Swap Button */}
-              <TouchableOpacity
-                style={styles.islandSwapBtn}
-                onPress={handleSwapIslandStations}
-                activeOpacity={0.85}
-                delayPressIn={0}
-              >
-                <Animated.View
-                  style={{
-                    transform: [
-                      {
-                        rotate: islandSwapRotate.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ['0deg', '180deg'],
-                        }),
-                      },
-                    ],
-                  }}
-                >
-                  <ArrowUpDown size={18} color="#FFFFFF" strokeWidth={2.4} />
-                </Animated.View>
-              </TouchableOpacity>
-
-              {/* Destination Station Card */}
-              <TouchableOpacity
-                style={styles.islandStationCard}
-                onPress={() => {
-                  setStationTarget('destination');
-                  setStationModalVisible(true);
-                }}
-                activeOpacity={0.8}
-                delayPressIn={0}
-              >
-                <Text style={styles.islandStationTag}>TO</Text>
-                <Text style={styles.islandStationCode}>{islandDestination.code}</Text>
-                <Text style={styles.islandStationName} numberOfLines={1}>
-                  {islandDestination.name}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Recent Searches Chips Row */}
-            {recentStations.length > 0 && (
-              <View style={styles.islandRecentSection}>
-                <View style={styles.islandRecentHeader}>
-                  <History size={11} color="#60A5FA" strokeWidth={2.4} style={{ marginRight: 4 }} />
-                  <Text style={styles.islandRecentTitle}>RECENT STATIONS</Text>
-                </View>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.islandRecentRow}
-                >
-                  {recentStations.map((station) => (
-                    <TouchableOpacity
-                      key={`island-recent-${station.code}`}
-                      style={styles.islandRecentChip}
-                      onPress={() => {
-                        if (station.code !== islandSource.code) {
-                          setIslandDestination(station);
-                        } else {
-                          setIslandSource(station);
-                        }
-                      }}
-                      activeOpacity={0.75}
-                      delayPressIn={0}
-                    >
-                      <Text style={styles.islandRecentChipCode}>{station.code}</Text>
-                      <Text style={styles.islandRecentChipName} numberOfLines={1}>
-                        {station.name.length > 12 ? `${station.name.slice(0, 11)}...` : station.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* Update Route CTA */}
-            <TouchableOpacity
-              style={styles.islandCommitBtn}
-              onPress={handleCommitDynamicIsland}
-              activeOpacity={0.88}
-              delayPressIn={0}
+            <LinearGradient
+              colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']}
+              locations={[0, 0.42, 1.0]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.islandCardGradient}
             >
-              <Text style={styles.islandCommitText}>Update Route & Search</Text>
-              <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.4} style={{ marginLeft: 6 }} />
-            </TouchableOpacity>
+              {/* Header with clean drag indicator and close button */}
+              <View style={styles.islandHeader}>
+                <View style={styles.islandDragHandle} />
+                <TouchableOpacity
+                  onPress={handleCloseDynamicIsland}
+                  style={styles.islandCloseBtn}
+                  delayPressIn={0}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close route switcher"
+                >
+                  <X size={16} color="#2563EB" strokeWidth={2.4} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Station Selector Cards Row */}
+              <View style={styles.islandRouteRow}>
+                {/* Departure Station Card */}
+                <TouchableOpacity
+                  style={styles.islandStationCard}
+                  onPress={() => {
+                    setStationTarget('source');
+                    setStationModalVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                  delayPressIn={0}
+                >
+                  <Text style={styles.islandStationTag}>FROM</Text>
+                  <Text style={styles.islandStationCode}>{islandSource.code}</Text>
+                  <Text style={styles.islandStationName} numberOfLines={1}>
+                    {islandSource.name}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Middle Swap Button */}
+                <TouchableOpacity
+                  style={styles.islandSwapBtn}
+                  onPress={handleSwapIslandStations}
+                  activeOpacity={0.85}
+                  delayPressIn={0}
+                  accessibilityRole="button"
+                  accessibilityLabel="Swap departure and destination stations"
+                >
+                  <Animated.View
+                    style={{
+                      transform: [
+                        {
+                          rotate: islandSwapRotate.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['0deg', '180deg'],
+                          }),
+                        },
+                      ],
+                    }}
+                  >
+                    <ArrowUpDown size={18} color="#FFFFFF" strokeWidth={2.4} />
+                  </Animated.View>
+                </TouchableOpacity>
+
+                {/* Destination Station Card */}
+                <TouchableOpacity
+                  style={styles.islandStationCard}
+                  onPress={() => {
+                    setStationTarget('destination');
+                    setStationModalVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                  delayPressIn={0}
+                >
+                  <Text style={styles.islandStationTag}>TO</Text>
+                  <Text style={styles.islandStationCode}>{islandDestination.code}</Text>
+                  <Text style={styles.islandStationName} numberOfLines={1}>
+                    {islandDestination.name}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Update Route CTA */}
+              <TouchableOpacity
+                style={styles.islandCommitBtn}
+                onPress={handleCommitDynamicIsland}
+                activeOpacity={0.88}
+                delayPressIn={0}
+              >
+                <LinearGradient
+                  colors={['#2563EB', '#1D4ED8']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.islandCommitGradient}
+                >
+                  <Text style={styles.islandCommitText}>Update Route & Search</Text>
+                  <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.4} style={{ marginLeft: 6 }} />
+                </LinearGradient>
+              </TouchableOpacity>
+            </LinearGradient>
           </Animated.View>
         </View>
       )}
@@ -743,9 +720,10 @@ export const TrainResultsScreen: React.FC = () => {
         onSelect={handleDateSelected}
       />
 
-      {/* Station Search Modal for Dynamic Island */}
+      {/* Adaptive Half-Screen Station Search Modal for Route Switcher */}
       <StationSearchModal
         visible={stationModalVisible}
+        halfScreen={true}
         title={stationTarget === 'source' ? 'Select Departure Station' : 'Select Destination'}
         onClose={() => setStationModalVisible(false)}
         onSelect={(station) => {
@@ -1283,58 +1261,51 @@ const styles = StyleSheet.create({
   },
   islandBackdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
   },
-  islandCard: {
-    backgroundColor: '#0B132B',
+  islandCardWrapper: {
+    backgroundColor: 'transparent',
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.16)',
+    overflow: 'hidden',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.16,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  islandCardGradient: {
     paddingHorizontal: spacing.md,
     paddingBottom: spacing.lg,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.6,
-    shadowRadius: 24,
-    elevation: 12,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    borderWidth: 1.5,
+    borderColor: '#BFDBFE',
   },
   islandHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: spacing.md,
+    justifyContent: 'center',
+    marginBottom: spacing.sm + 4,
+    marginTop: 4,
+    position: 'relative',
   },
-  islandCapsulePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  islandPulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-    marginRight: 6,
-  },
-  islandCapsuleText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#93C5FD',
-    letterSpacing: 0.8,
+  islandDragHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#93C5FD',
   },
   islandCloseBtn: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'absolute',
+    right: 0,
+    top: -2,
   },
   islandRouteRow: {
     flexDirection: 'row',
@@ -1343,99 +1314,72 @@ const styles = StyleSheet.create({
   },
   islandStationCard: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    backgroundColor: '#FFFFFF',
     borderRadius: radius.md,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderWidth: 1.2,
+    borderColor: '#DBEAFE',
     alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
   },
   islandStationTag: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#94A3B8',
+    color: '#64748B',
     letterSpacing: 0.8,
     marginBottom: 2,
   },
   islandStationCode: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
     letterSpacing: 0.5,
   },
   islandStationName: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#CBD5E1',
+    color: '#475569',
     marginTop: 2,
   },
   islandSwapBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.primary,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#3B82F6',
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 8,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.45,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
     shadowRadius: 6,
     elevation: 4,
   },
-  islandRecentSection: {
-    marginTop: spacing.md,
-  },
-  islandRecentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  islandRecentTitle: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#60A5FA',
-    letterSpacing: 0.8,
-  },
-  islandRecentRow: {
-    gap: 8,
-  },
-  islandRecentChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-    borderRadius: radius.sm,
-    paddingVertical: 5,
-    paddingHorizontal: 9,
-    alignItems: 'center',
-  },
-  islandRecentChipCode: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#93C5FD',
-  },
-  islandRecentChipName: {
-    fontSize: 10,
-    color: '#94A3B8',
-    marginTop: 1,
-  },
   islandCommitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    paddingVertical: 12,
     borderRadius: radius.md,
     marginTop: spacing.md,
-    shadowColor: colors.primary,
+    overflow: 'hidden',
+    shadowColor: '#2563EB',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 10,
     elevation: 4,
   },
+  islandCommitGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
   islandCommitText: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 15,
+    fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.3,
   },
