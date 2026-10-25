@@ -1,10 +1,17 @@
 import { authService } from './authService';
 import { getTransportApiBaseUrl } from './trainService';
 
+export type WatchConditionKind =
+  | 'becomes_available'
+  | 'improves'
+  | 'reaches_threshold'
+  | 'seats_below'
+  | 'rapid_rac_increase';
+
 export interface WatchCondition {
-  kind: 'becomes_available' | 'improves' | 'reaches_threshold';
-  target_status?: 'AVL' | 'RAC' | 'WL';
-  maximum_position?: number;
+  kind: WatchConditionKind;
+  target_status?: 'AVL' | 'RAC' | 'WL' | null;
+  maximum_position?: number | null;
 }
 
 export interface CreateWatchInput {
@@ -39,7 +46,8 @@ export interface WatchRecord {
   updated_at: string;
 }
 
-export function normalizeDateToIso(dateStr: string): string {
+export function normalizeDateToIso(dateStr: string | null | undefined): string {
+  if (!dateStr) return '';
   const parts = dateStr.trim().split(/[-/]/);
   if (parts.length === 3) {
     if (parts[0].length <= 2 && parts[2].length === 4) {
@@ -57,6 +65,13 @@ export function getTrainWatchApiBaseUrl(): string {
     return process.env.EXPO_PUBLIC_TRAINWATCH_API_URL.replace(/\/+$/, '');
   }
   return getTransportApiBaseUrl();
+}
+
+function normalizeWatchRecord(raw: any): WatchRecord {
+  return {
+    ...raw,
+    status: (raw?.status ? String(raw.status).toUpperCase() : 'ACTIVE') as WatchRecord['status'],
+  };
 }
 
 class WatchService {
@@ -108,7 +123,33 @@ class WatchService {
       throw new Error(errorMessage);
     }
 
-    return response.json();
+    const data = await response.json();
+    return normalizeWatchRecord(data);
+  }
+
+  async listWatches(): Promise<WatchRecord[]> {
+    const baseUrl = getTrainWatchApiBaseUrl();
+    const headers = await this.getAuthHeader();
+
+    const response = await fetch(`${baseUrl}/api/v1/watches`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Failed to list alerts (${response.status})`;
+      try {
+        const errorJson = await response.json();
+        if (errorJson?.error?.message) errorMessage = errorJson.error.message;
+      } catch {
+        // ignore fallback
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    const list: any[] = Array.isArray(data) ? data : (data.watches || []);
+    return list.map(normalizeWatchRecord);
   }
 
   async getWatch(watchId: string): Promise<WatchRecord> {
@@ -124,7 +165,8 @@ class WatchService {
       throw new Error(`Watch not found (${response.status})`);
     }
 
-    return response.json();
+    const data = await response.json();
+    return normalizeWatchRecord(data);
   }
 
   async updateWatchStatus(
@@ -137,7 +179,7 @@ class WatchService {
     const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
       method: 'PATCH',
       headers,
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status: status.toLowerCase() }),
     });
 
     if (!response.ok) {
@@ -151,7 +193,36 @@ class WatchService {
       throw new Error(errorMessage);
     }
 
-    return response.json();
+    const data = await response.json();
+    return normalizeWatchRecord(data);
+  }
+
+  async updateWatchCondition(
+    watchId: string,
+    condition: WatchCondition
+  ): Promise<WatchRecord> {
+    const baseUrl = getTrainWatchApiBaseUrl();
+    const headers = await this.getAuthHeader();
+
+    const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ condition }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `Failed to update alert condition (${response.status})`;
+      try {
+        const errorJson = await response.json();
+        if (errorJson?.error?.message) errorMessage = errorJson.error.message;
+      } catch {
+        // ignore fallback
+      }
+      throw new Error(errorMessage);
+    }
+
+    const data = await response.json();
+    return normalizeWatchRecord(data);
   }
 
   async deleteWatch(watchId: string): Promise<void> {

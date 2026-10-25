@@ -20,6 +20,7 @@ _RESERVED_DOCUMENT_ID = re.compile(r"^__.*__$")
 class DocumentSnapshot(Protocol):
     """Subset of a Firestore snapshot consumed by the adapter."""
 
+    id: str
     exists: bool
 
     def to_dict(self) -> dict[str, object] | None:
@@ -52,6 +53,10 @@ class CollectionReference(Protocol):
 
     def document(self, document_id: str) -> DocumentReference:
         """Select one document by ID."""
+        ...
+
+    def get(self) -> Awaitable[list[DocumentSnapshot]]:
+        """Fetch all documents in this collection."""
         ...
 
 
@@ -198,6 +203,26 @@ class FirestoreWatchRepository:
             return _decode(data, watch_id=watch_id, owner_id=owner_id)
         except (KeyError, TypeError, ValueError) as exc:
             raise WatchDataError("stored watch is malformed") from exc
+
+    async def list_for_user(self, *, owner_id: str) -> list[Watch]:
+        """Return all valid watches stored beneath the supplied owner's path."""
+        owner = _document_id(owner_id, field="owner_id")
+        docs = (
+            await self._client.collection("users")
+            .document(owner)
+            .collection("reminders")
+            .get()
+        )
+        watches: list[Watch] = []
+        for doc in docs:
+            data = doc.to_dict()
+            if data is None:
+                continue
+            try:
+                watches.append(_decode(data, watch_id=doc.id, owner_id=owner_id))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return watches
 
     async def save(self, watch: Watch) -> None:
         """Replace one owned watch document with its validated representation."""

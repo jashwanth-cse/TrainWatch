@@ -71,6 +71,7 @@ function fixture() {
     'react-native-safe-area-context': { SafeAreaProvider: 'SafeAreaProvider' },
     '../services/AuthContext': { AuthProvider: 'AuthProvider', useAuth: () => auth },
     '../services/backendWarmupService': { initBackendWarmup: () => () => {} },
+    '../services/notificationService': { initializeNotificationChannel: async () => {}, checkNotificationPermission: async () => false, requestNotificationPermissionsAndRegisterDevice: async () => ({ granted: true }) },
     '../theme/tokens': { colors: { background: '#fff' } },
     '../../assets/brand-emblem.png': 'synthetic-emblem',
   };

@@ -41,9 +41,10 @@ class CreateWatchPayload(BaseModel):
 
 
 class UpdateWatchPayload(BaseModel):
-    """Permitted state update for an existing watch."""
+    """Permitted state or condition update for an existing watch."""
 
-    status: WatchStatus
+    status: WatchStatus | None = None
+    condition: AlertConditionPayload | None = None
 
 
 class QueryResponse(BaseModel):
@@ -127,6 +128,16 @@ def get_repository(request: Request) -> WatchRepository:
     return cast(WatchRepository, repo)
 
 
+@router.get("", response_model=list[WatchResponse])
+async def list_watches(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    repo: Annotated[WatchRepository, Depends(get_repository)],
+) -> Any:
+    """Retrieve all watches owned by the caller."""
+    watches = await repo.list_for_user(owner_id=user.uid)
+    return [_serialize_watch(w) for w in watches]
+
+
 @router.post("", response_model=WatchResponse, status_code=status.HTTP_201_CREATED)
 async def create_watch(
     payload: CreateWatchPayload,
@@ -192,20 +203,33 @@ async def update_watch_status(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     repo: Annotated[WatchRepository, Depends(get_repository)],
 ) -> Any:
-    """Transition an owned watch between permitted lifecycle states."""
+    """Transition an owned watch between permitted lifecycle states or conditions."""
     stored = await repo.get(watch_id=watch_id, owner_id=user.uid)
     if stored is None:
         raise ApiError(status_code=404, code="not_found", message="Watch not found")
     require_owner(user=user, resource_owner_id=stored.owner_id)
 
     now = datetime.now(UTC)
-    try:
-        transitioned = stored.transition(payload.status, at=now)
-    except ValueError as exc:
-        raise ApiError(status_code=409, code="invalid_transition", message=str(exc)) from None
+    current = stored
+    if payload.condition is not None:
+        try:
+            cond = AlertCondition(
+                kind=payload.condition.kind,
+                target_status=payload.condition.target_status,
+                maximum_position=payload.condition.maximum_position,
+            )
+            current = current.update_condition(cond, at=now)
+        except ValueError as exc:
+            raise ApiError(status_code=422, code="validation_error", message=str(exc)) from None
 
-    await repo.save(transitioned)
-    return _serialize_watch(transitioned)
+    if payload.status is not None:
+        try:
+            current = current.transition(payload.status, at=now)
+        except ValueError as exc:
+            raise ApiError(status_code=409, code="invalid_transition", message=str(exc)) from None
+
+    await repo.save(current)
+    return _serialize_watch(current)
 
 
 @router.delete("/{watch_id}", status_code=status.HTTP_204_NO_CONTENT)

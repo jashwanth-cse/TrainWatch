@@ -22,6 +22,9 @@ class InMemoryWatchRepository:
 
     async def get(self, *, watch_id: str, owner_id: str) -> Watch | None:
         return self.watches.get((watch_id, owner_id))
+    async def list_for_user(self, *, owner_id: str) -> list[Watch]:
+        return [w for w in self.watches.values() if w.owner_id == owner_id]
+
 
     async def save(self, watch: Watch) -> None:
         self.watches[(watch.watch_id, watch.owner_id)] = watch
@@ -286,6 +289,16 @@ async def test_patch_watch_status_transitions() -> None:
         headers={"Authorization": "Bearer ticket-a"},
     )
     assert invalid_resp.status_code == 409
+    # Updating condition on a cancelled watch raises 422
+    invalid_cond = await request(
+        app,
+        "PATCH",
+        f"/api/v1/watches/{watch_id}",
+        json_body={"condition": {"kind": "becomes_available"}},
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+    assert invalid_cond.status_code == 422
+
     assert invalid_resp.json()["error"]["code"] == "invalid_transition"
 
     # Non-owner cannot patch
@@ -374,3 +387,131 @@ async def test_service_unavailable_when_repository_unconfigured() -> None:
     )
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "service_unavailable"
+
+
+@pytest.mark.anyio
+async def test_list_watches_for_user() -> None:
+    repo = InMemoryWatchRepository()
+    app = _build_test_app(repo)
+
+    await request(
+        app,
+        "POST",
+        "/api/v1/watches",
+        json_body={
+            "train_number": "12661",
+            "source": "MS",
+            "destination": "TEN",
+            "journey_date": "2026-11-15",
+            "travel_class": "3A",
+            "condition": {"kind": "becomes_available"},
+        },
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+
+    headers_a = {"Authorization": "Bearer ticket-a"}
+    resp_a = await request(app, "GET", "/api/v1/watches", headers=headers_a)
+    assert resp_a.status_code == 200
+    assert len(resp_a.json()) == 1
+
+    headers_b = {"Authorization": "Bearer ticket-b"}
+    resp_b = await request(app, "GET", "/api/v1/watches", headers=headers_b)
+    assert resp_b.status_code == 200
+    assert len(resp_b.json()) == 0
+
+
+@pytest.mark.anyio
+async def test_update_watch_condition() -> None:
+    repo = InMemoryWatchRepository()
+    app = _build_test_app(repo)
+
+    create_resp = await request(
+        app,
+        "POST",
+        "/api/v1/watches",
+        json_body={
+            "train_number": "12661",
+            "source": "MS",
+            "destination": "TEN",
+            "journey_date": "2026-11-15",
+            "travel_class": "3A",
+            "condition": {"kind": "becomes_available"},
+        },
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+    watch_id = create_resp.json()["watch_id"]
+
+    update_resp = await request(
+        app,
+        "PATCH",
+        f"/api/v1/watches/{watch_id}",
+        json_body={
+            "condition": {"kind": "seats_below", "maximum_position": 50},
+        },
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["condition"]["kind"] == "seats_below"
+    assert update_resp.json()["condition"]["maximum_position"] == 50
+
+    invalid_resp = await request(
+        app,
+        "PATCH",
+        f"/api/v1/watches/{watch_id}",
+        json_body={
+            "condition": {"kind": "seats_below", "maximum_position": 0},
+        },
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+    assert invalid_resp.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_update_watch_invalid_transition() -> None:
+    repo = InMemoryWatchRepository()
+    app = _build_test_app(repo)
+
+    create_resp = await request(
+        app,
+        "POST",
+        "/api/v1/watches",
+        json_body={
+            "train_number": "12661",
+            "source": "MS",
+            "destination": "TEN",
+            "journey_date": "2026-11-15",
+            "travel_class": "3A",
+            "condition": {"kind": "becomes_available"},
+        },
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+    watch_id = create_resp.json()["watch_id"]
+
+    # Cancel the watch first
+    await request(
+        app,
+        "PATCH",
+        f"/api/v1/watches/{watch_id}",
+        json_body={"status": "cancelled"},
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+
+    # Transitioning cancelled to active is invalid -> 409
+    invalid_resp = await request(
+        app,
+        "PATCH",
+        f"/api/v1/watches/{watch_id}",
+        json_body={"status": "active"},
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+    assert invalid_resp.status_code == 409
+    # Updating condition on a cancelled watch raises 422
+    invalid_cond = await request(
+        app,
+        "PATCH",
+        f"/api/v1/watches/{watch_id}",
+        json_body={"condition": {"kind": "becomes_available"}},
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+    assert invalid_cond.status_code == 422
+

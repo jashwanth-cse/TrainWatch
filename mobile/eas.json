@@ -1,0 +1,32 @@
+{
+  "cli": {
+    "version": ">= 12.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_TRAINWATCH_API_URL": "https://trainwatch-api-staging-141132468573.asia-south1.run.app"
+      }
+    },
+    "production": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_TRAINWATCH_API_URL": "https://trainwatch-api-staging-141132468573.asia-south1.run.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

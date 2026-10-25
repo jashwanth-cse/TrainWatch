@@ -114,3 +114,29 @@ def test_create_app_in_production_without_project_id_leaves_repositories_unconfi
     assert app.state.watch_repository is None
     assert app.state.device_repository is None
     mock_create_client.assert_not_called()
+
+
+
+def test_create_app_in_staging_partial_injection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Initialize only unprovided repositories in staging."""
+    mock_create_client = MagicMock()
+    mock_client = MagicMock()
+    mock_create_client.return_value = mock_client
+    import trainwatch.infrastructure.firestore.client as fs_client_mod
+
+    monkeypatch.setattr(fs_client_mod, "create_firestore_client", mock_create_client)
+    injected_watch_repo = MagicMock()
+    app1 = create_app(
+        AppSettings(app_env="staging", project_id="trainwatch"),
+        watch_repository=injected_watch_repo,
+    )
+    assert app1.state.watch_repository is injected_watch_repo
+    assert isinstance(app1.state.device_repository, FirestoreDeviceRepository)
+
+    injected_device_repo = MagicMock()
+    app2 = create_app(
+        AppSettings(app_env="staging", project_id="trainwatch"),
+        device_repository=injected_device_repo,
+    )
+    assert isinstance(app2.state.watch_repository, FirestoreWatchRepository)
+    assert app2.state.device_repository is injected_device_repo
