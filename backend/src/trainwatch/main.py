@@ -21,6 +21,7 @@ def create_app(
     token_verifier: TokenVerifier | None = None,
     watch_repository: WatchRepository | None = None,
     device_repository: DeviceRepository | None = None,
+    job_repository: JobRepository | None = None,
     dispatcher_service: DispatcherService | None = None,
     worker_service: WorkerService | None = None,
     notification_dispatcher_service: NotificationDispatcherService | None = None,
@@ -39,6 +40,7 @@ def create_app(
     application.state.current_user_dependency = build_current_user_dependency(resolved_verifier)
     application.state.watch_repository = watch_repository
     application.state.device_repository = device_repository
+    application.state.job_repository = job_repository
     application.state.dispatcher_service = dispatcher_service
     application.state.worker_service = worker_service
     application.state.notification_dispatcher_service = notification_dispatcher_service

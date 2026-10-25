@@ -55,7 +55,7 @@ class ProcessNotificationsResponse(BaseModel):
 
 def verify_internal_auth(
     request: Request,
-    internal_credential: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
+    x_internal_token: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
     authorization: Annotated[str | None, Header()] = None,
 ) -> None:
     """Protect internal endpoints against unauthenticated external callers."""
