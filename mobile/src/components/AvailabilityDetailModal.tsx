@@ -151,7 +151,13 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
                 {selectedClass.travel_class} • {quota} Quota
               </Text>
             </View>
-            <TouchableOpacity onPress={handleModalClose} style={styles.closeBtn} activeOpacity={0.7}>
+            <TouchableOpacity
+              onPress={handleModalClose}
+              style={styles.closeBtn}
+              delayPressIn={0}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.7}
+            >
               <X size={20} color={colors.textSecondary} strokeWidth={2.4} />
             </TouchableOpacity>
           </View>
@@ -225,6 +231,8 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               style={styles.refreshLiveBtn}
               onPress={handleCheckLive}
               disabled={checkingLive}
+              delayPressIn={0}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               activeOpacity={0.8}
             >
               {checkingLive ? (
@@ -263,6 +271,8 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               <TouchableOpacity
                 style={styles.setAlertBtn}
                 onPress={handleCreateAlert}
+                delayPressIn={0}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 activeOpacity={0.88}
               >
                 <Text style={styles.setAlertBtnText}>Track This Seat</Text>

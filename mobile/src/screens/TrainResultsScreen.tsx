@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  ActivityIndicator,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -19,6 +19,8 @@ import {
   TrainSearchResults,
 } from '../services/trainService';
 import { AvailabilityDetailModal } from '../components/AvailabilityDetailModal';
+import { TrainWatchLoader } from '../components/TrainWatchLoader';
+import { ResponsiveButton } from '../components/ResponsiveButton';
 import {
   ArrowLeft,
   ArrowRight,
@@ -29,7 +31,11 @@ import {
   AlertCircle,
   TrainFront,
   Utensils,
+  Compass,
+  CheckCircle2,
 } from 'lucide-react-native';
+
+const { height: windowHeight } = Dimensions.get('window');
 
 export const TrainResultsScreen: React.FC = () => {
   const router = useRouter();
@@ -52,18 +58,37 @@ export const TrainResultsScreen: React.FC = () => {
   const quota = params.quota || 'GN';
   const selectedClass = params.travelClass || 'All Classes';
 
+  // Responsive page size based on device height (typically 6-8 on standard mobile screens)
+  const pageSize = useMemo(() => {
+    return Math.max(5, Math.min(10, Math.floor((windowHeight - 200) / 95)));
+  }, []);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<TrainSearchResults | null>(null);
   const [selectedSort, setSelectedSort] = useState<'departure' | 'duration' | 'fare'>('departure');
   const [refreshIndex, setRefreshIndex] = useState(0);
 
+  // Nearby trains reveal states
+  const [showNearby, setShowNearby] = useState(false);
+  const [revealingNearby, setRevealingNearby] = useState(false);
+
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMoreTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Availability & Alert Modal State
   const [selectedTrainForModal, setSelectedTrainForModal] = useState<TrainItem | null>(null);
   const [selectedClassForModal, setSelectedClassForModal] = useState<TravelClassInfo | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
 
-  const handleRefresh = () => setRefreshIndex((prev) => prev + 1);
+  const handleRefresh = () => {
+    setPage(1);
+    setShowNearby(false);
+    setRevealingNearby(false);
+    setRefreshIndex((prev) => prev + 1);
+  };
 
   const handleOpenDetailModal = (train: TrainItem, cls: TravelClassInfo) => {
     setSelectedTrainForModal(train);
@@ -77,6 +102,9 @@ export const TrainResultsScreen: React.FC = () => {
       if (active) {
         setLoading(true);
         setError(null);
+        setPage(1);
+        setShowNearby(false);
+        setRevealingNearby(false);
       }
     });
 
@@ -103,9 +131,35 @@ export const TrainResultsScreen: React.FC = () => {
 
     return () => {
       active = false;
+      if (loadMoreTimeout.current) clearTimeout(loadMoreTimeout.current);
     };
   }, [sourceCode, destinationCode, journeyDate, quota, selectedClass, refreshIndex]);
 
+  // Determine whether direct trains exist
+  const isDirectRoute = useMemo(() => {
+    if (!results) return false;
+    const rType = (results.result_type || results.route_type || '').toLowerCase();
+    return rType === 'direct' && results.trains.length > 0;
+  }, [results]);
+
+  const hasNearbyTrains = useMemo(() => {
+    if (!results) return false;
+    const rType = (results.result_type || results.route_type || '').toLowerCase();
+    return (rType === 'nearby' || rType === 'alternate') && results.trains.length > 0;
+  }, [results]);
+
+  // Handle user tapping "Show trains from Nearby Stations"
+  const handleRevealNearby = () => {
+    setRevealingNearby(true);
+    // Smooth transition with innovative loader
+    setTimeout(() => {
+      setRevealingNearby(false);
+      setShowNearby(true);
+      setPage(1);
+    }, 750);
+  };
+
+  // Sort trains
   const sortedTrains = useMemo(() => {
     if (!results?.trains) return [];
     const list = [...results.trains];
@@ -124,6 +178,23 @@ export const TrainResultsScreen: React.FC = () => {
 
     return list;
   }, [results, selectedSort]);
+
+  // Paginated visible trains subset
+  const visibleTrains = useMemo(() => {
+    return sortedTrains.slice(0, page * pageSize);
+  }, [sortedTrains, page, pageSize]);
+
+  const hasMorePages = visibleTrains.length < sortedTrains.length;
+
+  const handleLoadMore = () => {
+    if (!hasMorePages || loadingMore || loading || revealingNearby) return;
+
+    setLoadingMore(true);
+    loadMoreTimeout.current = setTimeout(() => {
+      setPage((prev) => prev + 1);
+      setLoadingMore(false);
+    }, 450);
+  };
 
   const getStatusBadgeStyle = (avail: string) => {
     const upper = avail.toUpperCase();
@@ -170,6 +241,8 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.back()}
+            delayPressIn={0}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Go back"
@@ -191,6 +264,8 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={styles.refreshBtn}
             onPress={handleRefresh}
+            delayPressIn={0}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Refresh train results"
@@ -204,6 +279,7 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'departure' && styles.sortPillActive]}
             onPress={() => setSelectedSort('departure')}
+            delayPressIn={0}
             activeOpacity={0.8}
           >
             <Clock
@@ -222,6 +298,7 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'duration' && styles.sortPillActive]}
             onPress={() => setSelectedSort('duration')}
+            delayPressIn={0}
             activeOpacity={0.8}
           >
             <Zap
@@ -240,6 +317,7 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'fare' && styles.sortPillActive]}
             onPress={() => setSelectedSort('fare')}
+            delayPressIn={0}
             activeOpacity={0.8}
           >
             <IndianRupee
@@ -258,33 +336,102 @@ export const TrainResultsScreen: React.FC = () => {
       {/* Body Content */}
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>
-            Searching live trains between {sourceCode} & {destinationCode}...
-          </Text>
+          <TrainWatchLoader
+            size="lg"
+            message={`Searching live trains between ${sourceCode} & ${destinationCode}...`}
+            subMessage="Checking direct rail availability"
+          />
         </View>
       ) : error ? (
         <View style={styles.centerContainer}>
-          <AlertCircle size={40} color={colors.statusWl} style={{ marginBottom: 12 }} />
+          <AlertCircle size={44} color={colors.statusWl} strokeWidth={2} style={{ marginBottom: 12 }} />
           <Text style={styles.errorTitle}>Search Failed</Text>
           <Text style={styles.errorMessage}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={handleRefresh} activeOpacity={0.85}>
-            <Text style={styles.retryText}>Retry Search</Text>
-          </TouchableOpacity>
+          <ResponsiveButton
+            title="Retry Search"
+            onPress={handleRefresh}
+            variant="primary"
+            style={{ minWidth: 160 }}
+          />
         </View>
-      ) : sortedTrains.length === 0 ? (
-        <View style={styles.centerContainer}>
-          <TrainFront size={48} color={colors.textMuted} strokeWidth={1.8} style={{ marginBottom: 12 }} />
-          <Text style={styles.emptyTitle}>No Trains Found</Text>
-          <Text style={styles.emptySubtitle}>
-            No direct trains operate between {sourceCode} and {destinationCode} on {displayDate}.
-          </Text>
+      ) : !isDirectRoute && !showNearby ? (
+        // NO DIRECT TRAINS FOUND STATE
+        <View style={styles.fallbackCenterContainer}>
+          <View style={styles.noDirectCard}>
+            <View style={styles.noDirectIconCircle}>
+              <TrainFront size={32} color={colors.primary} strokeWidth={2.2} />
+            </View>
+            <Text style={styles.noDirectTitle}>
+              No direct trains found for this route!
+            </Text>
+            <Text style={styles.noDirectSubtitle}>
+              There are no direct train routes between {sourceCode} and {destinationCode} on {displayDate}.
+            </Text>
+
+            {hasNearbyTrains ? (
+              <View style={styles.nearbyActionArea}>
+                <Text style={styles.nearbyHintText}>
+                  Alternate trains are available connecting via nearby major stations.
+                </Text>
+
+                {revealingNearby ? (
+                  <View style={{ paddingVertical: 14 }}>
+                    <TrainWatchLoader
+                      size="md"
+                      message="Discovering trains from nearby stations..."
+                      subMessage="Scanning connecting junctions and hubs"
+                    />
+                  </View>
+                ) : (
+                  <ResponsiveButton
+                    title="Show trains from Nearby Stations"
+                    onPress={handleRevealNearby}
+                    variant="primary"
+                    icon={<Compass size={18} color="#FFFFFF" strokeWidth={2.4} />}
+                    style={{ width: '100%', marginTop: 8 }}
+                  />
+                )}
+              </View>
+            ) : (
+              <Text style={styles.noNearbyNotice}>
+                No alternative or nearby trains found for this date.
+              </Text>
+            )}
+          </View>
         </View>
       ) : (
+        // TRAIN LIST (DIRECT OR NEARBY REVEALED)
         <FlatList
-          data={sortedTrains}
+          data={visibleTrains}
           keyExtractor={(item) => item.train_number}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={[styles.listContent, { paddingBottom: insets.bottom + spacing.xl }]}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.3}
+          ListHeaderComponent={
+            showNearby ? (
+              <View style={styles.nearbyNoticeBanner}>
+                <Compass size={15} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 6 }} />
+                <Text style={styles.nearbyNoticeBannerText}>
+                  Showing trains from nearby stations
+                </Text>
+              </View>
+            ) : undefined
+          }
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.listFooterLoader}>
+                <TrainWatchLoader size="sm" message="Loading more trains..." />
+              </View>
+            ) : visibleTrains.length > 0 && !hasMorePages ? (
+              <View style={styles.endOfListRow}>
+                <CheckCircle2 size={13} color={colors.textSecondary} strokeWidth={2.4} style={{ marginRight: 5 }} />
+                <Text style={styles.endOfListText}>
+                  All {sortedTrains.length} {showNearby ? 'nearby' : 'direct'} trains displayed
+                </Text>
+              </View>
+            ) : undefined
+          }
           renderItem={({ item }) => (
             <TrainCard
               train={item}
@@ -374,7 +521,9 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onSel
               key={cls.travel_class}
               style={styles.classBox}
               onPress={() => onSelectClass(cls)}
-              activeOpacity={0.75}
+              delayPressIn={0}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              activeOpacity={0.72}
             >
               <View style={styles.classTopRow}>
                 <Text style={styles.classTitle}>{cls.travel_class}</Text>
@@ -656,13 +805,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.xl,
   },
-  loadingText: {
-    marginTop: spacing.md,
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textAlign: 'center',
-  },
   errorTitle: {
     fontSize: 18,
     fontWeight: '800',
@@ -676,29 +818,100 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
-  retryBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.xl,
-    paddingVertical: 12,
-    borderRadius: radius.full,
-    ...shadows.badge,
+  fallbackCenterContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
   },
-  retryText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 14,
+  noDirectCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1.2,
+    borderColor: colors.borderSubtle,
+    ...shadows.card,
   },
-  emptyTitle: {
-    fontSize: 18,
+  noDirectIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1.5,
+    borderColor: 'rgba(96, 165, 250, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  noDirectTitle: {
+    fontSize: 20,
     fontWeight: '800',
     color: colors.textPrimary,
+    textAlign: 'center',
+    letterSpacing: -0.4,
     marginBottom: spacing.xs,
   },
-  emptySubtitle: {
+  noDirectSubtitle: {
     fontSize: 13,
+    fontWeight: '500',
     color: colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 18,
-    fontWeight: '500',
+    lineHeight: 19,
+    marginBottom: spacing.md,
+  },
+  nearbyActionArea: {
+    width: '100%',
+    marginTop: spacing.xs,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    alignItems: 'center',
+  },
+  nearbyHintText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  noNearbyNotice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+  },
+  nearbyNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.35)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    marginBottom: 6,
+  },
+  nearbyNoticeBannerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  listFooterLoader: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  endOfListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+  },
+  endOfListText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
 });
