@@ -45,8 +45,6 @@ import {
   CheckCircle2,
   CalendarDays,
   ChevronDown,
-  ArrowUpDown,
-  X,
 } from 'lucide-react-native';
 
 const { height: windowHeight } = Dimensions.get('window');
@@ -118,9 +116,8 @@ export const TrainResultsScreen: React.FC = () => {
   const [stationModalVisible, setStationModalVisible] = useState(false);
   const [stationTarget, setStationTarget] = useState<'source' | 'destination'>('source');
 
-  // Animation values for Dynamic Island
+  // Animation value for Dynamic Island
   const [islandAnim] = useState(() => new Animated.Value(0));
-  const [islandSwapRotate] = useState(() => new Animated.Value(0));
 
   const handleRefresh = () => {
     setPage(1);
@@ -156,25 +153,6 @@ export const TrainResultsScreen: React.FC = () => {
     }).start(() => {
       setIslandVisible(false);
     });
-  };
-
-  const handleSwapIslandStations = () => {
-    Animated.sequence([
-      Animated.timing(islandSwapRotate, {
-        toValue: 1,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-      Animated.timing(islandSwapRotate, {
-        toValue: 0,
-        duration: 0,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    const temp = islandSource;
-    setIslandSource(islandDestination);
-    setIslandDestination(temp);
   };
 
   const handleCommitDynamicIsland = () => {
@@ -331,7 +309,7 @@ export const TrainResultsScreen: React.FC = () => {
         colors={colors.headerGradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 0.8, y: 1 }}
-        style={[styles.headerBanner, { paddingTop: Math.max(insets.top, 14) + spacing.xs }]}
+        style={[styles.headerBanner, { paddingTop: Math.max(insets.top, 20) + spacing.xs }]}
       >
         <View style={styles.topNavRow}>
           <TouchableOpacity
@@ -586,7 +564,7 @@ export const TrainResultsScreen: React.FC = () => {
             style={[
               styles.islandCardWrapper,
               {
-                paddingTop: Math.max(insets.top, 14),
+                marginTop: Math.max(insets.top, 24) + 8,
                 opacity: islandAnim,
                 transform: [
                   {
@@ -598,7 +576,7 @@ export const TrainResultsScreen: React.FC = () => {
                   {
                     translateY: islandAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [-24, 0],
+                      outputRange: [-20, 0],
                     }),
                   },
                 ],
@@ -607,27 +585,17 @@ export const TrainResultsScreen: React.FC = () => {
           >
             <LinearGradient
               colors={['#DBEAFE', '#EFF6FF', '#FFFFFF']}
-              locations={[0, 0.42, 1.0]}
+              locations={[0, 0.45, 1.0]}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={styles.islandCardGradient}
             >
-              {/* Header with clean drag indicator and close button */}
+              {/* Minimal centered drag indicator */}
               <View style={styles.islandHeader}>
                 <View style={styles.islandDragHandle} />
-                <TouchableOpacity
-                  onPress={handleCloseDynamicIsland}
-                  style={styles.islandCloseBtn}
-                  delayPressIn={0}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Close route switcher"
-                >
-                  <X size={16} color="#2563EB" strokeWidth={2.4} />
-                </TouchableOpacity>
               </View>
 
-              {/* Station Selector Cards Row */}
+              {/* Station Selector Cards Row: Symmetrical side-by-side cards without cross arrow */}
               <View style={styles.islandRouteRow}>
                 {/* Departure Station Card */}
                 <TouchableOpacity
@@ -638,37 +606,16 @@ export const TrainResultsScreen: React.FC = () => {
                   }}
                   activeOpacity={0.8}
                   delayPressIn={0}
+                  accessibilityRole="button"
+                  accessibilityLabel="Select departure station"
                 >
                   <Text style={styles.islandStationTag}>FROM</Text>
-                  <Text style={styles.islandStationCode}>{islandSource.code}</Text>
+                  <Text style={styles.islandStationCode} numberOfLines={1}>
+                    {islandSource.code}
+                  </Text>
                   <Text style={styles.islandStationName} numberOfLines={1}>
                     {islandSource.name}
                   </Text>
-                </TouchableOpacity>
-
-                {/* Middle Swap Button */}
-                <TouchableOpacity
-                  style={styles.islandSwapBtn}
-                  onPress={handleSwapIslandStations}
-                  activeOpacity={0.85}
-                  delayPressIn={0}
-                  accessibilityRole="button"
-                  accessibilityLabel="Swap departure and destination stations"
-                >
-                  <Animated.View
-                    style={{
-                      transform: [
-                        {
-                          rotate: islandSwapRotate.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ['0deg', '180deg'],
-                          }),
-                        },
-                      ],
-                    }}
-                  >
-                    <ArrowUpDown size={18} color="#FFFFFF" strokeWidth={2.4} />
-                  </Animated.View>
                 </TouchableOpacity>
 
                 {/* Destination Station Card */}
@@ -680,9 +627,13 @@ export const TrainResultsScreen: React.FC = () => {
                   }}
                   activeOpacity={0.8}
                   delayPressIn={0}
+                  accessibilityRole="button"
+                  accessibilityLabel="Select destination station"
                 >
                   <Text style={styles.islandStationTag}>TO</Text>
-                  <Text style={styles.islandStationCode}>{islandDestination.code}</Text>
+                  <Text style={styles.islandStationCode} numberOfLines={1}>
+                    {islandDestination.code}
+                  </Text>
                   <Text style={styles.islandStationName} numberOfLines={1}>
                     {islandDestination.name}
                   </Text>
@@ -703,7 +654,6 @@ export const TrainResultsScreen: React.FC = () => {
                   style={styles.islandCommitGradient}
                 >
                   <Text style={styles.islandCommitText}>Update Route & Search</Text>
-                  <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.4} style={{ marginLeft: 6 }} />
                 </LinearGradient>
               </TouchableOpacity>
             </LinearGradient>
@@ -1265,30 +1215,28 @@ const styles = StyleSheet.create({
   },
   islandCardWrapper: {
     backgroundColor: 'transparent',
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    marginHorizontal: spacing.md,
+    borderRadius: 24,
     overflow: 'hidden',
     shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 10 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
-    shadowRadius: 20,
+    shadowRadius: 18,
     elevation: 12,
   },
   islandCardGradient: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.lg,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
+    borderRadius: 24,
     borderWidth: 1.5,
     borderColor: '#BFDBFE',
   },
   islandHeader: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.sm + 4,
-    marginTop: 4,
-    position: 'relative',
+    marginBottom: spacing.sm,
+    paddingTop: 2,
   },
   islandDragHandle: {
     width: 38,
@@ -1296,31 +1244,22 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: '#93C5FD',
   },
-  islandCloseBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'absolute',
-    right: 0,
-    top: -2,
-  },
   islandRouteRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
   },
   islandStationCard: {
     flex: 1,
     backgroundColor: '#FFFFFF',
     borderRadius: radius.md,
     paddingVertical: 12,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     borderWidth: 1.2,
     borderColor: '#DBEAFE',
     alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -1332,7 +1271,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#64748B',
     letterSpacing: 0.8,
-    marginBottom: 2,
+    marginBottom: 3,
   },
   islandStationCode: {
     fontSize: 22,
@@ -1346,20 +1285,6 @@ const styles = StyleSheet.create({
     color: '#475569',
     marginTop: 2,
   },
-  islandSwapBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#3B82F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 8,
-    shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
-  },
   islandCommitBtn: {
     borderRadius: radius.md,
     marginTop: spacing.md,
@@ -1371,7 +1296,6 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   islandCommitGradient: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 14,
