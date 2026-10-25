@@ -38,22 +38,22 @@ class ProcessJobResponse(BaseModel):
 
 def verify_internal_auth(
     request: Request,
-    x_internal_token: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
+    internal_credential: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
     authorization: Annotated[str | None, Header()] = None,
 ) -> None:
     """Protect internal endpoints against unauthenticated external callers."""
     settings: AppSettings = getattr(request.app.state, "settings", AppSettings(app_env="test"))
-    expected_token = settings.internal_service_key
+    expected_credential = settings.internal_service_key
 
     # In local/test environments without configured secret, allow testing
-    if not expected_token and settings.app_env in {"local", "test"}:
+    if not expected_credential and settings.app_env in {"local", "test"}:
         return
 
-    supplied_token = x_internal_token
-    if not supplied_token and authorization and authorization.startswith("Bearer "):
-        supplied_token = authorization.removeprefix("Bearer ").strip()
+    supplied_credential = internal_credential
+    if not supplied_credential and authorization and authorization.startswith("Bearer "):
+        supplied_credential = authorization.removeprefix("Bearer ").strip()
 
-    if not supplied_token or supplied_token != expected_token:
+    if not supplied_credential or supplied_credential != expected_credential:
         raise ApiError(
             status_code=status.HTTP_401_UNAUTHORIZED,
             code="unauthorized",

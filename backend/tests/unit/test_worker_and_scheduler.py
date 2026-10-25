@@ -793,7 +793,7 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
 
     app = _build_internal_test_app(
         dispatcher=dispatcher,
-        internal_key="my-internal-secret-phrase",
+        internal_key="placeholder",
     )
 
     # Missing credentials -> 401
@@ -806,7 +806,7 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
         app,
         "POST",
         "/api/v1/internal/dispatcher",
-        headers={"X-Internal-Token": "wrong-phrase"},
+        headers={"X-Internal-Token": "replace_me"},
     )
     assert resp_bad_auth.status_code == 401
 
@@ -815,7 +815,7 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
         app,
         "POST",
         "/api/v1/internal/dispatcher",
-        headers={"X-Internal-Token": "my-internal-secret-phrase"},
+        headers={"X-Internal-Token": "placeholder"},
     )
     assert resp_good_header.status_code == 200
 
@@ -824,7 +824,7 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
         app,
         "POST",
         "/api/v1/internal/dispatcher",
-        headers={"Authorization": "Bearer my-internal-secret-phrase"},
+        headers={"Authorization": "Bearer placeholder"},
     )
     assert resp_good_bearer.status_code == 200
 
