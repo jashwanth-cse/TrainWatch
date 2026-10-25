@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -123,8 +124,30 @@ class InMemoryNotificationOutbox:
         self.items[item.idempotency_key] = item
         return True
 
-    async def get_by_key(self, idempotency_key: str) -> NotificationOutboxItem | None:
+    async def get_by_key(self, idempotency_key: str) -> Any:
         return self.items.get(idempotency_key)
+
+    async def claim_pending_notifications(
+        self,
+        *,
+        batch_size: int,
+        lease_seconds: int,
+        now: datetime,
+    ) -> list[Any]:
+        return []
+
+    async def mark_delivered(self, *, idempotency_key: str, sent_at: datetime) -> None:
+        pass
+
+    async def mark_failed(
+        self,
+        *,
+        idempotency_key: str,
+        error: str,
+        retry_at: datetime | None,
+        now: datetime,
+    ) -> None:
+        pass
 
 
 class FakeTaskEnqueuer:
@@ -793,7 +816,7 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
 
     app = _build_internal_test_app(
         dispatcher=dispatcher,
-        internal_key="my-internal-secret-phrase",
+        internal_key="placeholder",
     )
 
     # Missing credentials -> 401
@@ -806,7 +829,7 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
         app,
         "POST",
         "/api/v1/internal/dispatcher",
-        headers={"X-Internal-Token": "wrong-phrase"},
+        headers={"X-Internal-Token": "replace_me"},
     )
     assert resp_bad_auth.status_code == 401
 
@@ -815,7 +838,7 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
         app,
         "POST",
         "/api/v1/internal/dispatcher",
-        headers={"X-Internal-Token": "my-internal-secret-phrase"},
+        headers={"X-Internal-Token": "placeholder"},
     )
     assert resp_good_header.status_code == 200
 
@@ -824,7 +847,7 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
         app,
         "POST",
         "/api/v1/internal/dispatcher",
-        headers={"Authorization": "Bearer my-internal-secret-phrase"},
+        headers={"Authorization": "Bearer placeholder"},
     )
     assert resp_good_bearer.status_code == 200
 

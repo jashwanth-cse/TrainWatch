@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
+from trainwatch.domain.notifications import NotificationRecord
+
 
 @dataclass(frozen=True, slots=True)
 class NotificationOutboxItem:
@@ -36,6 +38,31 @@ class NotificationOutbox(Protocol):
         """Atomically persist notification; return False if idempotency key already exists."""
         ...
 
-    async def get_by_key(self, idempotency_key: str) -> NotificationOutboxItem | None:
+    async def get_by_key(self, idempotency_key: str) -> NotificationRecord | None:
         """Retrieve an outbox item by its idempotency key."""
+        ...
+
+    async def claim_pending_notifications(
+        self,
+        *,
+        batch_size: int,
+        lease_seconds: int,
+        now: datetime,
+    ) -> list[NotificationRecord]:
+        """Claim a batch of pending/due notifications under lease."""
+        ...
+
+    async def mark_delivered(self, *, idempotency_key: str, sent_at: datetime) -> None:
+        """Mark notification as delivered."""
+        ...
+
+    async def mark_failed(
+        self,
+        *,
+        idempotency_key: str,
+        error: str,
+        retry_at: datetime | None,
+        now: datetime,
+    ) -> None:
+        """Record delivery failure and schedule retry or mark terminal."""
         ...
