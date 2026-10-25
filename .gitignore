@@ -51,3 +51,11 @@ tmp/
 *.swo
 .DS_Store
 Thumbs.db
+
+
+# Terraform local state and files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

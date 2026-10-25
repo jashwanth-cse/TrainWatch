@@ -38,31 +38,7 @@ resource "google_monitoring_alert_policy" "cloud_run_errors" {
   }
 }
 
-# Alert on Cloud Tasks failure rate
-resource "google_monitoring_alert_policy" "cloud_tasks_failures" {
-  display_name = "TrainWatch Cloud Tasks Execution Failures"
-  combiner     = "OR"
-
-  conditions {
-    display_name = "Tasks failure count > 5"
-
-    condition_threshold {
-      filter          = "resource.type = \"cloud_tasks_queue\" AND metric.type = \"cloudtasks.googleapis.com/queue/task_attempt_count\" AND metric.labels.response_status != \"OK\""
-      duration        = "300s"
-      comparison      = "COMPARISON_GT"
-      threshold_value = 5
-
-      aggregations {
-        alignment_period   = "60s"
-        per_series_aligner = "ALIGN_RATE"
-      }
-    }
-  }
-
-  notification_channels = [google_monitoring_notification_channel.email.name]
-}
-
-# Cloud Billing Budget with threshold notifications
+# Cloud Billing Budget with threshold notifications (optional, requires billing_account_id)
 resource "google_billing_budget" "staging_budget" {
   count = var.billing_account_id != "" ? 1 : 0
 

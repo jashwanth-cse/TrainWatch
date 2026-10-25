@@ -18,7 +18,7 @@ variable "environment" {
 variable "container_image" {
   description = "Artifact Registry container image URI for TrainWatch backend"
   type        = string
-  default     = "gcr.io/placeholder/trainwatch-backend:staging"
+  default     = "gcr.io/trainwatch/backend:staging"
 }
 
 variable "billing_account_id" {
