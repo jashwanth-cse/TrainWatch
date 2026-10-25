@@ -25,6 +25,7 @@ class AppSettings:
     rate_limit_per_minute: int = 60
     request_timeout_seconds: float = 15.0
     enable_rate_limiter: bool = True
+    auth_attempts_per_minute: int = 600
 
     @classmethod
     def from_environment(cls) -> AppSettings:
@@ -41,6 +42,14 @@ class AppSettings:
                 raise ValueError
         except ValueError as err:
             raise ValueError("RATE_LIMIT_PER_MINUTE must be a positive integer") from err
+
+        auth_attempts_raw = os.getenv("AUTH_ATTEMPTS_PER_MINUTE", "600").strip()
+        try:
+            auth_attempts_per_minute = int(auth_attempts_raw)
+            if auth_attempts_per_minute <= 0:
+                raise ValueError
+        except ValueError as err:
+            raise ValueError("AUTH_ATTEMPTS_PER_MINUTE must be a positive integer") from err
 
         timeout_raw = os.getenv("REQUEST_TIMEOUT_SECONDS", "15.0").strip()
         try:
@@ -73,4 +82,5 @@ class AppSettings:
             rate_limit_per_minute=rate_limit_per_minute,
             request_timeout_seconds=request_timeout_seconds,
             enable_rate_limiter=enable_rate_limiter,
+            auth_attempts_per_minute=auth_attempts_per_minute,
         )

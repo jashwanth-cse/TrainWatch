@@ -86,6 +86,27 @@ def resolve_client_key(request: Request) -> str:
     return f"ip:{client_ip}"
 
 
+def _rate_limit_response(request: Request, limit: int, reset_seconds: int) -> Response:
+    """Return the existing quota error and retry headers for either limiting tier."""
+    request_id = getattr(request.state, "request_id", "unknown")
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "code": "rate_limit_exceeded",
+                "message": "Too many requests. Please try again later.",
+            }
+        },
+        headers={
+            "Retry-After": str(reset_seconds),
+            "X-RateLimit-Limit": str(limit),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": str(reset_seconds),
+            "X-Request-ID": request_id,
+        },
+    )
+
+
 async def rate_limit_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
@@ -107,6 +128,13 @@ async def rate_limit_middleware(
     dependency = getattr(request.app.state, "current_user_dependency", None)
     authorization = request.headers.get("authorization")
     if dependency is not None and authorization is not None:
+        auth_limit = getattr(settings, "auth_attempts_per_minute", 600) if settings else 600
+        client_ip = request.client.host if request.client else "unknown"
+        auth_allowed, _, auth_reset = limiter.check(
+            key=f"auth-ip:{client_ip}", max_requests=auth_limit
+        )
+        if not auth_allowed:
+            return _rate_limit_response(request, auth_limit, auth_reset)
         try:
             await dependency(request=request, authorization=authorization)
         except ApiError as exc:
@@ -119,24 +147,7 @@ async def rate_limit_middleware(
     allowed, remaining, reset_seconds = limiter.check(key=key, max_requests=limit)
 
     if not allowed:
-        request_id = getattr(request.state, "request_id", "unknown")
-        error_response = JSONResponse(
-            status_code=429,
-            content={
-                "error": {
-                    "code": "rate_limit_exceeded",
-                    "message": "Too many requests. Please try again later.",
-                }
-            },
-            headers={
-                "Retry-After": str(reset_seconds),
-                "X-RateLimit-Limit": str(limit),
-                "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(reset_seconds),
-                "X-Request-ID": request_id,
-            },
-        )
-        return error_response
+        return _rate_limit_response(request, limit, reset_seconds)
 
     response = await call_next(request)
     response.headers["X-RateLimit-Limit"] = str(limit)
