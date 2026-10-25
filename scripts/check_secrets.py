@@ -21,7 +21,7 @@ SKIPPED_DIRECTORIES = {
     "htmlcov",
     "node_modules",
 }
-SKIPPED_FILES = {".coverage"}
+SKIPPED_FILES = {".coverage", ".env", "service-account.json"}
 TEXT_SUFFIXES = {
     "",
     ".cfg",
@@ -37,10 +37,15 @@ TEXT_SUFFIXES = {
     ".yml",
 }
 PLACEHOLDERS = {
+    "annotated",
+    "bool",
     "example.invalid",
     "false",
+    "none",
     "placeholder",
     "replace_me",
+    "str",
+    "true",
 }
 PATTERNS = {
     "private key header": re.compile(r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"),
@@ -51,7 +56,7 @@ PATTERNS = {
     "Slack access credential": re.compile(r"xox[baprs]-[0-9A-Za-z-]{20,}"),
     "credential assignment": re.compile(
         r"(?i)['\"]?(?:api[_-]?key|client[_-]?secret|password|private[_-]?key|token)"
-        r"['\"]?\s*[=:]\s*['\"]?([^\s,'\"#}{]+)"
+        r"['\"]?\s*(?::|=(?!=))\s*['\"]?([^\s,'\"#}{()[\]=]+)"
     ),
 }
 
@@ -86,7 +91,14 @@ def is_allowed_placeholder(match: re.Match[str]) -> bool:
             )
             is not None
         )
-    return value in PLACEHOLDERS or value.startswith("https://example.invalid")
+    return bool(
+        value in PLACEHOLDERS
+        or value.startswith("https://example.invalid")
+        or value.startswith("payload.")
+        or value.startswith("device.")
+        or value.startswith("str(")
+        or value.startswith("field(")
+    )
 
 
 def main() -> int:

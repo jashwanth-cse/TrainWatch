@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from trainwatch.api.errors import ApiError
 from trainwatch.config import AppSettings
+from trainwatch.services.notification_dispatcher import NotificationDispatcherService
 from trainwatch.services.worker import DispatcherService, WorkerService
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -36,24 +37,40 @@ class ProcessJobResponse(BaseModel):
     error: str | None = None
 
 
+class ProcessNotificationsPayload(BaseModel):
+    """Payload to trigger processing of outbox notification queue."""
+
+    batch_size: int = Field(default=20, ge=1, le=100)
+    lease_seconds: int = Field(default=60, ge=10, le=600)
+
+
+class ProcessNotificationsResponse(BaseModel):
+    """Outcome of notification dispatch execution."""
+
+    claimed: int
+    delivered: int
+    failed: int
+    retry_scheduled: int
+
+
 def verify_internal_auth(
     request: Request,
-    internal_credential: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
+    x_internal_token: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
     authorization: Annotated[str | None, Header()] = None,
 ) -> None:
     """Protect internal endpoints against unauthenticated external callers."""
     settings: AppSettings = getattr(request.app.state, "settings", AppSettings(app_env="test"))
-    expected_credential = settings.internal_service_key
+    expected_val = settings.internal_service_key
 
     # In local/test environments without configured secret, allow testing
-    if not expected_credential and settings.app_env in {"local", "test"}:
+    if not expected_val and settings.app_env in {"local", "test"}:
         return
 
-    supplied_credential = internal_credential
-    if not supplied_credential and authorization and authorization.startswith("Bearer "):
-        supplied_credential = authorization.removeprefix("Bearer ").strip()
+    supplied_val = x_internal_token
+    if not supplied_val and authorization and authorization.startswith("Bearer "):
+        supplied_val = authorization.removeprefix("Bearer ").strip()
 
-    if not supplied_credential or supplied_credential != expected_credential:
+    if not supplied_val or supplied_val != expected_val:
         raise ApiError(
             status_code=status.HTTP_401_UNAUTHORIZED,
             code="unauthorized",
@@ -85,6 +102,18 @@ def get_worker_service(request: Request) -> WorkerService:
     return cast(WorkerService, worker)
 
 
+def get_notification_dispatcher_service(request: Request) -> NotificationDispatcherService:
+    """Retrieve injected notification dispatcher service from app state."""
+    dispatcher = getattr(request.app.state, "notification_dispatcher_service", None)
+    if dispatcher is None:
+        raise ApiError(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="service_unavailable",
+            message="Notification dispatcher service is not configured",
+        )
+    return cast(NotificationDispatcherService, dispatcher)
+
+
 @router.post(
     "/dispatcher",
     response_model=DispatcherResponse,
@@ -114,4 +143,30 @@ async def process_job(
         status=result.status,
         alert_triggered=result.alert_triggered,
         error=result.error,
+    )
+
+
+@router.post(
+    "/notifications/process",
+    response_model=ProcessNotificationsResponse,
+    dependencies=[Depends(verify_internal_auth)],
+)
+async def process_notifications(
+    payload: ProcessNotificationsPayload,
+    dispatcher: Annotated[
+        NotificationDispatcherService,
+        Depends(get_notification_dispatcher_service),
+    ],
+) -> Any:
+    """Triggered by queue/scheduler to process and deliver pending outbox notifications."""
+    res = await dispatcher.dispatch_pending(
+        batch_size=payload.batch_size,
+        lease_seconds=payload.lease_seconds,
+        now=datetime.now(UTC),
+    )
+    return ProcessNotificationsResponse(
+        claimed=res.claimed_count,
+        delivered=res.delivered_count,
+        failed=res.failed_count,
+        retry_scheduled=res.retry_scheduled_count,
     )

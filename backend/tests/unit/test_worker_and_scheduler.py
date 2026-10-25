@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -131,8 +132,30 @@ class InMemoryNotificationOutbox:
         self.items[item.idempotency_key] = item
         return True
 
-    async def get_by_key(self, idempotency_key: str) -> NotificationOutboxItem | None:
+    async def get_by_key(self, idempotency_key: str) -> Any:
         return self.items.get(idempotency_key)
+
+    async def claim_pending_notifications(
+        self,
+        *,
+        batch_size: int,
+        lease_seconds: int,
+        now: datetime,
+    ) -> list[Any]:
+        return []
+
+    async def mark_delivered(self, *, idempotency_key: str, sent_at: datetime) -> None:
+        pass
+
+    async def mark_failed(
+        self,
+        *,
+        idempotency_key: str,
+        error: str,
+        retry_at: datetime | None,
+        now: datetime,
+    ) -> None:
+        pass
 
 
 class FakeTaskEnqueuer:
