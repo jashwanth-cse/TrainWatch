@@ -9,6 +9,7 @@ from trainwatch.api.v1 import router as api_v1_router
 from trainwatch.config import AppSettings
 from trainwatch.ports.identity import TokenVerifier
 from trainwatch.ports.watches import WatchRepository
+from trainwatch.services.worker import DispatcherService, WorkerService
 
 
 def create_app(
@@ -16,6 +17,8 @@ def create_app(
     *,
     token_verifier: TokenVerifier | None = None,
     watch_repository: WatchRepository | None = None,
+    dispatcher_service: DispatcherService | None = None,
+    worker_service: WorkerService | None = None,
 ) -> FastAPI:
     """Create an isolated application without initializing external clients."""
     resolved_settings = settings or AppSettings.from_environment()
@@ -30,6 +33,8 @@ def create_app(
     application.state.settings = resolved_settings
     application.state.current_user_dependency = build_current_user_dependency(resolved_verifier)
     application.state.watch_repository = watch_repository
+    application.state.dispatcher_service = dispatcher_service
+    application.state.worker_service = worker_service
     application.middleware("http")(request_id_middleware)
     install_error_handlers(application)
     application.include_router(api_v1_router)
