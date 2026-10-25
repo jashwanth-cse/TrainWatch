@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
 
-from fastapi import Header
+from fastapi import Header, Request
 
 from trainwatch.api.errors import ApiError
 from trainwatch.ports.identity import AuthenticatedUser, TokenVerificationError, TokenVerifier
@@ -49,17 +49,32 @@ def build_current_user_dependency(
     """Bind one verifier to the FastAPI dependency used by protected routes."""
 
     async def current_user(
+        request: Request,
         authorization: Annotated[str | None, Header()] = None,
     ) -> AuthenticatedUser:
-        bearer_value = _bearer_token(authorization)
+        """Verify once per request and share the result with rate limiting and routes."""
+        cached_user = getattr(request.state, "user", None)
+        if isinstance(cached_user, AuthenticatedUser):
+            return cached_user
+        cached_error = getattr(request.state, "authentication_error", None)
+        if isinstance(cached_error, ApiError):
+            raise cached_error
         try:
-            return await verifier.verify(bearer_value)
+            bearer_value = _bearer_token(authorization)
+            user = await verifier.verify(bearer_value)
         except TokenVerificationError:
-            raise ApiError(
+            error = ApiError(
                 status_code=401,
                 code="unauthorized",
                 message="Authentication required",
                 headers=_BEARER_CHALLENGE,
-            ) from None
+            )
+            request.state.authentication_error = error
+            raise error from None
+        except ApiError as exc:
+            request.state.authentication_error = exc
+            raise
+        request.state.user = user
+        return user
 
     return current_user
