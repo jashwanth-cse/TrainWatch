@@ -66,6 +66,12 @@ export const colors = {
   statusRegret: '#64748B',
   statusRegretBg: '#F1F5F9',
 
+  // Error & Feedback
+  error: '#EF4444',
+  errorBg: '#FEF2F2',
+  success: '#10B981',
+  successBg: '#ECFDF5',
+
   // Interactive Elements
   pillBg: '#F8FAFC',
   swapButtonBg: '#2563EB',
