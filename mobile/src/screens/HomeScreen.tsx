@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Animated,
+  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -119,6 +120,11 @@ export const HomeScreen: React.FC = () => {
   };
 
   const handleSearchTrains = () => {
+    if (source.code === destination.code) {
+      Alert.alert('Invalid route', 'Departure and destination stations must be different.');
+      return;
+    }
+
     router.push({
       pathname: '/results',
       params: {
