@@ -13,6 +13,12 @@ resource "google_secret_manager_secret" "internal_service_key" {
   }
 }
 
+# Initial secret version so versions/latest is available to Cloud Run
+resource "google_secret_manager_secret_version" "internal_service_key_version" {
+  secret      = google_secret_manager_secret.internal_service_key.id
+  secret_data = "placeholder"
+}
+
 resource "google_secret_manager_secret_iam_member" "api_internal_key_access" {
   secret_id = google_secret_manager_secret.internal_service_key.id
   role      = "roles/secretmanager.secretAccessor"
