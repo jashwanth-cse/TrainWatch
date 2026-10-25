@@ -14,6 +14,7 @@ import {
   TravelClassInfo,
   fetchLiveAvailability,
 } from '../services/trainService';
+import { watchService } from '../services/watchService';
 import {
   TrainFront,
   ArrowRight,
@@ -50,6 +51,8 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   const [liveAvailability, setLiveAvailability] = useState<string | null>(null);
   const [liveSuccess, setLiveSuccess] = useState<string | null>(null);
   const [alertConfigured, setAlertConfigured] = useState(false);
+  const [creatingAlert, setCreatingAlert] = useState(false);
+  const [alertError, setAlertError] = useState<string | null>(null);
 
   if (!train || !selectedClass) return null;
 
@@ -115,10 +118,28 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
     }
   };
 
-  const handleCreateAlert = () => {
-    setAlertConfigured(true);
-    if (onSetAlert) {
-      onSetAlert(train, selectedClass);
+  const handleCreateAlert = async () => {
+    setCreatingAlert(true);
+    setAlertError(null);
+    try {
+      await watchService.createWatch({
+        trainNumber: train.train_number,
+        source: train.from.code,
+        destination: train.to.code,
+        journeyDate,
+        travelClass: selectedClass.travel_class,
+        quota,
+        condition: { kind: 'becomes_available' },
+      });
+      setAlertConfigured(true);
+      if (onSetAlert) {
+        onSetAlert(train, selectedClass);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unable to track seat';
+      setAlertError(msg);
+    } finally {
+      setCreatingAlert(false);
     }
   };
 
@@ -126,6 +147,7 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
     setLiveAvailability(null);
     setLiveSuccess(null);
     setAlertConfigured(false);
+    setAlertError(null);
     onClose();
   };
 
@@ -260,6 +282,12 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               </View>
             </View>
 
+            {alertError ? (
+              <Text style={{ fontSize: 13, color: colors.error, marginBottom: 8, fontWeight: '500' }}>
+                {alertError}
+              </Text>
+            ) : null}
+
             {alertConfigured ? (
               <View style={styles.alertActiveRow}>
                 <CheckCircle2 size={18} color={colors.statusAvailable} strokeWidth={2.4} style={{ marginRight: 8 }} />
@@ -271,12 +299,19 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               <TouchableOpacity
                 style={styles.setAlertBtn}
                 onPress={handleCreateAlert}
+                disabled={creatingAlert}
                 delayPressIn={0}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 activeOpacity={0.88}
               >
-                <Text style={styles.setAlertBtnText}>Track This Seat</Text>
-                <ArrowRight size={17} color="#FFFFFF" strokeWidth={2.4} style={{ marginLeft: 6 }} />
+                {creatingAlert ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Text style={styles.setAlertBtnText}>Track This Seat</Text>
+                    <ArrowRight size={17} color="#FFFFFF" strokeWidth={2.4} style={{ marginLeft: 6 }} />
+                  </>
+                )}
               </TouchableOpacity>
             )}
           </View>
