@@ -10,6 +10,12 @@ from trainwatch.domain.availability import (
     parse_availability,
 )
 from trainwatch.domain.jobs import JobRecord, JobStatus
+from trainwatch.domain.notifications import (
+    DevicePlatform,
+    DeviceRecord,
+    NotificationDeliveryStatus,
+    NotificationRecord,
+)
 from trainwatch.domain.watch import TrainQuery, Watch, WatchStatus
 
 __all__ = [
@@ -18,8 +24,12 @@ __all__ = [
     "AvailabilityObservation",
     "AvailabilitySnapshot",
     "AvailabilityStatus",
+    "DevicePlatform",
+    "DeviceRecord",
     "JobRecord",
     "JobStatus",
+    "NotificationDeliveryStatus",
+    "NotificationRecord",
     "ProviderFailure",
     "TrainQuery",
     "Watch",
