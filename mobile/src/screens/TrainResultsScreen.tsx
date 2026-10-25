@@ -11,13 +11,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors, radius, spacing } from '../theme/tokens';
+import { colors, radius, spacing, shadows } from '../theme/tokens';
 import {
   searchTrains,
   TrainItem,
   TravelClassInfo,
   TrainSearchResults,
 } from '../services/trainService';
+import { AvailabilityDetailModal } from '../components/AvailabilityDetailModal';
 import {
   ArrowLeft,
   ArrowRight,
@@ -57,7 +58,18 @@ export const TrainResultsScreen: React.FC = () => {
   const [selectedSort, setSelectedSort] = useState<'departure' | 'duration' | 'fare'>('departure');
   const [refreshIndex, setRefreshIndex] = useState(0);
 
+  // Availability & Alert Modal State
+  const [selectedTrainForModal, setSelectedTrainForModal] = useState<TrainItem | null>(null);
+  const [selectedClassForModal, setSelectedClassForModal] = useState<TravelClassInfo | null>(null);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+
   const handleRefresh = () => setRefreshIndex((prev) => prev + 1);
+
+  const handleOpenDetailModal = (train: TrainItem, cls: TravelClassInfo) => {
+    setSelectedTrainForModal(train);
+    setSelectedClassForModal(cls);
+    setDetailModalVisible(true);
+  };
 
   useEffect(() => {
     let active = true;
@@ -119,21 +131,21 @@ export const TrainResultsScreen: React.FC = () => {
       return {
         bg: colors.statusAvailableBg,
         text: colors.statusAvailable,
-        dot: '#10B981',
+        dot: colors.statusAvailable,
       };
     }
     if (upper.includes('RAC')) {
       return {
         bg: colors.statusRacBg,
         text: colors.statusRac,
-        dot: '#F59E0B',
+        dot: colors.statusRac,
       };
     }
     if (upper.includes('WL') || upper.includes('RLWL') || upper.includes('GNWL') || upper.includes('PQWL')) {
       return {
         bg: colors.statusWlBg,
         text: colors.statusWl,
-        dot: '#EF4444',
+        dot: colors.statusWl,
       };
     }
     return {
@@ -147,20 +159,22 @@ export const TrainResultsScreen: React.FC = () => {
     <View style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Top Gradient Route Header */}
+      {/* Top Route Header matching HomeScreen gradient palette */}
       <LinearGradient
-        colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+        colors={colors.headerGradient}
         start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={[styles.headerBanner, { paddingTop: Math.max(insets.top, 16) + spacing.xs }]}
+        end={{ x: 0.8, y: 1 }}
+        style={[styles.headerBanner, { paddingTop: Math.max(insets.top, 14) + spacing.xs }]}
       >
         <View style={styles.topNavRow}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.back()}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
-            <ArrowLeft size={22} color="#FFFFFF" strokeWidth={2.4} />
+            <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
           </TouchableOpacity>
 
           <View style={styles.headerTitleGroup}>
@@ -174,7 +188,13 @@ export const TrainResultsScreen: React.FC = () => {
             </Text>
           </View>
 
-          <TouchableOpacity style={styles.refreshBtn} onPress={handleRefresh} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.refreshBtn}
+            onPress={handleRefresh}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh train results"
+          >
             <RotateCcw size={18} color="#FFFFFF" strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
@@ -184,11 +204,12 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'departure' && styles.sortPillActive]}
             onPress={() => setSelectedSort('departure')}
+            activeOpacity={0.8}
           >
             <Clock
-              size={13}
-              color={selectedSort === 'departure' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
-              strokeWidth={2.2}
+              size={12}
+              color={selectedSort === 'departure' ? colors.brandNavy : 'rgba(255,255,255,0.85)'}
+              strokeWidth={2.4}
               style={{ marginRight: 5 }}
             />
             <Text
@@ -201,11 +222,12 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'duration' && styles.sortPillActive]}
             onPress={() => setSelectedSort('duration')}
+            activeOpacity={0.8}
           >
             <Zap
-              size={13}
-              color={selectedSort === 'duration' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
-              strokeWidth={2.2}
+              size={12}
+              color={selectedSort === 'duration' ? colors.brandNavy : 'rgba(255,255,255,0.85)'}
+              strokeWidth={2.4}
               style={{ marginRight: 5 }}
             />
             <Text
@@ -218,11 +240,12 @@ export const TrainResultsScreen: React.FC = () => {
           <TouchableOpacity
             style={[styles.sortPill, selectedSort === 'fare' && styles.sortPillActive]}
             onPress={() => setSelectedSort('fare')}
+            activeOpacity={0.8}
           >
             <IndianRupee
-              size={13}
-              color={selectedSort === 'fare' ? '#FFFFFF' : 'rgba(255,255,255,0.7)'}
-              strokeWidth={2.2}
+              size={12}
+              color={selectedSort === 'fare' ? colors.brandNavy : 'rgba(255,255,255,0.85)'}
+              strokeWidth={2.4}
               style={{ marginRight: 5 }}
             />
             <Text style={[styles.sortPillText, selectedSort === 'fare' && styles.sortPillTextActive]}>
@@ -236,14 +259,16 @@ export const TrainResultsScreen: React.FC = () => {
       {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Searching live trains between {sourceCode} & {destinationCode}...</Text>
+          <Text style={styles.loadingText}>
+            Searching live trains between {sourceCode} & {destinationCode}...
+          </Text>
         </View>
       ) : error ? (
         <View style={styles.centerContainer}>
           <AlertCircle size={40} color={colors.statusWl} style={{ marginBottom: 12 }} />
           <Text style={styles.errorTitle}>Search Failed</Text>
           <Text style={styles.errorMessage}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={handleRefresh}>
+          <TouchableOpacity style={styles.retryBtn} onPress={handleRefresh} activeOpacity={0.85}>
             <Text style={styles.retryText}>Retry Search</Text>
           </TouchableOpacity>
         </View>
@@ -264,10 +289,22 @@ export const TrainResultsScreen: React.FC = () => {
             <TrainCard
               train={item}
               getStatusBadgeStyle={getStatusBadgeStyle}
+              onSelectClass={(cls) => handleOpenDetailModal(item, cls)}
             />
           )}
         />
       )}
+
+      {/* Availability Detail & Alert Modal */}
+      <AvailabilityDetailModal
+        visible={detailModalVisible}
+        train={selectedTrainForModal}
+        selectedClass={selectedClassForModal}
+        journeyDate={journeyDate}
+        displayDate={displayDate}
+        quota={quota}
+        onClose={() => setDetailModalVisible(false)}
+      />
     </View>
   );
 };
@@ -275,14 +312,15 @@ export const TrainResultsScreen: React.FC = () => {
 interface TrainCardProps {
   train: TrainItem;
   getStatusBadgeStyle: (avail: string) => { bg: string; text: string; dot: string };
+  onSelectClass: (cls: TravelClassInfo) => void;
 }
 
-const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle }) => {
+const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onSelectClass }) => {
   return (
     <View style={styles.card}>
       {/* Train Identification */}
       <View style={styles.trainHeader}>
-        <View>
+        <View style={{ flex: 1, marginRight: 8 }}>
           <View style={styles.trainNumberRow}>
             <Text style={styles.trainNumber}>{train.train_number}</Text>
             {train.has_pantry ? (
@@ -332,9 +370,11 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle }) => 
           const badge = getStatusBadgeStyle(cls.availability);
 
           return (
-            <View
+            <TouchableOpacity
               key={cls.travel_class}
               style={styles.classBox}
+              onPress={() => onSelectClass(cls)}
+              activeOpacity={0.75}
             >
               <View style={styles.classTopRow}>
                 <Text style={styles.classTitle}>{cls.travel_class}</Text>
@@ -347,7 +387,7 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle }) => 
                   {cls.availability}
                 </Text>
               </View>
-            </View>
+            </TouchableOpacity>
           );
         })}
       </View>
@@ -362,28 +402,25 @@ const styles = StyleSheet.create({
   },
   headerBanner: {
     paddingHorizontal: spacing.md,
-    paddingBottom: spacing.sm,
-    borderBottomLeftRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
+    paddingBottom: spacing.sm + 2,
+    borderBottomLeftRadius: radius.xl,
+    borderBottomRightRadius: radius.xl,
   },
   topNavRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs + 2,
   },
   backBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: colors.glassSubtleBg,
+    borderWidth: 1,
+    borderColor: colors.glassSubtleBorder,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  backArrow: {
-    fontSize: 20,
-    color: '#FFFFFF',
-    fontWeight: '700',
   },
   headerTitleGroup: {
     alignItems: 'center',
@@ -391,8 +428,10 @@ const styles = StyleSheet.create({
   routePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    paddingHorizontal: 12,
+    backgroundColor: colors.glassSubtleBg,
+    borderWidth: 1,
+    borderColor: colors.glassSubtleBorder,
+    paddingHorizontal: 14,
     paddingVertical: 4,
     borderRadius: radius.full,
   },
@@ -402,29 +441,21 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
-  routeArrow: {
-    fontSize: 14,
-    color: '#BAE6FD',
-    marginHorizontal: 8,
-  },
   headerSubtitle: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontWeight: '500',
-    marginTop: 4,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '600',
+    marginTop: 3,
   },
   refreshBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: colors.glassSubtleBg,
+    borderWidth: 1,
+    borderColor: colors.glassSubtleBorder,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  refreshText: {
-    fontSize: 20,
-    color: '#FFFFFF',
-    fontWeight: '700',
   },
   sortBar: {
     flexDirection: 'row',
@@ -436,20 +467,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: radius.full,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
   },
   sortPillActive: {
     backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+    ...shadows.badge,
   },
   sortPillText: {
     fontSize: 11,
     fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: 'rgba(255, 255, 255, 0.92)',
   },
   sortPillTextActive: {
-    color: colors.primary,
+    color: colors.brandNavy,
+    fontWeight: '800',
   },
   listContent: {
     padding: spacing.md,
@@ -459,19 +495,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBackground,
     borderRadius: radius.lg,
     padding: spacing.md,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: colors.borderSubtle,
+    ...shadows.card,
   },
   trainHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   trainNumberRow: {
     flexDirection: 'row',
@@ -488,13 +520,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: radius.sm,
+    borderRadius: radius.xs,
   },
   pantryText: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textSecondary,
   },
   trainName: {
@@ -502,17 +536,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
     marginTop: 2,
-    maxWidth: 220,
   },
   fareContainer: {
     alignItems: 'flex-end',
   },
   fromFareLabel: {
     fontSize: 10,
+    fontWeight: '600',
     color: colors.textMuted,
+    textTransform: 'uppercase',
   },
   fareAmount: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
     color: colors.textPrimary,
   },
@@ -530,14 +565,14 @@ const styles = StyleSheet.create({
     minWidth: 60,
   },
   timeText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
     color: colors.textPrimary,
   },
   stationCodeText: {
     fontSize: 12,
     color: colors.textSecondary,
-    fontWeight: '600',
+    fontWeight: '700',
     marginTop: 2,
   },
   durationBlock: {
@@ -548,7 +583,7 @@ const styles = StyleSheet.create({
   durationText: {
     fontSize: 11,
     color: colors.textSecondary,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: 4,
   },
   timelineLine: {
@@ -576,10 +611,10 @@ const styles = StyleSheet.create({
   classBox: {
     flex: 1,
     minWidth: '22%',
-    backgroundColor: colors.pillBg,
-    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceSubtle,
+    borderRadius: radius.sm + 2,
     padding: 8,
-    borderWidth: 1,
+    borderWidth: 1.2,
     borderColor: colors.borderSubtle,
   },
   classTopRow: {
@@ -595,7 +630,7 @@ const styles = StyleSheet.create({
   },
   classFare: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textSecondary,
   },
   statusPill: {
@@ -603,7 +638,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 6,
     paddingVertical: 3,
-    borderRadius: radius.sm,
+    borderRadius: radius.xs,
   },
   statusDot: {
     width: 5,
@@ -613,7 +648,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   centerContainer: {
     flex: 1,
@@ -624,43 +659,38 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: spacing.md,
     fontSize: 13,
+    fontWeight: '600',
     color: colors.textSecondary,
     textAlign: 'center',
   },
-  errorIcon: {
-    fontSize: 40,
-    marginBottom: spacing.sm,
-  },
   errorTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
   errorMessage: {
     fontSize: 13,
+    fontWeight: '500',
     color: colors.statusWl,
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
   retryBtn: {
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: 12,
     borderRadius: radius.full,
+    ...shadows.badge,
   },
   retryText: {
     color: '#FFFFFF',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 14,
-  },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: spacing.sm,
   },
   emptyTitle: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
@@ -669,5 +699,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
+    fontWeight: '500',
   },
 });
