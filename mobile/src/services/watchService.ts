@@ -52,6 +52,13 @@ export function normalizeDateToIso(dateStr: string): string {
   return dateStr;
 }
 
+export function getTrainWatchApiBaseUrl(): string {
+  if (process.env.EXPO_PUBLIC_TRAINWATCH_API_URL) {
+    return process.env.EXPO_PUBLIC_TRAINWATCH_API_URL.replace(/\/+$/, '');
+  }
+  return getTransportApiBaseUrl();
+}
+
 class WatchService {
   private async getAuthHeader(): Promise<Record<string, string>> {
     const deviceId = await authService.getDeviceId();
@@ -63,7 +70,7 @@ class WatchService {
   }
 
   async createWatch(input: CreateWatchInput): Promise<WatchRecord> {
-    const baseUrl = getTransportApiBaseUrl();
+    const baseUrl = getTrainWatchApiBaseUrl();
     const headers = await this.getAuthHeader();
     const isoDate = normalizeDateToIso(input.journeyDate);
 
@@ -105,7 +112,7 @@ class WatchService {
   }
 
   async getWatch(watchId: string): Promise<WatchRecord> {
-    const baseUrl = getTransportApiBaseUrl();
+    const baseUrl = getTrainWatchApiBaseUrl();
     const headers = await this.getAuthHeader();
 
     const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
@@ -124,7 +131,7 @@ class WatchService {
     watchId: string,
     status: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED'
   ): Promise<WatchRecord> {
-    const baseUrl = getTransportApiBaseUrl();
+    const baseUrl = getTrainWatchApiBaseUrl();
     const headers = await this.getAuthHeader();
 
     const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
@@ -148,7 +155,7 @@ class WatchService {
   }
 
   async deleteWatch(watchId: string): Promise<void> {
-    const baseUrl = getTransportApiBaseUrl();
+    const baseUrl = getTrainWatchApiBaseUrl();
     const headers = await this.getAuthHeader();
 
     const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
