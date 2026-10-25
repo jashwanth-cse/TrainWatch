@@ -119,6 +119,12 @@ def get_notification_dispatcher_service(request: Request) -> NotificationDispatc
     response_model=DispatcherResponse,
     dependencies=[Depends(verify_internal_auth)],
 )
+@router.post(
+    "/dispatch",
+    response_model=DispatcherResponse,
+    dependencies=[Depends(verify_internal_auth)],
+    include_in_schema=False,
+)
 async def trigger_dispatcher(
     dispatcher: Annotated[DispatcherService, Depends(get_dispatcher_service)],
 ) -> Any:
@@ -150,6 +156,12 @@ async def process_job(
     "/notifications/process",
     response_model=ProcessNotificationsResponse,
     dependencies=[Depends(verify_internal_auth)],
+)
+@router.post(
+    "/notifications/dispatch",
+    response_model=ProcessNotificationsResponse,
+    dependencies=[Depends(verify_internal_auth)],
+    include_in_schema=False,
 )
 async def process_notifications(
     payload: ProcessNotificationsPayload,

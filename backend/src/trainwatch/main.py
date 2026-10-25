@@ -2,7 +2,11 @@
 
 from fastapi import FastAPI
 
-from trainwatch.api.auth import RejectingTokenVerifier, build_current_user_dependency
+from trainwatch.api.auth import (
+    ProductionTokenVerifier,
+    RejectingTokenVerifier,
+    build_current_user_dependency,
+)
 from trainwatch.api.errors import install_error_handlers
 from trainwatch.api.logging import structured_logging_middleware
 from trainwatch.api.metrics import MetricsRegistry
@@ -35,7 +39,29 @@ def create_app(
 ) -> FastAPI:
     """Create an isolated application without initializing external clients."""
     resolved_settings = settings or AppSettings.from_environment()
-    resolved_verifier = token_verifier or RejectingTokenVerifier()
+
+    if resolved_settings.app_env in {"staging", "production"}:
+        resolved_verifier = token_verifier or ProductionTokenVerifier()
+        project_id = resolved_settings.project_id or (
+            "trainwatch" if resolved_settings.app_env == "staging" else ""
+        )
+        if (watch_repository is None or device_repository is None) and project_id:
+            from trainwatch.infrastructure.firestore.client import create_firestore_client
+            from trainwatch.infrastructure.firestore.devices import FirestoreDeviceRepository
+            from trainwatch.infrastructure.firestore.watches import FirestoreWatchRepository
+
+            firestore_client = create_firestore_client(
+                project_id=project_id,
+                database_id=resolved_settings.firestore_database_id,
+                allow_live_access=True,
+            )
+            if watch_repository is None:
+                watch_repository = FirestoreWatchRepository(firestore_client)
+            if device_repository is None:
+                device_repository = FirestoreDeviceRepository(firestore_client)
+    else:
+        resolved_verifier = token_verifier or RejectingTokenVerifier()
+
     application = FastAPI(
         title="TrainWatch API",
         version="0.3.0",
