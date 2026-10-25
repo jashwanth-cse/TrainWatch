@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from trainwatch.domain.notifications import NotificationDeliveryStatus, NotificationRecord
-from trainwatch.infrastructure.firestore.watches import CollectionReference, FirestoreClient
 from trainwatch.ports.notifications import NotificationOutboxItem
 
 
