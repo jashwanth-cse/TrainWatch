@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -77,7 +78,9 @@ class InMemoryJobRepository:
         reconciled = 0
         for job_id, job in list(self.jobs.items()):
             if job.is_lease_expired(now=now):
-                self.jobs[job_id] = job.mark_completed(next_due_at=now, at=now)
+                self.jobs[job_id] = replace(
+                    job, status=JobStatus.PENDING, leased_until=None, due_at=now, updated_at=now
+                )
                 reconciled += 1
         return reconciled
 
@@ -86,6 +89,11 @@ class InMemoryJobRepository:
 
     async def save(self, job: JobRecord) -> None:
         self.jobs[job.job_id] = job
+
+    async def ensure_pending(self, job: JobRecord) -> None:
+        existing = self.jobs.get(job.job_id)
+        if existing is None or existing.status in {JobStatus.COMPLETED, JobStatus.FAILED}:
+            self.jobs[job.job_id] = job
 
 
 class InMemoryObservationRepository:
@@ -658,7 +666,7 @@ async def test_worker_evaluates_condition_and_saves_outbox_idempotently() -> Non
     assert result.alert_triggered
 
     # Verify outbox item was created
-    expected_key = "alert:w1:AVAILABLE:0"
+    expected_key = f"alert:w1:{now.isoformat()}:AVAILABLE:0"
     item = await outbox.get_by_key(expected_key)
     assert item is not None
     assert "Seat Alert: Train 12661" in item.title
@@ -844,3 +852,203 @@ def test_worker_computes_interval_based_on_journey_proximity() -> None:
     assert worker.compute_next_interval_minutes(days_until_journey=7) == 15
     assert worker.compute_next_interval_minutes(days_until_journey=8) == 30
     assert worker.compute_next_interval_minutes(days_until_journey=30) == 30
+
+
+def _reliability_worker() -> tuple[
+    WorkerService,
+    InMemoryJobRepository,
+    InMemoryWatchRepository,
+    InMemoryObservationRepository,
+    InMemoryNotificationOutbox,
+    FakeAvailabilityProvider,
+]:
+    jobs = InMemoryJobRepository()
+    watches = InMemoryWatchRepository()
+    observations = InMemoryObservationRepository()
+    outbox = InMemoryNotificationOutbox()
+    provider = FakeAvailabilityProvider()
+    return (
+        WorkerService(
+            job_repository=jobs,
+            watch_repository=watches,
+            availability_provider=provider,
+            observation_repository=observations,
+            notification_outbox=outbox,
+            max_attempts=3,
+        ),
+        jobs,
+        watches,
+        observations,
+        outbox,
+        provider,
+    )
+
+
+async def _seed_check(
+    jobs: InMemoryJobRepository, watches: InMemoryWatchRepository, now: datetime
+) -> None:
+    await watches.save(_sample_watch(created_at=now))
+    await jobs.save(
+        JobRecord(
+            job_id="j1",
+            watch_id="w1",
+            owner_id="u1",
+            due_at=now,
+            status=JobStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+
+@pytest.mark.anyio
+async def test_successful_checks_reset_retry_budget() -> None:
+    """A long-running successful watch still gets retries for a subsequent failure."""
+    worker, jobs, watches, _, _, provider = _reliability_worker()
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    await _seed_check(jobs, watches, now)
+    for _ in range(6):
+        result = await worker.process_job(job_id="j1", now=now)
+        assert result.status == "success"
+        saved = jobs.jobs["j1"]
+        assert saved.status is JobStatus.PENDING
+        assert saved.attempts == 0
+        now = saved.due_at
+    provider.observation = AvailabilityObservation.failed(ProviderFailure.TIMEOUT)
+    result = await worker.process_job(job_id="j1", now=now)
+    assert result.status == "retry_scheduled"
+    assert jobs.jobs["j1"].status is JobStatus.PENDING
+    assert jobs.jobs["j1"].attempts == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure_point", ["watch", "provider", "read", "write", "complete"])
+async def test_unexpected_exceptions_use_bounded_sanitized_retries(
+    failure_point: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Execution failures must release the lease and exhaust the same retry budget."""
+    worker, jobs, watches, observations, _, provider = _reliability_worker()
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    await _seed_check(jobs, watches, now)
+
+    async def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("sensitive upstream payload")
+
+    targets = {
+        "watch": (watches, "get"),
+        "provider": (provider, "fetch"),
+        "read": (observations, "get_latest_observation"),
+        "write": (observations, "save_observation"),
+        "complete": (jobs, "complete_job"),
+    }
+    target, method = targets[failure_point]
+    monkeypatch.setattr(target, method, explode)
+    for attempt in range(1, 4):
+        result = await worker.process_job(job_id="j1", now=now)
+        assert result.error == "unexpected_worker_error"
+        assert jobs.jobs["j1"].attempts == attempt
+        assert jobs.jobs["j1"].leased_until is None
+        assert jobs.jobs["j1"].last_error == "unexpected_worker_error"
+        if attempt < 3:
+            assert result.status == "retry_scheduled"
+            assert jobs.jobs["j1"].status is JobStatus.PENDING
+            now = jobs.jobs["j1"].due_at
+        else:
+            assert result.status == "completed_max_attempts_exceeded"
+            assert jobs.jobs["j1"].status is JobStatus.FAILED
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure_point", ["outbox", "observation"])
+async def test_notification_survives_partial_persistence_and_repeated_transitions(
+    failure_point: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each transition alerts once across partial-write retries and later re-entry."""
+    worker, jobs, watches, observations, outbox, provider = _reliability_worker()
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    await _seed_check(jobs, watches, now)
+    baseline = AvailabilityObservation.success(
+        AvailabilitySnapshot(
+            status=AvailabilityStatus.WAITLIST,
+            position=20,
+            raw_availability="WL 20",
+            observed_at=now,
+        )
+    )
+    await observations.save_observation(watch_id="w1", observation=baseline)
+    calls = 0
+    original_outbox = outbox.save_notification
+    original_save = observations.save_observation
+
+    async def save_notification(item: NotificationOutboxItem) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("outbox temporarily unavailable")
+        return await original_outbox(item)
+
+    async def save_observation(*, watch_id: str, observation: AvailabilityObservation) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("observation temporarily unavailable")
+        await original_save(watch_id=watch_id, observation=observation)
+
+    if failure_point == "outbox":
+        monkeypatch.setattr(outbox, "save_notification", save_notification)
+    else:
+        monkeypatch.setattr(observations, "save_observation", save_observation)
+    first = await worker.process_job(job_id="j1", now=now)
+    assert first.status == "retry_scheduled"
+    assert await observations.get_latest_observation(watch_id="w1") == baseline
+    assert len(outbox.items) == (0 if failure_point == "outbox" else 1)
+
+    now = jobs.jobs["j1"].due_at
+    retried = await worker.process_job(job_id="j1", now=now)
+    assert retried.status == "success"
+    assert retried.alert_triggered
+    assert len(outbox.items) == 1
+
+    now = jobs.jobs["j1"].due_at
+    repeated = await worker.process_job(job_id="j1", now=now)
+    assert not repeated.alert_triggered
+    assert len(outbox.items) == 1
+
+    now = jobs.jobs["j1"].due_at
+    provider.observation = (
+        AvailabilityObservation.success(
+            replace(
+                baseline.snapshot,
+                observed_at=now,
+            )
+        )
+        if baseline.snapshot is not None
+        else baseline
+    )
+    assert (await worker.process_job(job_id="j1", now=now)).status == "success"
+    now = jobs.jobs["j1"].due_at
+    provider.observation = AvailabilityObservation.success(
+        AvailabilitySnapshot(
+            status=AvailabilityStatus.AVAILABLE,
+            raw_availability="AVAILABLE",
+            observed_at=now,
+        )
+    )
+    returned = await worker.process_job(job_id="j1", now=now)
+    assert returned.alert_triggered
+    assert len(outbox.items) == 2
+
+
+@pytest.mark.anyio
+async def test_lease_recovery_preserves_attempt_budget() -> None:
+    """Lease expiry is not a successful check and cannot reset failed attempts."""
+    _, jobs, watches, _, _, _ = _reliability_worker()
+    now = datetime(2026, 11, 1, tzinfo=UTC)
+    await _seed_check(jobs, watches, now)
+    jobs.jobs["j1"] = replace(
+        jobs.jobs["j1"], status=JobStatus.LEASED, attempts=2, leased_until=now
+    )
+    assert await jobs.reconcile_expired_leases(now=now) == 1
+    assert jobs.jobs["j1"].attempts == 2

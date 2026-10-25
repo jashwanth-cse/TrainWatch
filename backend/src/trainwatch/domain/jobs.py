@@ -61,6 +61,7 @@ class JobRecord:
                 self,
                 status=JobStatus.PENDING,
                 due_at=next_due_at,
+                attempts=0,
                 leased_until=None,
                 last_error=None,
                 updated_at=at,

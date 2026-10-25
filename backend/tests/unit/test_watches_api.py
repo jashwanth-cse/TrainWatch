@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -9,9 +11,18 @@ from fastapi import FastAPI
 
 from tests.asgi import request
 from tests.unit.test_api_boundary import FakeTokenVerifier
+from tests.unit.test_worker_and_scheduler import (
+    FakeAvailabilityProvider,
+    FakeTaskEnqueuer,
+    InMemoryJobRepository,
+    InMemoryNotificationOutbox,
+    InMemoryObservationRepository,
+)
 from trainwatch.config import AppSettings
+from trainwatch.domain.jobs import JobStatus
 from trainwatch.domain.watch import Watch
 from trainwatch.main import create_app
+from trainwatch.services.worker import DispatcherService, WorkerService
 
 
 class InMemoryWatchRepository:
@@ -33,12 +44,14 @@ class InMemoryWatchRepository:
 def _build_test_app(
     repo: InMemoryWatchRepository | None = None,
     tokens: dict[str, str] | None = None,
+    jobs: InMemoryJobRepository | None = None,
 ) -> FastAPI:
     verifier = FakeTokenVerifier(tokens or {"ticket-a": "user-a", "ticket-b": "user-b"})
     app = create_app(
         AppSettings(app_env="test"),
         token_verifier=verifier,
         watch_repository=repo if repo is not None else InMemoryWatchRepository(),
+        job_repository=jobs if jobs is not None else InMemoryJobRepository(),
     )
     return app
 
@@ -374,3 +387,110 @@ async def test_service_unavailable_when_repository_unconfigured() -> None:
     )
     assert resp.status_code == 503
     assert resp.json()["error"]["code"] == "service_unavailable"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("previous_job_status", [*JobStatus, None])
+async def test_create_and_resume_schedule_one_dispatchable_job(
+    previous_job_status: JobStatus | None,
+) -> None:
+    """Creation enters the dispatcher; resuming reuses the same job without duplicates."""
+    repo = InMemoryWatchRepository()
+    jobs = InMemoryJobRepository()
+    app = _build_test_app(repo, jobs=jobs)
+    created = await request(
+        app,
+        "POST",
+        "/api/v1/watches",
+        headers={
+            "Authorization": "Bearer ticket-a",
+        },
+        json_body={
+            "train_number": "12661",
+            "source": "MS",
+            "destination": "TEN",
+            "journey_date": "2026-11-15",
+            "travel_class": "3A",
+            "condition": {"kind": "becomes_available"},
+        },
+    )
+    assert created.status_code == 201
+    watch_id = created.json()["watch_id"]
+    assert len(jobs.jobs) == 1
+    job = next(iter(jobs.jobs.values()))
+    assert job.watch_id == watch_id
+    assert job.owner_id == "user-a"
+    assert job.status is JobStatus.PENDING
+    queue = FakeTaskEnqueuer()
+    now = datetime.now(UTC)
+    dispatcher = DispatcherService(job_repository=jobs, task_enqueuer=queue)
+    assert await dispatcher.dispatch_due_jobs(now=now) == 1
+    assert queue.enqueued == [job.job_id]
+    worker = WorkerService(
+        job_repository=jobs,
+        watch_repository=repo,
+        availability_provider=FakeAvailabilityProvider(),
+        observation_repository=InMemoryObservationRepository(),
+        notification_outbox=InMemoryNotificationOutbox(),
+    )
+    assert (await worker.process_job(job_id=job.job_id, now=now)).status == "success"
+    path = f"/api/v1/watches/{watch_id}"
+    auth = {"Authorization": "Bearer ticket-a"}
+    assert (
+        await request(app, "PATCH", path, headers=auth, json_body={"status": "paused"})
+    ).status_code == 200
+    if previous_job_status is None:
+        jobs.jobs.clear()
+    else:
+        jobs.jobs[job.job_id] = replace(jobs.jobs[job.job_id], status=previous_job_status)
+    before = jobs.jobs.get(job.job_id)
+    resumed = await request(app, "PATCH", path, headers=auth, json_body={"status": "active"})
+    assert resumed.status_code == 200
+    assert len(jobs.jobs) == 1
+    after = jobs.jobs[job.job_id]
+    if previous_job_status in {JobStatus.PENDING, JobStatus.LEASED}:
+        assert after == before
+    else:
+        assert after.status is JobStatus.PENDING
+        assert after.attempts == 0
+        assert after.due_at <= datetime.now(UTC)
+    # Idempotent active updates and pause/cancel do not replace the schedule.
+    for target in ["active", "paused", "cancelled"]:
+        assert (
+            await request(app, "PATCH", path, headers=auth, json_body={"status": target})
+        ).status_code == 200
+        assert jobs.jobs[job.job_id] == after
+
+
+@pytest.mark.anyio
+async def test_create_and_resume_require_scheduler_before_mutating_watch() -> None:
+    """An unavailable scheduler cannot produce a successful unscheduled active watch."""
+    repo = InMemoryWatchRepository()
+    app = _build_test_app(repo)
+    auth = {"Authorization": "Bearer ticket-a"}
+    payload = {
+        "train_number": "12661",
+        "source": "MS",
+        "destination": "TEN",
+        "journey_date": "2026-11-15",
+        "travel_class": "3A",
+        "condition": {"kind": "becomes_available"},
+    }
+    jobs = app.state.job_repository
+    app.state.job_repository = None
+    blocked = await request(app, "POST", "/api/v1/watches", headers=auth, json_body=payload)
+    assert blocked.status_code == 503
+    assert not repo.watches
+    app.state.job_repository = jobs
+    created = await request(app, "POST", "/api/v1/watches", headers=auth, json_body=payload)
+    path = f"/api/v1/watches/{created.json()['watch_id']}"
+    app.state.job_repository = None
+    assert (
+        await request(app, "PATCH", path, headers=auth, json_body={"status": "paused"})
+    ).status_code == 200
+    assert (
+        await request(app, "PATCH", path, headers=auth, json_body={"status": "active"})
+    ).status_code == 503
+    assert next(iter(repo.watches.values())).status.value == "paused"
+    assert (await request(app, "GET", path, headers=auth)).status_code == 200
+    assert (await request(app, "DELETE", path, headers=auth)).status_code == 204

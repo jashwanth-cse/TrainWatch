@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { resolveQuota } from '../utils/quota';
 import { AppHeader } from '../components/AppHeader';
 import {
   Station,
@@ -68,8 +69,9 @@ export const HomeScreen: React.FC = () => {
         if (last.source) setSource(last.source);
         if (last.destination) setDestination(last.destination);
         if (last.travelClass) setTravelClass(last.travelClass);
-        if (last.quota) setQuota(last.quota);
-        if (last.quotaCode) setQuotaCode(last.quotaCode);
+        const restoredQuota = resolveQuota(last.quotaCode, last.quota);
+        setQuota(restoredQuota.label);
+        setQuotaCode(restoredQuota.code);
       }
     });
     return () => {
