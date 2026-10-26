@@ -181,3 +181,288 @@ async def test_firestore_watch_dispatcher_execution() -> None:
     mock_group.get = fake_err
     err_count = await dispatcher.dispatch_due_jobs(now=datetime.now(UTC))
     assert err_count == 0
+
+
+
+@pytest.mark.anyio
+async def test_firestore_watch_dispatcher_full_evaluation() -> None:
+    """Validate FirestoreWatchDispatcher evaluates watches, alerts, and dispatches notifications."""
+    from datetime import datetime, UTC
+    from unittest.mock import AsyncMock, MagicMock
+    from trainwatch.domain.availability import AvailabilityObservation, AvailabilitySnapshot, AvailabilityStatus, ProviderFailure
+    from trainwatch.main import FirestoreWatchDispatcher, create_app
+    from trainwatch.config import AppSettings
+
+    now = datetime(2026, 11, 1, 10, 0, 0, tzinfo=UTC)
+
+    mock_client = MagicMock()
+    mock_group = MagicMock()
+    mock_client.collection_group.return_value = mock_group
+
+    mock_provider = MagicMock()
+    mock_outbox = MagicMock()
+    mock_outbox.save_notification = AsyncMock()
+    mock_notif_disp = MagicMock()
+    mock_notif_disp.dispatch_pending = AsyncMock()
+
+    snap_avl = AvailabilitySnapshot(
+        status=AvailabilityStatus.AVAILABLE,
+        raw_availability="AVAILABLE 120",
+        observed_at=now,
+        position=None,
+    )
+    snap_rac = AvailabilitySnapshot(
+        status=AvailabilityStatus.RAC,
+        raw_availability="RAC 30",
+        observed_at=now,
+        position=30,
+    )
+    snap_avl_unparseable = AvailabilitySnapshot(
+        status=AvailabilityStatus.AVAILABLE,
+        raw_availability="NO_DIGITS",
+        observed_at=now,
+        position=None,
+    )
+
+    # 1. Active doc with seats_below met (first check, no previous)
+    doc_seats_below = MagicMock()
+    doc_seats_below.id = "w_001"
+    doc_seats_below.to_dict.return_value = {
+        "schemaVersion": 1,
+        "status": "active",
+        "ownerId": "user_123",
+        "query": {
+            "trainNumber": "06030",
+            "source": "RJPM",
+            "destination": "CNV",
+            "journeyDate": "2026-11-05",
+            "travelClass": "SL",
+            "quota": "GN",
+        },
+        "condition": {
+            "kind": "seats_below",
+            "targetStatus": None,
+            "maximumPosition": 160,
+        },
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    doc_seats_below.reference.update = AsyncMock()
+
+    # 2. Active doc with reaches_threshold met (first check)
+    doc_threshold = MagicMock()
+    doc_threshold.id = "w_002"
+    doc_threshold.to_dict.return_value = {
+        "schemaVersion": 1,
+        "status": "active",
+        "ownerId": "user_123",
+        "query": {
+            "trainNumber": "06030",
+            "source": "RJPM",
+            "destination": "CNV",
+            "journeyDate": "2026-11-05",
+            "travelClass": "SL",
+            "quota": "GN",
+        },
+        "condition": {
+            "kind": "reaches_threshold",
+            "targetStatus": "RAC",
+            "maximumPosition": 50,
+        },
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    doc_threshold.reference.update = AsyncMock()
+
+    # 3. Active doc with becomes_available met
+    doc_becomes_avl = MagicMock()
+    doc_becomes_avl.id = "w_003"
+    parent_doc = MagicMock()
+    parent_doc.id = "user_parent"
+    parent_col = MagicMock()
+    parent_col.parent = parent_doc
+    doc_becomes_avl.reference.parent = parent_col
+    doc_becomes_avl.to_dict.return_value = {
+        "schemaVersion": 1,
+        "status": "active",
+        "query": {
+            "trainNumber": "12661",
+            "source": "MS",
+            "destination": "TEN",
+            "journeyDate": "2026-11-05",
+            "travelClass": "SL",
+            "quota": "GN",
+        },
+        "condition": {
+            "kind": "becomes_available",
+            "targetStatus": None,
+            "maximumPosition": None,
+        },
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    doc_becomes_avl.reference.update = AsyncMock()
+
+    # 4. Doc already alerted with same key
+    doc_dup = MagicMock()
+    doc_dup.id = "w_004"
+    doc_dup.to_dict.return_value = {
+        "schemaVersion": 1,
+        "status": "active",
+        "ownerId": "user_123",
+        "query": {
+            "trainNumber": "06030",
+            "source": "RJPM",
+            "destination": "CNV",
+            "journeyDate": "2026-11-05",
+            "travelClass": "SL",
+            "quota": "GN",
+        },
+        "condition": {
+            "kind": "seats_below",
+            "targetStatus": None,
+            "maximumPosition": 160,
+        },
+        "lastAlertedKey": "alert:w_004:RAC:30",
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    doc_dup.reference.update = AsyncMock()
+
+    # 5. Doc with previous observation where should_alert triggers
+    doc_prev = MagicMock()
+    doc_prev.id = "w_005"
+    doc_prev.to_dict.return_value = {
+        "schemaVersion": 1,
+        "status": "active",
+        "ownerId": "user_123",
+        "query": {
+            "trainNumber": "06030",
+            "source": "RJPM",
+            "destination": "CNV",
+            "journeyDate": "2026-11-05",
+            "travelClass": "SL",
+            "quota": "GN",
+        },
+        "condition": {
+            "kind": "seats_below",
+            "targetStatus": None,
+            "maximumPosition": 160,
+        },
+        "lastObservation": {
+            "status": "AVAILABLE",
+            "rawAvailability": "AVAILABLE 180",
+            "position": None,
+            "observedAt": now.isoformat(),
+        },
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    doc_prev.reference.update = AsyncMock()
+
+    # 6. Expired doc
+    doc_expired = MagicMock()
+    doc_expired.id = "w_006"
+    doc_expired.to_dict.return_value = {
+        "schemaVersion": 1,
+        "status": "active",
+        "ownerId": "user_123",
+        "query": {
+            "trainNumber": "06030",
+            "source": "RJPM",
+            "destination": "CNV",
+            "journeyDate": "2026-10-01",  # in the past
+            "travelClass": "SL",
+            "quota": "GN",
+        },
+        "condition": {
+            "kind": "seats_below",
+            "maximumPosition": 160,
+        },
+        "createdAt": now,
+        "updatedAt": now,
+    }
+
+    # 7. Malformed / decoding error doc
+    doc_bad = MagicMock()
+    doc_bad.id = "w_007"
+    doc_bad.to_dict.return_value = {"status": "active", "schemaVersion": 999}
+
+    # 8. Unparseable seats and condition that does not match
+    doc_unparseable = MagicMock()
+    doc_unparseable.id = "w_008"
+    doc_unparseable.to_dict.return_value = {
+        "schemaVersion": 1,
+        "status": "active",
+        "ownerId": "user_123",
+        "query": {
+            "trainNumber": "99999",
+            "source": "ABC",
+            "destination": "XYZ",
+            "journeyDate": "2026-11-05",
+            "travelClass": "SL",
+            "quota": "GN",
+        },
+        "condition": {
+            "kind": "rapid_rac_increase",
+            "targetStatus": None,
+            "maximumPosition": None,
+        },
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    doc_unparseable.reference = None  # test hasattr(ref, 'update') is False
+
+    async def fake_get_all():
+        return [
+            doc_seats_below,
+            doc_threshold,
+            doc_becomes_avl,
+            doc_dup,
+            doc_prev,
+            doc_expired,
+            doc_bad,
+            doc_unparseable,
+        ]
+
+    mock_group.get = fake_get_all
+
+    async def fake_fetch(q):
+        if q.train_number == "12661":
+            return AvailabilityObservation.success(snap_avl)
+        if q.train_number == "99999":
+            return AvailabilityObservation.success(snap_avl_unparseable)
+        if q.train_number == "06030" and q.source == "RJPM" and doc_threshold.to_dict()["condition"]["kind"] == "reaches_threshold":
+            return AvailabilityObservation.success(snap_rac)
+        return AvailabilityObservation.success(snap_avl)
+
+    mock_provider.fetch = fake_fetch
+
+    dispatcher = FirestoreWatchDispatcher(
+        mock_client,
+        availability_provider=mock_provider,
+        outbox=mock_outbox,
+        notification_dispatcher=mock_notif_disp,
+    )
+
+    count = await dispatcher.dispatch_due_jobs(now=now)
+    assert count == 8
+    assert mock_outbox.save_notification.call_count >= 3
+    assert mock_notif_disp.dispatch_pending.call_count == 1
+
+    # Also test provider failure path
+    mock_provider.fetch = AsyncMock(return_value=AvailabilityObservation.failed(ProviderFailure.TIMEOUT))
+    count_fail = await dispatcher.dispatch_due_jobs(now=now)
+    assert count_fail == 8
+
+    # Test empty docs branch (loop exit)
+    mock_group.get = AsyncMock(return_value=[])
+    count_empty = await dispatcher.dispatch_due_jobs(now=now)
+    assert count_empty == 0
+
+    # Test create_app with all services defaulting in staging
+    app_default = create_app(
+        AppSettings(app_env="staging", project_id="trainwatch", train_api_base_url="https://dreamdestiny.cloud.run")
+    )
+    assert app_default.state.dispatcher_service is not None
+    assert app_default.state.notification_dispatcher_service is not None

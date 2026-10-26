@@ -31,16 +31,142 @@ from trainwatch.services.worker import DispatcherService, WorkerService
 class FirestoreWatchDispatcher:
     """Dispatches active watch checks in production and staging."""
 
-    def __init__(self, client: Any) -> None:
+    def __init__(
+        self,
+        client: Any,
+        *,
+        availability_provider: Any = None,
+        outbox: Any = None,
+        notification_dispatcher: Any = None,
+    ) -> None:
         self._client = client
+        self._availability_provider = availability_provider
+        self._outbox = outbox
+        self._notification_dispatcher = notification_dispatcher
 
     async def dispatch_due_jobs(self, *, now: datetime, limit: int = 50) -> int:
         try:
             docs = await self._client.collection_group("reminders").get()
-            active_count = sum(1 for d in docs if (d.to_dict() or {}).get("status") == "active")
-            return min(active_count, limit)
         except Exception:
             return 0
+
+        active_count = 0
+        from trainwatch.domain.alerts import (
+            AlertKind,
+            _extract_available_seats,
+            _meets_threshold,
+            should_alert,
+        )
+        from trainwatch.domain.availability import (
+            AvailabilityObservation,
+            AvailabilitySnapshot,
+            AvailabilityStatus,
+        )
+        from trainwatch.infrastructure.firestore.watches import _decode
+        from trainwatch.ports.notifications import NotificationOutboxItem
+
+        for doc in docs:
+            data = doc.to_dict() or {}
+            if data.get("status") != "active":
+                continue
+            active_count += 1
+
+            if self._availability_provider is None or self._outbox is None:
+                continue
+
+            try:
+                owner_id = str(data.get("ownerId") or "")
+                if not owner_id:
+                    ref = getattr(doc, "reference", None)
+                    parent_col = getattr(ref, "parent", None)
+                    parent_doc = getattr(parent_col, "parent", None)
+                    owner_id = str(getattr(parent_doc, "id", "") or "unknown")
+
+                watch_id = str(getattr(doc, "id", "") or data.get("watchId", "unknown"))
+                watch = _decode(data, watch_id=watch_id, owner_id=owner_id)
+                if now.date() > watch.query.journey_date:
+                    continue
+
+                obs = await self._availability_provider.fetch(watch.query)
+                if obs.snapshot is None:
+                    continue
+
+                snap = obs.snapshot
+                seats = _extract_available_seats(snap.raw_availability)
+                prev_data = data.get("lastObservation")
+                prev_obs = None
+                if prev_data and isinstance(prev_data, dict):
+                    prev_obs = AvailabilityObservation.success(
+                        AvailabilitySnapshot(
+                            status=AvailabilityStatus(str(prev_data.get("status", "UNKNOWN"))),
+                            raw_availability=str(prev_data.get("rawAvailability", "")),
+                            observed_at=now,
+                            position=prev_data.get("position"),
+                        )
+                    )
+
+                triggered = False
+                if prev_obs is not None:
+                    triggered = should_alert(condition=watch.condition, previous=prev_obs, current=obs)
+                elif watch.condition.kind is AlertKind.SEATS_BELOW:
+                    triggered = bool(seats is not None and watch.condition.maximum_position is not None and seats <= watch.condition.maximum_position)
+                elif watch.condition.kind is AlertKind.REACHES_THRESHOLD:
+                    triggered = _meets_threshold(snap, watch.condition)
+                elif watch.condition.kind is AlertKind.BECOMES_AVAILABLE:
+                    triggered = (snap.status is AvailabilityStatus.AVAILABLE)
+
+                status_val = snap.status.value
+                pos_val = snap.position or seats or 0
+                idempotency_key = f"alert:{watch.watch_id}:{status_val}:{pos_val}"
+                if data.get("lastAlertedKey") == idempotency_key:
+                    triggered = False
+
+                if triggered:
+                    pos_label = f" #{snap.position}" if snap.position is not None else ""
+                    seat_label = f" ({snap.raw_availability})" if snap.raw_availability else ""
+                    outbox_item = NotificationOutboxItem(
+                        idempotency_key=idempotency_key,
+                        owner_id=watch.owner_id,
+                        watch_id=watch.watch_id,
+                        title=f"Seat Alert: Train {watch.query.train_number}",
+                        body=(
+                            f"Train {watch.query.train_number} ({watch.query.travel_class}) alert! "
+                            f"Status is now {status_val}{pos_label}{seat_label} on {watch.query.journey_date}."
+                        ),
+                        created_at=now,
+                        data={
+                            "type": "alert_triggered",
+                            "watch_id": watch.watch_id,
+                            "train_number": watch.query.train_number,
+                            "journey_date": str(watch.query.journey_date),
+                            "travel_class": watch.query.travel_class,
+                            "status": status_val,
+                        },
+                    )
+                    await self._outbox.save_notification(outbox_item)
+
+                update_fields: dict[str, Any] = {
+                    "lastCheckedAt": now.isoformat(),
+                    "lastObservation": {
+                        "status": status_val,
+                        "rawAvailability": snap.raw_availability,
+                        "position": snap.position,
+                        "observedAt": snap.observed_at.isoformat(),
+                    },
+                }
+                if triggered:
+                    update_fields["lastAlertedKey"] = idempotency_key
+
+                ref = getattr(doc, "reference", None)
+                if hasattr(ref, "update"):
+                    await ref.update(update_fields)
+            except Exception:
+                continue
+
+        if self._notification_dispatcher is not None:
+            await self._notification_dispatcher.dispatch_pending(batch_size=50, lease_seconds=60, now=now)
+
+        return min(active_count, limit)
 
 
 def create_app(
@@ -89,7 +215,18 @@ def create_app(
                     fcm_sender=fcm_sender,
                 )
             if dispatcher_service is None:
-                dispatcher_service = FirestoreWatchDispatcher(firestore_client)  # type: ignore[assignment]
+                from trainwatch.infrastructure.train_api.client import (
+                    DreamDestinyClient,
+                    create_train_api_http_client,
+                )
+                http_client = create_train_api_http_client(base_url=resolved_settings.train_api_base_url)
+                availability_provider = DreamDestinyClient(http_client)
+                dispatcher_service = FirestoreWatchDispatcher(
+                    firestore_client,
+                    availability_provider=availability_provider,
+                    outbox=outbox,
+                    notification_dispatcher=notification_dispatcher_service,
+                )  # type: ignore[assignment]
     else:
         resolved_verifier = token_verifier or RejectingTokenVerifier()
 
