@@ -12,6 +12,10 @@
 *credentials*.json
 *firebase-adminsdk*.json
 application_default_credentials.json
+google-services.json
+GoogleService-Info.plist
+!google-services.json.example
+!GoogleService-Info.plist.example
 secrets/
 credentials/
 
