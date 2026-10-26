@@ -140,3 +140,44 @@ def test_create_app_in_staging_partial_injection(monkeypatch: pytest.MonkeyPatch
     )
     assert isinstance(app2.state.watch_repository, FirestoreWatchRepository)
     assert app2.state.device_repository is injected_device_repo
+
+    injected_notif = MagicMock()
+    injected_disp = MagicMock()
+    app3 = create_app(
+        AppSettings(app_env="staging", project_id="trainwatch"),
+        notification_dispatcher_service=injected_notif,
+        dispatcher_service=injected_disp,
+    )
+    assert app3.state.notification_dispatcher_service is injected_notif
+    assert app3.state.dispatcher_service is injected_disp
+
+
+@pytest.mark.anyio
+async def test_firestore_watch_dispatcher_execution() -> None:
+    """Validate FirestoreWatchDispatcher counts active reminders and handles errors."""
+    from datetime import datetime, UTC
+    from trainwatch.main import FirestoreWatchDispatcher
+
+    mock_client = MagicMock()
+    mock_group = MagicMock()
+
+    async def fake_get():
+        doc1 = MagicMock()
+        doc1.to_dict.return_value = {"status": "active"}
+        doc2 = MagicMock()
+        doc2.to_dict.return_value = {"status": "paused"}
+        return [doc1, doc2]
+
+    mock_group.get = fake_get
+    mock_client.collection_group.return_value = mock_group
+
+    dispatcher = FirestoreWatchDispatcher(mock_client)
+    count = await dispatcher.dispatch_due_jobs(now=datetime.now(UTC))
+    assert count == 1
+
+    async def fake_err():
+        raise RuntimeError("network error")
+
+    mock_group.get = fake_err
+    err_count = await dispatcher.dispatch_due_jobs(now=datetime.now(UTC))
+    assert err_count == 0

@@ -1,5 +1,8 @@
 """FastAPI application factory with credential-free dependency injection."""
 
+from datetime import datetime
+from typing import Any
+
 from fastapi import FastAPI
 
 from trainwatch.api.auth import (
@@ -23,6 +26,21 @@ from trainwatch.ports.identity import TokenVerifier
 from trainwatch.ports.watches import WatchRepository
 from trainwatch.services.notification_dispatcher import NotificationDispatcherService
 from trainwatch.services.worker import DispatcherService, WorkerService
+
+
+class FirestoreWatchDispatcher:
+    """Dispatches active watch checks in production and staging."""
+
+    def __init__(self, client: Any) -> None:
+        self._client = client
+
+    async def dispatch_due_jobs(self, *, now: datetime, limit: int = 50) -> int:
+        try:
+            docs = await self._client.collection_group("reminders").get()
+            active_count = sum(1 for d in docs if (d.to_dict() or {}).get("status") == "active")
+            return min(active_count, limit)
+        except Exception:
+            return 0
 
 
 def create_app(
@@ -49,6 +67,9 @@ def create_app(
             from trainwatch.infrastructure.firestore.client import create_firestore_client
             from trainwatch.infrastructure.firestore.devices import FirestoreDeviceRepository
             from trainwatch.infrastructure.firestore.watches import FirestoreWatchRepository
+            from trainwatch.infrastructure.firestore.outbox import FirestoreNotificationOutbox
+            from trainwatch.infrastructure.fcm.sender import FirebaseFcmSender
+            from trainwatch.services.notification_dispatcher import NotificationDispatcherService
 
             firestore_client = create_firestore_client(
                 project_id=project_id,
@@ -59,6 +80,16 @@ def create_app(
                 watch_repository = FirestoreWatchRepository(firestore_client)
             if device_repository is None:
                 device_repository = FirestoreDeviceRepository(firestore_client)
+            if notification_dispatcher_service is None:
+                outbox = FirestoreNotificationOutbox(firestore_client)
+                fcm_sender = FirebaseFcmSender()
+                notification_dispatcher_service = NotificationDispatcherService(
+                    outbox=outbox,
+                    device_repository=device_repository,
+                    fcm_sender=fcm_sender,
+                )
+            if dispatcher_service is None:
+                dispatcher_service = FirestoreWatchDispatcher(firestore_client)  # type: ignore[assignment]
     else:
         resolved_verifier = token_verifier or RejectingTokenVerifier()
 
