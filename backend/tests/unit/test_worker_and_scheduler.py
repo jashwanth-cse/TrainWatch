@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
+from unittest.mock import patch
 from fastapi import FastAPI
 
 from tests.asgi import request
@@ -850,6 +851,70 @@ async def test_internal_auth_enforcement_when_secret_key_configured() -> None:
         headers={"Authorization": "Bearer placeholder"},
     )
     assert resp_good_bearer.status_code == 200
+
+    # Valid Google OIDC Token -> 200
+    with patch(
+        "google.oauth2.id_token.verify_oauth2_token",
+        return_value={
+            "iss": "https://accounts.google.com",
+            "email": "sa-trainwatch-sched-staging@trainwatch.iam.gserviceaccount.com",
+            "email_verified": True,
+        },
+    ):
+        resp_oidc = await request(
+            app,
+            "POST",
+            "/api/v1/internal/dispatcher",
+            headers={"Authorization": "Bearer header.payload.signature"},
+        )
+        assert resp_oidc.status_code == 200
+
+    # Google OIDC Token with untrusted email -> 401
+    with patch(
+        "google.oauth2.id_token.verify_oauth2_token",
+        return_value={
+            "iss": "https://accounts.google.com",
+            "email": "attacker@evil.com",
+            "email_verified": True,
+        },
+    ):
+        resp_bad_email = await request(
+            app,
+            "POST",
+            "/api/v1/internal/dispatcher",
+            headers={"Authorization": "Bearer header.payload.signature"},
+        )
+        assert resp_bad_email.status_code == 401
+
+    # Google OIDC Token with invalid issuer -> 401
+    with patch(
+        "google.oauth2.id_token.verify_oauth2_token",
+        return_value={
+            "iss": "https://evil.com",
+            "email": "sa-trainwatch-sched-staging@trainwatch.iam.gserviceaccount.com",
+            "email_verified": True,
+        },
+    ):
+        resp_bad_iss = await request(
+            app,
+            "POST",
+            "/api/v1/internal/dispatcher",
+            headers={"Authorization": "Bearer header.payload.signature"},
+        )
+        assert resp_bad_iss.status_code == 401
+
+    # Google OIDC Token throws verification error -> 401
+    with patch(
+        "google.oauth2.id_token.verify_oauth2_token",
+        side_effect=ValueError("Invalid signature"),
+    ):
+        resp_oidc_err = await request(
+            app,
+            "POST",
+            "/api/v1/internal/dispatcher",
+            headers={"Authorization": "Bearer header.payload.signature"},
+        )
+        assert resp_oidc_err.status_code == 401
 
 
 def test_worker_computes_interval_based_on_journey_proximity() -> None:
