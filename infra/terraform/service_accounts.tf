@@ -31,6 +31,12 @@ resource "google_project_iam_member" "api_monitoring" {
   member  = "serviceAccount:${google_service_account.api.email}"
 }
 
+resource "google_project_iam_member" "api_firebase_growth" {
+  project = var.project_id
+  role    = "roles/firebase.growthAdmin"
+  member  = "serviceAccount:${google_service_account.api.email}"
+}
+
 # 2. Worker Service Account (Background task execution)
 resource "google_service_account" "worker" {
   account_id   = "sa-trainwatch-worker-${var.environment}"
