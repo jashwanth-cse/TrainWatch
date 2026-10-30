@@ -2,10 +2,14 @@
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+
+if not shutil.which("bash"):
+    pytest.skip("bash is not available", allow_module_level=True)
 
 
 @pytest.mark.parametrize("status,expected_exit", [("200", 0), ("503", 1), ("302", 1), ("000", 1)])

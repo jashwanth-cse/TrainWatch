@@ -6,7 +6,6 @@ import pytest
 
 from tests.asgi import request
 from trainwatch.config import AppSettings
-from trainwatch.domain.watch import TrainQuery
 from trainwatch.infrastructure.firestore.devices import FirestoreDeviceRepository
 from trainwatch.infrastructure.firestore.watches import FirestoreWatchRepository
 from trainwatch.main import create_app

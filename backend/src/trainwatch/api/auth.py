@@ -35,7 +35,7 @@ class ProductionTokenVerifier:
         parts = bearer_value.split(".")
         if len(parts) == 3:
             try:
-                import firebase_admin  # type: ignore[import-untyped]
+                import firebase_admin
                 from firebase_admin import auth as fb_auth
 
                 if not firebase_admin._apps:
