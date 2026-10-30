@@ -12,6 +12,10 @@
 *credentials*.json
 *firebase-adminsdk*.json
 application_default_credentials.json
+google-services.json
+GoogleService-Info.plist
+!google-services.json.example
+!GoogleService-Info.plist.example
 secrets/
 credentials/
 
@@ -51,3 +55,11 @@ tmp/
 *.swo
 .DS_Store
 Thumbs.db
+
+
+# Terraform local state and files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

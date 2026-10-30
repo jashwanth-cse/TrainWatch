@@ -10,6 +10,7 @@ readme = { text = "TrainWatch backend package. See the repository README for set
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "fastapi==0.159.1",
+    "firebase-admin>=7.0.0",
     "google-cloud-firestore==2.21.0",
     "httpx==0.28.1",
     "uvicorn==0.54.0",
@@ -41,6 +42,16 @@ python_version = "3.13"
 strict = true
 files = ["src", "tests", "../scripts"]
 
+[[tool.mypy.overrides]]
+module = [
+    "firebase_admin",
+    "firebase_admin.*",
+    "google.oauth2",
+    "google.oauth2.*",
+    "google.auth.*",
+]
+ignore_missing_imports = true
+disallow_untyped_calls = false
 [tool.pytest.ini_options]
 pythonpath = [".", ".."]
 addopts = [

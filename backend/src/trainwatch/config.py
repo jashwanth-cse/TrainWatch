@@ -26,6 +26,8 @@ class AppSettings:
     request_timeout_seconds: float = 15.0
     enable_rate_limiter: bool = True
     auth_attempts_per_minute: int = 600
+    project_id: str = ""
+    firestore_database_id: str = "(default)"
 
     @classmethod
     def from_environment(cls) -> AppSettings:
@@ -67,6 +69,11 @@ class AppSettings:
         else:
             raise ValueError("ENABLE_RATE_LIMITER must be one of: 1, true, yes, 0, false, no")
 
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", os.getenv("GCP_PROJECT", "")).strip()
+        firestore_database_id = (
+            os.getenv("FIRESTORE_DATABASE_ID", "(default)").strip() or "(default)"
+        )
+
         if app_env not in _APP_ENVIRONMENTS:
             raise ValueError("APP_ENV must be one of: local, test, staging, production")
         if log_level not in _LOG_LEVELS:
@@ -83,4 +90,6 @@ class AppSettings:
             request_timeout_seconds=request_timeout_seconds,
             enable_rate_limiter=enable_rate_limiter,
             auth_attempts_per_minute=auth_attempts_per_minute,
+            project_id=project_id,
+            firestore_database_id=firestore_database_id,
         )

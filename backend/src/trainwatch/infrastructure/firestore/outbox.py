@@ -17,7 +17,6 @@ class FirestoreNotificationOutbox:
         self._client = client
 
     def _collection(self) -> Any:
-        """Select the top-level notification outbox collection."""
         return self._client.collection("notificationOutbox")
 
     async def save_notification(self, item: NotificationOutboxItem) -> bool:
@@ -126,7 +125,6 @@ class FirestoreNotificationOutbox:
             await doc_ref.set(d)
 
     def _record_from_dict(self, d: dict[str, Any]) -> NotificationRecord:
-        """Deserialize stored outbox fields into a notification record."""
         return NotificationRecord(
             notification_id=str(d.get("notificationId", d.get("idempotencyKey"))),
             idempotency_key=str(d.get("idempotencyKey")),

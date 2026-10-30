@@ -23,8 +23,9 @@ from trainwatch.ports.watches import WatchDataError, WatchRepository
 class FakeSnapshot:
     """In-memory snapshot matching the adapter's narrow protocol."""
 
-    def __init__(self, data: dict[str, object] | None) -> None:
+    def __init__(self, data: dict[str, object] | None, doc_id: str = "") -> None:
         """Represent a stored document or an absent snapshot."""
+        self.id = doc_id
         self.exists = data is not None
         self._data = data
 
@@ -36,7 +37,7 @@ class FakeSnapshot:
 class FakeDocument:
     """In-memory document with child-collection support."""
 
-    def __init__(self, store: dict[str, dict[str, object]], path: str) -> None:
+    def __init__(self, store: dict[str, dict[str, object] | None], path: str) -> None:
         """Bind a document path to the shared in-memory store."""
         self._store = store
         self._path = path
@@ -63,7 +64,7 @@ class FakeDocument:
 class FakeCollection:
     """In-memory collection used to validate generated paths."""
 
-    def __init__(self, store: dict[str, dict[str, object]], path: str) -> None:
+    def __init__(self, store: dict[str, dict[str, object] | None], path: str) -> None:
         """Bind a collection path to the shared in-memory store."""
         self._store = store
         self._path = path
@@ -72,13 +73,21 @@ class FakeCollection:
         """Select a document below this collection."""
         return FakeDocument(self._store, f"{self._path}/{document_id}")
 
+    async def get(self) -> list[FakeSnapshot]:
+        prefix = f"{self._path}/"
+        results: list[FakeSnapshot] = []
+        for p, d in self._store.items():
+            if p.startswith(prefix) and "/" not in p.removeprefix(prefix):
+                results.append(FakeSnapshot(d, doc_id=p.removeprefix(prefix)))
+        return results
+
 
 class FakeClient:
     """Credential-free Firestore-shaped client."""
 
     def __init__(self) -> None:
         """Create an empty store for isolated repository tests."""
-        self.store: dict[str, dict[str, object]] = {}
+        self.store: dict[str, dict[str, object] | None] = {}
 
     def collection(self, collection_path: str) -> FakeCollection:
         """Select a top-level collection."""
@@ -218,7 +227,9 @@ async def test_malformed_documents_raise_sanitized_data_error(
     client = FakeClient()
     repository = FirestoreWatchRepository(client)
     await repository.save(watch())
-    client.store["users/user-a/reminders/watch-1"].update(mutation)
+    target = client.store["users/user-a/reminders/watch-1"]
+    assert target is not None
+    target.update(mutation)
 
     with pytest.raises(WatchDataError, match="stored watch is malformed") as captured:
         await repository.get(watch_id="watch-1", owner_id="user-a")
@@ -298,3 +309,33 @@ def test_production_client_forwards_explicit_configuration(
 
     assert isinstance(result, FakeClient)
     assert captured == {"project": "project-for-test", "database": "database-for-test"}
+
+
+@pytest.mark.anyio
+async def test_firestore_list_for_user() -> None:
+    client = FakeClient()
+    repo = FirestoreWatchRepository(client)
+    w1 = watch(watch_id="w-1", owner_id="user-owner")
+    w2 = watch(watch_id="w-2", owner_id="user-owner")
+
+    await repo.save(w1)
+    await repo.save(w2)
+
+    watches = await repo.list_for_user(owner_id="user-owner")
+    assert len(watches) == 2
+    assert {w.watch_id for w in watches} == {"w-1", "w-2"}
+
+    other_watches = await repo.list_for_user(owner_id="other-user")
+    assert len(other_watches) == 0
+
+
+@pytest.mark.anyio
+async def test_firestore_list_for_user_skips_malformed_docs() -> None:
+    client = FakeClient()
+    repo = FirestoreWatchRepository(client)
+    # Store malformed doc directly
+    client.store["users/user-mal/reminders/w-bad"] = {"schemaVersion": 999}
+    client.store["users/user-mal/reminders/w-empty"] = None
+
+    watches = await repo.list_for_user(owner_id="user-mal")
+    assert watches == []

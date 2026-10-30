@@ -77,8 +77,19 @@ class FirebaseFcmSender:
             return FcmDeliveryResult(success_count=0, failure_count=0, unregistered_tokens=[])
 
         try:
-            from firebase_admin import messaging  # type: ignore[import-not-found]
+            import firebase_admin
+            from firebase_admin import messaging
 
+            if self._app is None and not firebase_admin._apps:
+                firebase_admin.initialize_app()
+
+            android_config = messaging.AndroidConfig(
+                priority="high",
+                notification=messaging.AndroidNotification(
+                    channel_id="trainwatch-alerts",
+                    color="#1E3A8A",
+                ),
+            )
             message = messaging.MulticastMessage(
                 tokens=tokens,
                 notification=messaging.Notification(
@@ -86,6 +97,7 @@ class FirebaseFcmSender:
                     body=body,
                 ),
                 data=data,
+                android=android_config,
             )
             response = messaging.send_each_for_multicast(message, app=self._app)
 

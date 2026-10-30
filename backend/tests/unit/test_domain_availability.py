@@ -248,3 +248,90 @@ def test_threshold_alerts_only_fire_when_crossing_target(
 ) -> None:
     """Evaluate status rank and same-category numeric thresholds."""
     assert should_alert(condition=condition, previous=before, current=after) is expected
+
+
+def test_seats_below_condition_evaluation() -> None:
+    cond = AlertCondition(AlertKind.SEATS_BELOW, maximum_position=25)
+
+    def obs(status: AvailabilityStatus, raw: str) -> AvailabilityObservation:
+        return AvailabilityObservation.success(AvailabilitySnapshot(status, raw, NOW, None))
+
+    # Drops from 50 to 20
+    assert should_alert(
+        condition=cond,
+        previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 50"),
+        current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 20"),
+    )
+    # Stays above 25 (e.g. 50 to 30)
+    assert not should_alert(
+        condition=cond,
+        previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 50"),
+        current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 30"),
+    )
+    # Already below 25 (20 to 15)
+    assert not should_alert(
+        condition=cond,
+        previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 20"),
+        current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 15"),
+    )
+    # Slips into RAC from AVAILABLE
+    assert should_alert(
+        condition=cond,
+        previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 5"),
+        current=observation(AvailabilityStatus.RAC, 2),
+    )
+    # Stays in RAC (before was already not AVL)
+    assert not should_alert(
+        condition=cond,
+        previous=observation(AvailabilityStatus.RAC, 2),
+        current=observation(AvailabilityStatus.RAC, 5),
+    )
+    # Unparseable seats
+    assert not should_alert(
+        condition=cond,
+        previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE"),
+        current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE"),
+    )
+
+
+def test_rapid_rac_increase_evaluation() -> None:
+    cond = AlertCondition(AlertKind.RAPID_RAC_INCREASE)
+
+    # RAC increases by >= 5 (e.g. RAC 5 to RAC 12)
+    assert should_alert(
+        condition=cond,
+        previous=observation(AvailabilityStatus.RAC, 5),
+        current=observation(AvailabilityStatus.RAC, 12),
+    )
+    # RAC increases by < 5 (e.g. RAC 5 to RAC 7)
+    assert not should_alert(
+        condition=cond,
+        previous=observation(AvailabilityStatus.RAC, 5),
+        current=observation(AvailabilityStatus.RAC, 7),
+    )
+    # RAC slips into WL
+    assert should_alert(
+        condition=cond,
+        previous=observation(AvailabilityStatus.RAC, 20),
+        current=observation(AvailabilityStatus.WAITLIST, 2),
+    )
+    # Stays in WL (before was not RAC)
+    assert not should_alert(
+        condition=cond,
+        previous=observation(AvailabilityStatus.WAITLIST, 2),
+        current=observation(AvailabilityStatus.WAITLIST, 10),
+    )
+
+
+def test_seats_below_validation() -> None:
+    with pytest.raises(ValueError, match="positive maximum_position"):
+        AlertCondition(AlertKind.SEATS_BELOW, maximum_position=0)
+    with pytest.raises(ValueError, match="AVAILABLE or None"):
+        AlertCondition(
+            AlertKind.SEATS_BELOW, target_status=AvailabilityStatus.RAC, maximum_position=10
+        )
+
+
+def test_rapid_rac_increase_validation() -> None:
+    with pytest.raises(ValueError, match="does not accept target fields"):
+        AlertCondition(AlertKind.RAPID_RAC_INCREASE, target_status=AvailabilityStatus.RAC)

@@ -16,8 +16,20 @@ Never put client secrets, service-account credentials, or real user data here.
   the same Google project. Set the OAuth **web** client ID, not the Android ID.
 - iOS: register `com.trainwatch.app` and set its iOS OAuth client ID.
   `app.config.ts` adds the reversed client-ID callback scheme. This app uses the
-  Firebase JS SDK and explicit OAuth client IDs; it does not use native Firebase
-  configuration files.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:87bab5a4dca30234c572120268292d543749daff4380b5e8ab44784a5b74d30c -->
+
+  Firebase JS SDK and explicit OAuth client IDs for authentication.
+
+Android notification builds also need the matching Firebase `google-services.json`.
+Keep the local file at `mobile/google-services.json` (it is ignored by Git).
+For EAS, create a secret file variable named `GOOGLE_SERVICES_JSON` in each of
+its `preview` and `production` environments through the EAS dashboard or CLI.
+The build profiles select those environments, and app config uses the file path
+provided by EAS. Local builds fall back to `./google-services.json`.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 See the [Expo Google authentication guide](https://docs.expo.dev/guides/google-authentication/)
 and [Firebase Google provider setup](https://firebase.google.com/docs/auth/web/google-signin).

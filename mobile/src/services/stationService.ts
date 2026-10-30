@@ -214,3 +214,4 @@ export async function saveLastSearch(data: LastSearchData): Promise<void> {
     // Silently continue
   }
 }
+

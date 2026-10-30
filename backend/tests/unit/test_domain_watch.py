@@ -178,3 +178,23 @@ def test_ports_are_structural_interfaces_without_infrastructure_dependencies() -
     assert AvailabilityProvider.fetch.__name__ == "fetch"
     assert WatchRepository.get.__name__ == "get"
     assert WatchRepository.save.__name__ == "save"
+
+
+def test_watch_update_condition() -> None:
+    w = watch(WatchStatus.ACTIVE)
+    later = NOW + timedelta(hours=1)
+    new_cond = AlertCondition(AlertKind.SEATS_BELOW, maximum_position=30)
+
+    updated = w.update_condition(new_cond, at=later)
+    assert updated.condition == new_cond
+    assert updated.updated_at == later
+
+    # Cannot precede updated_at
+    earlier = NOW - timedelta(hours=1)
+    with pytest.raises(ValueError, match="must not precede"):
+        w.update_condition(new_cond, at=earlier)
+
+    # Cannot update cancelled
+    cancelled = w.transition(WatchStatus.CANCELLED, at=later)
+    with pytest.raises(ValueError, match="cannot update condition"):
+        cancelled.update_condition(new_cond, at=later)

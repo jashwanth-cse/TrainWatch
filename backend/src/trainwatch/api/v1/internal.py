@@ -66,16 +66,48 @@ def verify_internal_auth(
     if not expected_val and settings.app_env in {"local", "test"}:
         return
 
-    supplied_val = x_internal_token
-    if not supplied_val and authorization and authorization.startswith("Bearer "):
-        supplied_val = authorization.removeprefix("Bearer ").strip()
+    if x_internal_token and expected_val and x_internal_token == expected_val:
+        return
 
-    if not supplied_val or supplied_val != expected_val:
-        raise ApiError(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            code="unauthorized",
-            message="Valid internal service credentials required",
-        )
+    bearer_val = ""
+    if authorization and authorization.startswith("Bearer "):
+        bearer_val = authorization.removeprefix("Bearer ").strip()
+
+    if bearer_val and expected_val and bearer_val == expected_val:
+        return
+
+    if bearer_val and bearer_val.count(".") == 2:
+        try:
+            import google.oauth2.id_token
+            from google.auth.transport import requests as google_requests
+
+            claims = google.oauth2.id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
+                bearer_val,
+                google_requests.Request(),
+            )
+            iss = claims.get("iss", "")
+            email = str(claims.get("email", "")).lower()
+            email_verified = bool(claims.get("email_verified", False))
+            project_id = (settings.project_id or "trainwatch").lower()
+
+            if (
+                iss in {"https://accounts.google.com", "accounts.google.com"}
+                and email_verified
+                and (
+                    email.endswith(f"@{project_id}.iam.gserviceaccount.com")
+                    or "trainwatch" in email
+                    or email.startswith("sa-trainwatch-")
+                )
+            ):
+                return
+        except Exception:
+            pass
+
+    raise ApiError(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        code="unauthorized",
+        message="Valid internal service credentials required",
+    )
 
 
 def get_dispatcher_service(request: Request) -> DispatcherService:
@@ -119,6 +151,12 @@ def get_notification_dispatcher_service(request: Request) -> NotificationDispatc
     response_model=DispatcherResponse,
     dependencies=[Depends(verify_internal_auth)],
 )
+@router.post(
+    "/dispatch",
+    response_model=DispatcherResponse,
+    dependencies=[Depends(verify_internal_auth)],
+    include_in_schema=False,
+)
 async def trigger_dispatcher(
     dispatcher: Annotated[DispatcherService, Depends(get_dispatcher_service)],
 ) -> Any:
@@ -150,6 +188,12 @@ async def process_job(
     "/notifications/process",
     response_model=ProcessNotificationsResponse,
     dependencies=[Depends(verify_internal_auth)],
+)
+@router.post(
+    "/notifications/dispatch",
+    response_model=ProcessNotificationsResponse,
+    dependencies=[Depends(verify_internal_auth)],
+    include_in_schema=False,
 )
 async def process_notifications(
     payload: ProcessNotificationsPayload,

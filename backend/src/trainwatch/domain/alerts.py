@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -12,13 +13,23 @@ from trainwatch.domain.availability import (
     compare_availability,
 )
 
+_EXTRACT_DIGITS = re.compile(r"(\d+)")
+
+
+def _extract_available_seats(raw: str) -> int | None:
+    """Extract numeric seat count from raw availability text."""
+    match = _EXTRACT_DIGITS.search(raw)
+    return int(match.group(1)) if match else None
+
 
 class AlertKind(StrEnum):
-    """Supported notification conditions for the first domain model."""
+    """Supported notification conditions for the domain model."""
 
     BECOMES_AVAILABLE = "becomes_available"
     IMPROVES = "improves"
     REACHES_THRESHOLD = "reaches_threshold"
+    SEATS_BELOW = "seats_below"
+    RAPID_RAC_INCREASE = "rapid_rac_increase"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +42,19 @@ class AlertCondition:
 
     def __post_init__(self) -> None:
         """Require threshold fields only for meaningful, verified comparisons."""
+        if self.kind is AlertKind.SEATS_BELOW:
+            if self.maximum_position is None or self.maximum_position <= 0:
+                raise ValueError("seats_below condition requires a positive maximum_position")
+            if (
+                self.target_status is not None
+                and self.target_status is not AvailabilityStatus.AVAILABLE
+            ):
+                raise ValueError("seats_below target_status must be AVAILABLE or None")
+            return
+        if self.kind is AlertKind.RAPID_RAC_INCREASE:
+            if self.target_status is not None or self.maximum_position is not None:
+                raise ValueError("rapid_rac_increase does not accept target fields")
+            return
         if self.kind is not AlertKind.REACHES_THRESHOLD:
             if self.target_status is not None or self.maximum_position is not None:
                 raise ValueError("only threshold alerts accept target fields")
@@ -78,8 +102,9 @@ def should_alert(
 
     before = previous.snapshot
     after = current.snapshot
-    if before.status is AvailabilityStatus.UNKNOWN:
+    if before.status is AvailabilityStatus.UNKNOWN or after.status is AvailabilityStatus.UNKNOWN:
         return False
+
     if condition.kind is AlertKind.BECOMES_AVAILABLE:
         return (
             after.is_comparable
@@ -88,4 +113,30 @@ def should_alert(
         )
     if condition.kind is AlertKind.IMPROVES:
         return compare_availability(after, before) == 1
+    if condition.kind is AlertKind.SEATS_BELOW:
+        assert condition.maximum_position is not None
+        if after.status in {
+            AvailabilityStatus.RAC,
+            AvailabilityStatus.WAITLIST,
+            AvailabilityStatus.REGRET,
+        }:
+            return before.status is AvailabilityStatus.AVAILABLE
+        after_seats = _extract_available_seats(after.raw_availability)
+        if after_seats is not None and after_seats <= condition.maximum_position:
+            before_seats = _extract_available_seats(before.raw_availability)
+            if before_seats is None or before_seats > condition.maximum_position:
+                return True
+        return False
+    if condition.kind is AlertKind.RAPID_RAC_INCREASE:
+        if before.status is AvailabilityStatus.RAC and after.status is AvailabilityStatus.WAITLIST:
+            return True
+        if (
+            before.status is AvailabilityStatus.RAC
+            and after.status is AvailabilityStatus.RAC
+            and after.position is not None
+            and before.position is not None
+        ):
+            return after.position >= before.position + 5
+        return False
+
     return _meets_threshold(after, condition) and not _meets_threshold(before, condition)

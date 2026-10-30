@@ -13,10 +13,8 @@ from trainwatch.api.errors import ApiError
 from trainwatch.api.ownership import require_owner
 from trainwatch.domain.alerts import AlertCondition, AlertKind
 from trainwatch.domain.availability import AvailabilityStatus
-from trainwatch.domain.jobs import JobRecord, JobStatus
 from trainwatch.domain.watch import TrainQuery, Watch, WatchStatus
 from trainwatch.ports.identity import AuthenticatedUser
-from trainwatch.ports.jobs import JobRepository
 from trainwatch.ports.watches import WatchRepository
 
 router = APIRouter(prefix="/watches", tags=["watches"])
@@ -43,9 +41,10 @@ class CreateWatchPayload(BaseModel):
 
 
 class UpdateWatchPayload(BaseModel):
-    """Permitted state update for an existing watch."""
+    """Permitted state or condition update for an existing watch."""
 
-    status: WatchStatus
+    status: WatchStatus | None = None
+    condition: AlertConditionPayload | None = None
 
 
 class QueryResponse(BaseModel):
@@ -129,36 +128,18 @@ def get_repository(request: Request) -> WatchRepository:
     return cast(WatchRepository, repo)
 
 
-def get_job_repository(request: Request) -> JobRepository:
-    """Require scheduling before accepting an active monitoring watch."""
-    repo = request.app.state.job_repository
-    if repo is None:
-        raise ApiError(
-            status_code=503,
-            code="service_unavailable",
-            message="Job repository is not configured",
-        )
-    return cast(JobRepository, repo)
-
-
-async def _schedule_watch(watch: Watch, jobs: JobRepository, *, now: datetime) -> None:
-    """Use a stable per-watch job ID to avoid duplicate schedules on resume."""
-    await jobs.ensure_pending(
-        JobRecord(
-            job_id=f"watch:{watch.owner_id}:{watch.watch_id}",
-            watch_id=watch.watch_id,
-            owner_id=watch.owner_id,
-            due_at=now,
-            status=JobStatus.PENDING,
-            created_at=now,
-            updated_at=now,
-        )
-    )
+@router.get("", response_model=list[WatchResponse])
+async def list_watches(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    repo: Annotated[WatchRepository, Depends(get_repository)],
+) -> Any:
+    """Retrieve all watches owned by the caller."""
+    watches = await repo.list_for_user(owner_id=user.uid)
+    return [_serialize_watch(w) for w in watches]
 
 
 @router.post("", response_model=WatchResponse, status_code=status.HTTP_201_CREATED)
 async def create_watch(
-    request: Request,
     payload: CreateWatchPayload,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     repo: Annotated[WatchRepository, Depends(get_repository)],
@@ -197,9 +178,7 @@ async def create_watch(
         updated_at=now,
     )
 
-    jobs = get_job_repository(request)
     await repo.save(new_watch)
-    await _schedule_watch(new_watch, jobs, now=now)
     return _serialize_watch(new_watch)
 
 
@@ -219,30 +198,38 @@ async def get_watch(
 
 @router.patch("/{watch_id}", response_model=WatchResponse)
 async def update_watch_status(
-    request: Request,
     watch_id: str,
     payload: UpdateWatchPayload,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     repo: Annotated[WatchRepository, Depends(get_repository)],
 ) -> Any:
-    """Transition an owned watch between permitted lifecycle states."""
+    """Transition an owned watch between permitted lifecycle states or conditions."""
     stored = await repo.get(watch_id=watch_id, owner_id=user.uid)
     if stored is None:
         raise ApiError(status_code=404, code="not_found", message="Watch not found")
     require_owner(user=user, resource_owner_id=stored.owner_id)
 
     now = datetime.now(UTC)
-    try:
-        transitioned = stored.transition(payload.status, at=now)
-    except ValueError as exc:
-        raise ApiError(status_code=409, code="invalid_transition", message=str(exc)) from None
+    current = stored
+    if payload.condition is not None:
+        try:
+            cond = AlertCondition(
+                kind=payload.condition.kind,
+                target_status=payload.condition.target_status,
+                maximum_position=payload.condition.maximum_position,
+            )
+            current = current.update_condition(cond, at=now)
+        except ValueError as exc:
+            raise ApiError(status_code=422, code="validation_error", message=str(exc)) from None
 
-    resuming = stored.status is WatchStatus.PAUSED and transitioned.status is WatchStatus.ACTIVE
-    jobs = get_job_repository(request) if resuming else None
-    await repo.save(transitioned)
-    if jobs is not None:
-        await _schedule_watch(transitioned, jobs, now=now)
-    return _serialize_watch(transitioned)
+    if payload.status is not None:
+        try:
+            current = current.transition(payload.status, at=now)
+        except ValueError as exc:
+            raise ApiError(status_code=409, code="invalid_transition", message=str(exc)) from None
+
+    await repo.save(current)
+    return _serialize_watch(current)
 
 
 @router.delete("/{watch_id}", status_code=status.HTTP_204_NO_CONTENT)

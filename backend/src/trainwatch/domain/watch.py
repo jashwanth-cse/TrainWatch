@@ -119,6 +119,14 @@ class Watch:
             raise ValueError("transition time must not precede updated_at")
         return replace(self, status=target, updated_at=at)
 
+    def update_condition(self, condition: AlertCondition, *, at: datetime) -> Watch:
+        """Update the alert condition on an active or paused watch."""
+        if self.status in {WatchStatus.CANCELLED, WatchStatus.EXPIRED}:
+            raise ValueError(f"cannot update condition on {self.status} watch")
+        if at < self.updated_at:
+            raise ValueError("update time must not precede updated_at")
+        return replace(self, condition=condition, updated_at=at)
+
     def expire_if_due(self, *, today: date, at: datetime) -> Watch:
         """Expire an active or paused watch after its journey date."""
         if today <= self.query.journey_date or self.status in {

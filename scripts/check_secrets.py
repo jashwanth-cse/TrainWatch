@@ -21,7 +21,7 @@ SKIPPED_DIRECTORIES = {
     "htmlcov",
     "node_modules",
 }
-SKIPPED_FILES = {".coverage", ".env", "service-account.json"}
+SKIPPED_FILES = {".coverage", ".env", "google-services.json", "service-account.json"}
 TEXT_SUFFIXES = {
     "",
     ".cfg",
