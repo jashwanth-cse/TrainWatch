@@ -184,7 +184,7 @@ def test_watch_update_condition() -> None:
     w = watch(WatchStatus.ACTIVE)
     later = NOW + timedelta(hours=1)
     new_cond = AlertCondition(AlertKind.SEATS_BELOW, maximum_position=30)
-    
+
     updated = w.update_condition(new_cond, at=later)
     assert updated.condition == new_cond
     assert updated.updated_at == later

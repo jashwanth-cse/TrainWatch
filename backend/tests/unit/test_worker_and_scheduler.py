@@ -194,6 +194,9 @@ class InMemoryWatchRepository:
     async def save(self, watch: Watch) -> None:
         self.watches[(watch.watch_id, watch.owner_id)] = watch
 
+    async def list_for_user(self, *, owner_id: str) -> list[Watch]:
+        return [w for w in self.watches.values() if w.owner_id == owner_id]
+
     async def delete(self, *, watch_id: str, owner_id: str) -> None:
         self.watches.pop((watch_id, owner_id), None)
 

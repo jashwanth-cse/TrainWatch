@@ -1,0 +1,25 @@
+# Set default behavior to use LF line endings across all environments
+* text=auto eol=lf
+
+# Explicit text files
+*.toml text eol=lf
+*.py text eol=lf
+*.json text eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.tf text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.jar binary
+*.apk binary

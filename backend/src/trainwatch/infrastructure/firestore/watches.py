@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable, Mapping, Sequence
 from datetime import date, datetime
 from typing import Protocol
 
@@ -55,7 +55,7 @@ class CollectionReference(Protocol):
         """Select one document by ID."""
         ...
 
-    def get(self) -> Awaitable[list[DocumentSnapshot]]:
+    def get(self) -> Awaitable[Sequence[DocumentSnapshot]]:
         """Fetch all documents in this collection."""
         ...
 
@@ -207,12 +207,7 @@ class FirestoreWatchRepository:
     async def list_for_user(self, *, owner_id: str) -> list[Watch]:
         """Return all valid watches stored beneath the supplied owner's path."""
         owner = _document_id(owner_id, field="owner_id")
-        docs = (
-            await self._client.collection("users")
-            .document(owner)
-            .collection("reminders")
-            .get()
-        )
+        docs = await self._client.collection("users").document(owner).collection("reminders").get()
         watches: list[Watch] = []
         for doc in docs:
             data = doc.to_dict()

@@ -22,9 +22,9 @@ class InMemoryWatchRepository:
 
     async def get(self, *, watch_id: str, owner_id: str) -> Watch | None:
         return self.watches.get((watch_id, owner_id))
+
     async def list_for_user(self, *, owner_id: str) -> list[Watch]:
         return [w for w in self.watches.values() if w.owner_id == owner_id]
-
 
     async def save(self, watch: Watch) -> None:
         self.watches[(watch.watch_id, watch.owner_id)] = watch
@@ -514,4 +514,3 @@ async def test_update_watch_invalid_transition() -> None:
         headers={"Authorization": "Bearer ticket-a"},
     )
     assert invalid_cond.status_code == 422
-

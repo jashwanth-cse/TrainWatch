@@ -37,7 +37,7 @@ class FakeSnapshot:
 class FakeDocument:
     """In-memory document with child-collection support."""
 
-    def __init__(self, store: dict[str, dict[str, object]], path: str) -> None:
+    def __init__(self, store: dict[str, dict[str, object] | None], path: str) -> None:
         """Bind a document path to the shared in-memory store."""
         self._store = store
         self._path = path
@@ -64,7 +64,7 @@ class FakeDocument:
 class FakeCollection:
     """In-memory collection used to validate generated paths."""
 
-    def __init__(self, store: dict[str, dict[str, object]], path: str) -> None:
+    def __init__(self, store: dict[str, dict[str, object] | None], path: str) -> None:
         """Bind a collection path to the shared in-memory store."""
         self._store = store
         self._path = path
@@ -87,7 +87,7 @@ class FakeClient:
 
     def __init__(self) -> None:
         """Create an empty store for isolated repository tests."""
-        self.store: dict[str, dict[str, object]] = {}
+        self.store: dict[str, dict[str, object] | None] = {}
 
     def collection(self, collection_path: str) -> FakeCollection:
         """Select a top-level collection."""
@@ -227,7 +227,9 @@ async def test_malformed_documents_raise_sanitized_data_error(
     client = FakeClient()
     repository = FirestoreWatchRepository(client)
     await repository.save(watch())
-    client.store["users/user-a/reminders/watch-1"].update(mutation)
+    target = client.store["users/user-a/reminders/watch-1"]
+    assert target is not None
+    target.update(mutation)
 
     with pytest.raises(WatchDataError, match="stored watch is malformed") as captured:
         await repository.get(watch_id="watch-1", owner_id="user-a")
@@ -315,7 +317,7 @@ async def test_firestore_list_for_user() -> None:
     repo = FirestoreWatchRepository(client)
     w1 = watch(watch_id="w-1", owner_id="user-owner")
     w2 = watch(watch_id="w-2", owner_id="user-owner")
-    
+
     await repo.save(w1)
     await repo.save(w2)
 
@@ -334,6 +336,6 @@ async def test_firestore_list_for_user_skips_malformed_docs() -> None:
     # Store malformed doc directly
     client.store["users/user-mal/reminders/w-bad"] = {"schemaVersion": 999}
     client.store["users/user-mal/reminders/w-empty"] = None
-    
+
     watches = await repo.list_for_user(owner_id="user-mal")
     assert watches == []

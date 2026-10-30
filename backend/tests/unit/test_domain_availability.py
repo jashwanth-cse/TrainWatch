@@ -335,4 +335,3 @@ def test_seats_below_validation() -> None:
 def test_rapid_rac_increase_validation() -> None:
     with pytest.raises(ValueError, match="does not accept target fields"):
         AlertCondition(AlertKind.RAPID_RAC_INCREASE, target_status=AvailabilityStatus.RAC)
-

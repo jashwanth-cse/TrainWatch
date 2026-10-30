@@ -77,7 +77,7 @@ class FirebaseFcmSender:
             return FcmDeliveryResult(success_count=0, failure_count=0, unregistered_tokens=[])
 
         try:
-            import firebase_admin  # type: ignore[import-untyped]
+            import firebase_admin
             from firebase_admin import messaging
 
             if self._app is None and not firebase_admin._apps:

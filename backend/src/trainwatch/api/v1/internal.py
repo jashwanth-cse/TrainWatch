@@ -81,7 +81,7 @@ def verify_internal_auth(
             import google.oauth2.id_token
             from google.auth.transport import requests as google_requests
 
-            claims = google.oauth2.id_token.verify_oauth2_token(
+            claims = google.oauth2.id_token.verify_oauth2_token(  # type: ignore[no-untyped-call]
                 bearer_val,
                 google_requests.Request(),
             )

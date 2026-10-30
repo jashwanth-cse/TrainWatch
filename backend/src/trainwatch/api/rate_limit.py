@@ -6,7 +6,6 @@ import threading
 import time
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse

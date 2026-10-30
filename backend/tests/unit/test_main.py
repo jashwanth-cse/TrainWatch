@@ -6,6 +6,7 @@ import pytest
 
 from tests.asgi import request
 from trainwatch.config import AppSettings
+from trainwatch.domain.watch import TrainQuery
 from trainwatch.infrastructure.firestore.devices import FirestoreDeviceRepository
 from trainwatch.infrastructure.firestore.watches import FirestoreWatchRepository
 from trainwatch.main import create_app
@@ -175,7 +176,7 @@ async def test_firestore_watch_dispatcher_execution() -> None:
     count = await dispatcher.dispatch_due_jobs(now=datetime.now(UTC))
     assert count == 1
 
-    async def fake_err() -> None:
+    async def fake_err() -> list[MagicMock]:
         raise RuntimeError("network error")
 
     mock_group.get = fake_err

@@ -169,9 +169,9 @@ class FirestoreWatchDispatcher:
                 if triggered:
                     update_fields["lastAlertedKey"] = idempotency_key
 
-                ref = getattr(doc, "reference", None)
-                if ref is not None and hasattr(ref, "update"):
-                    await ref.update(update_fields)
+                doc_ref = getattr(doc, "reference", None)
+                if hasattr(doc_ref, "update"):
+                    await doc_ref.update(update_fields)  # type: ignore[union-attr]
             except Exception:
                 continue
 

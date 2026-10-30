@@ -69,9 +69,7 @@ class AppSettings:
         else:
             raise ValueError("ENABLE_RATE_LIMITER must be one of: 1, true, yes, 0, false, no")
 
-        project_id = (
-            os.getenv("GOOGLE_CLOUD_PROJECT", os.getenv("GCP_PROJECT", "")).strip()
-        )
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", os.getenv("GCP_PROJECT", "")).strip()
         firestore_database_id = (
             os.getenv("FIRESTORE_DATABASE_ID", "(default)").strip() or "(default)"
         )
