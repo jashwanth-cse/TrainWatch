@@ -2,12 +2,7 @@ const fs = require('node:fs');
 const ts = require('typescript');
 const vm = require('node:vm');
 
-function loadStationService(storage) {
-  const values = new Map();
-  const asyncStorage = storage ?? {
-    getItem: async (key) => values.get(key) ?? null,
-    setItem: async (key, value) => { values.set(key, value); },
-  };
+function loadStationService() {
   const filePath = require.resolve('../../src/services/stationService.ts');
   const source = fs.readFileSync(filePath, 'utf8');
   const stationsData = require('../../src/data/stations.json');
@@ -23,7 +18,6 @@ function loadStationService(storage) {
   const exports = {};
   const modules = {
     '../data/stations.json': stationsData,
-    '@react-native-async-storage/async-storage': asyncStorage,
   };
 
   vm.runInNewContext(outputText, {

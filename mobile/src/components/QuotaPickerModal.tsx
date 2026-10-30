@@ -4,8 +4,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../theme/tokens';
 import { Check } from 'lucide-react-native';
 
-import { QUOTA_OPTIONS, QuotaOption } from '../utils/quota';
-export { QUOTA_OPTIONS, QuotaOption } from '../utils/quota';
+export interface QuotaOption {
+  code: string;
+  label: string;
+  description: string;
+}
+
+export const QUOTA_OPTIONS: QuotaOption[] = [
+  { code: 'GN', label: 'General Quota (GN)', description: 'Standard reservation quota open to all passengers' },
+  { code: 'TQ', label: 'Tatkal Quota (TQ)', description: 'Emergency short-notice booking (opens 10am/11am)' },
+  { code: 'PT', label: 'Premium Tatkal (PT)', description: 'Dynamic fare tatkal quota for immediate travel' },
+  { code: 'LD', label: 'Ladies Quota (LD)', description: 'Reserved berths exclusively for women passengers' },
+  { code: 'SS', label: 'Senior Citizen (SS)', description: 'Lower berth quota for elderly and female travelers 45+' },
+];
 
 interface QuotaPickerModalProps {
   visible: boolean;

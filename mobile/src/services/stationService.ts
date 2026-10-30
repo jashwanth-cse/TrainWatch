@@ -165,26 +165,21 @@ export async function getRecentStations(): Promise<Station[]> {
   return [];
 }
 
-let recentWriteQueue: Promise<void> = Promise.resolve();
-
 /**
  * Prepend a station to the user's recent stations list (deduplicated, keeping top 8).
  */
 export async function addRecentStation(station: Station): Promise<void> {
   if (!station?.code) return;
-  recentWriteQueue = recentWriteQueue.then(async () => {
-    try {
-      const current = await getRecentStations();
-      const filtered = current.filter(
-        (s) => s.code.toUpperCase() !== station.code.toUpperCase()
-      );
-      const updated = [station, ...filtered].slice(0, 8);
-      await AsyncStorage.setItem(RECENT_STATIONS_STORAGE_KEY, JSON.stringify(updated));
-    } catch {
-      // Keep later queued updates usable after storage failures.
-    }
-  });
-  return recentWriteQueue;
+  try {
+    const current = await getRecentStations();
+    const filtered = current.filter(
+      (s) => s.code.toUpperCase() !== station.code.toUpperCase()
+    );
+    const updated = [station, ...filtered].slice(0, 8);
+    await AsyncStorage.setItem(RECENT_STATIONS_STORAGE_KEY, JSON.stringify(updated));
+  } catch {
+    // Silently continue
+  }
 }
 
 /**
@@ -214,3 +209,4 @@ export async function saveLastSearch(data: LastSearchData): Promise<void> {
     // Silently continue
   }
 }
+

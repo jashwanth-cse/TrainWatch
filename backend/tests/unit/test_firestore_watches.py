@@ -23,8 +23,9 @@ from trainwatch.ports.watches import WatchDataError, WatchRepository
 class FakeSnapshot:
     """In-memory snapshot matching the adapter's narrow protocol."""
 
-    def __init__(self, data: dict[str, object] | None) -> None:
+    def __init__(self, data: dict[str, object] | None, doc_id: str = "") -> None:
         """Represent a stored document or an absent snapshot."""
+        self.id = doc_id
         self.exists = data is not None
         self._data = data
 
@@ -71,6 +72,14 @@ class FakeCollection:
     def document(self, document_id: str) -> FakeDocument:
         """Select a document below this collection."""
         return FakeDocument(self._store, f"{self._path}/{document_id}")
+
+    async def get(self) -> list[FakeSnapshot]:
+        prefix = f"{self._path}/"
+        results: list[FakeSnapshot] = []
+        for p, d in self._store.items():
+            if p.startswith(prefix) and "/" not in p.removeprefix(prefix):
+                results.append(FakeSnapshot(d, doc_id=p.removeprefix(prefix)))
+        return results
 
 
 class FakeClient:
@@ -298,3 +307,33 @@ def test_production_client_forwards_explicit_configuration(
 
     assert isinstance(result, FakeClient)
     assert captured == {"project": "project-for-test", "database": "database-for-test"}
+
+
+@pytest.mark.anyio
+async def test_firestore_list_for_user() -> None:
+    client = FakeClient()
+    repo = FirestoreWatchRepository(client)
+    w1 = watch(watch_id="w-1", owner_id="user-owner")
+    w2 = watch(watch_id="w-2", owner_id="user-owner")
+    
+    await repo.save(w1)
+    await repo.save(w2)
+
+    watches = await repo.list_for_user(owner_id="user-owner")
+    assert len(watches) == 2
+    assert {w.watch_id for w in watches} == {"w-1", "w-2"}
+
+    other_watches = await repo.list_for_user(owner_id="other-user")
+    assert len(other_watches) == 0
+
+
+@pytest.mark.anyio
+async def test_firestore_list_for_user_skips_malformed_docs() -> None:
+    client = FakeClient()
+    repo = FirestoreWatchRepository(client)
+    # Store malformed doc directly
+    client.store["users/user-mal/reminders/w-bad"] = {"schemaVersion": 999}
+    client.store["users/user-mal/reminders/w-empty"] = None
+    
+    watches = await repo.list_for_user(owner_id="user-mal")
+    assert watches == []

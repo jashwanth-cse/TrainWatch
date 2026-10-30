@@ -16,7 +16,6 @@ class FirestoreDeviceRepository:
         self._client = client
 
     def _devices_collection(self, user_id: str) -> Any:
-        """Select the device subcollection within one user namespace."""
         return self._client.collection("users").document(user_id).collection("devices")
 
     async def register_device(self, device: DeviceRecord) -> None:

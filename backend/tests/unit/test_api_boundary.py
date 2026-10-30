@@ -1,6 +1,7 @@
 """Offline tests for request IDs, sanitized errors, auth, and ownership."""
 
 from typing import Annotated
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -8,7 +9,7 @@ from pydantic import BaseModel
 from starlette.requests import Request
 
 from tests.asgi import request
-from trainwatch.api.auth import RejectingTokenVerifier
+from trainwatch.api.auth import ProductionTokenVerifier, RejectingTokenVerifier
 from trainwatch.api.errors import ApiError, _request_id
 from trainwatch.api.ownership import require_owner
 from trainwatch.api.request_id import REQUEST_ID_HEADER, resolve_request_id
@@ -260,3 +261,108 @@ def test_api_error_retains_only_explicit_safe_fields() -> None:
     """Store only public fields on expected failures."""
     error = ApiError(status_code=409, code="safe_code", message="Safe message")
     assert (error.status_code, error.code, error.message) == (409, "safe_code", "Safe message")
+
+
+@pytest.mark.anyio
+async def test_production_verifier_accepts_device_session_token() -> None:
+    verifier = ProductionTokenVerifier()
+    user = await verifier.verify("tw_123456_abcdef")
+    assert user.uid == "tw_123456_abcdef"
+
+
+@pytest.mark.anyio
+async def test_production_verifier_rejects_invalid_token() -> None:
+    verifier = ProductionTokenVerifier()
+    with pytest.raises(TokenVerificationError):
+        await verifier.verify("short")
+    with pytest.raises(TokenVerificationError):
+        await verifier.verify("invalid token with spaces")
+
+
+@pytest.mark.anyio
+async def test_production_verifier_accepts_valid_firebase_jwt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = ProductionTokenVerifier()
+    mock_auth = MagicMock()
+    mock_auth.verify_id_token.return_value = {"uid": "verified-user-123"}
+    mock_fb = MagicMock()
+    mock_fb._apps = ["default"]
+    mock_fb.auth = mock_auth
+
+    import sys
+
+    monkeypatch.setattr(
+        sys,
+        "modules",
+        {**sys.modules, "firebase_admin": mock_fb, "firebase_admin.auth": mock_auth},
+    )
+    user = await verifier.verify("header.payload.signature")
+    assert user.uid == "verified-user-123"
+
+
+@pytest.mark.anyio
+async def test_production_verifier_initializes_firebase_if_not_already_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = ProductionTokenVerifier()
+    mock_auth = MagicMock()
+    mock_auth.verify_id_token.return_value = {"uid": "verified-user-456"}
+    mock_fb = MagicMock()
+    mock_fb._apps = []
+    mock_fb.auth = mock_auth
+
+    import sys
+
+    monkeypatch.setattr(
+        sys,
+        "modules",
+        {**sys.modules, "firebase_admin": mock_fb, "firebase_admin.auth": mock_auth},
+    )
+    user = await verifier.verify("hdr.pay.sig")
+    assert user.uid == "verified-user-456"
+    mock_fb.initialize_app.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_production_verifier_rejects_jwt_with_missing_uid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = ProductionTokenVerifier()
+    mock_auth = MagicMock()
+    mock_auth.verify_id_token.return_value = {"uid": ""}
+    mock_fb = MagicMock()
+    mock_fb._apps = ["default"]
+    mock_fb.auth = mock_auth
+
+    import sys
+
+    monkeypatch.setattr(
+        sys,
+        "modules",
+        {**sys.modules, "firebase_admin": mock_fb, "firebase_admin.auth": mock_auth},
+    )
+    with pytest.raises(TokenVerificationError):
+        await verifier.verify("header.payload.signature")
+
+
+@pytest.mark.anyio
+async def test_production_verifier_rejects_jwt_when_verification_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    verifier = ProductionTokenVerifier()
+    mock_auth = MagicMock()
+    mock_auth.verify_id_token.side_effect = RuntimeError("verification failed")
+    mock_fb = MagicMock()
+    mock_fb._apps = ["default"]
+    mock_fb.auth = mock_auth
+
+    import sys
+
+    monkeypatch.setattr(
+        sys,
+        "modules",
+        {**sys.modules, "firebase_admin": mock_fb, "firebase_admin.auth": mock_auth},
+    )
+    with pytest.raises(TokenVerificationError):
+        await verifier.verify("header.payload.signature")

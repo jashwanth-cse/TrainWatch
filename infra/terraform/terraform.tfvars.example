@@ -1,0 +1,12 @@
+# Example Terraform variable inputs for TrainWatch Staging
+# Copy this file to terraform.tfvars and fill in real values.
+# Do NOT commit terraform.tfvars with sensitive identifiers.
+
+project_id                = "trainwatch-staging-placeholder"
+region                    = "asia-south1"
+environment               = "staging"
+container_image           = "asia-south1-docker.pkg.dev/trainwatch-staging-placeholder/trainwatch/backend:staging"
+billing_account_id        = ""
+budget_amount_monthly_usd = 25
+alert_notification_email  = "devops@example.invalid"
+train_api_base_url        = "https://dream-destiny.cloud.run"

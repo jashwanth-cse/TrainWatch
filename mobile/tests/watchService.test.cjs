@@ -141,9 +141,50 @@ test('getWatch, updateWatchStatus, and deleteWatch perform expected HTTP calls',
   await watchService.updateWatchStatus('w1', 'PAUSED');
   assert.equal(calls[1].url, 'https://test-api.trainwatch.app/api/v1/watches/w1');
   assert.equal(calls[1].options.method, 'PATCH');
-  assert.deepEqual(JSON.parse(calls[1].options.body), { status: 'PAUSED' });
+  assert.deepEqual(JSON.parse(calls[1].options.body), { status: 'paused' });
 
   await watchService.deleteWatch('w1');
   assert.equal(calls[2].url, 'https://test-api.trainwatch.app/api/v1/watches/w1');
   assert.equal(calls[2].options.method, 'DELETE');
+});
+
+test('listWatches and updateWatchCondition perform expected HTTP calls', async () => {
+  const calls = [];
+  const mockFetch = async (url, options) => {
+    calls.push({ url, options });
+    if (options.method === 'GET') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ watches: [{ watch_id: 'w1', status: 'ACTIVE' }] }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        watch_id: 'w1',
+        condition: { kind: 'seats_below', maximum_position: 25 },
+      }),
+    };
+  };
+
+  const { watchService } = loadWatchService(mockFetch);
+
+  const watches = await watchService.listWatches();
+  assert.equal(calls[0].url, 'https://test-api.trainwatch.app/api/v1/watches');
+  assert.equal(calls[0].options.method, 'GET');
+  assert.equal(watches.length, 1);
+  assert.equal(watches[0].watch_id, 'w1');
+
+  const updated = await watchService.updateWatchCondition('w1', {
+    kind: 'seats_below',
+    maximum_position: 25,
+  });
+  assert.equal(calls[1].url, 'https://test-api.trainwatch.app/api/v1/watches/w1');
+  assert.equal(calls[1].options.method, 'PATCH');
+  assert.deepEqual(JSON.parse(calls[1].options.body), {
+    condition: { kind: 'seats_below', maximum_position: 25 },
+  });
+  assert.equal(updated.condition.kind, 'seats_below');
 });

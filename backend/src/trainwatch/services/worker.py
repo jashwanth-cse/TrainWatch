@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from trainwatch.domain.alerts import should_alert
-from trainwatch.domain.jobs import JobRecord
 from trainwatch.domain.watch import WatchStatus
 from trainwatch.ports.availability import AvailabilityProvider, ObservationRepository
 from trainwatch.ports.jobs import JobRepository
@@ -88,33 +87,6 @@ class WorkerService:
                 status="skipped_already_leased",
             )
 
-        try:
-            return await self._process_claimed_job(job=job, now=now)
-        except Exception:
-            # Exception messages may contain provider payloads or credentials.
-            return await self._record_failure(job=job, now=now, error="unexpected_worker_error")
-
-    async def _record_failure(
-        self, *, job: JobRecord, now: datetime, error: str
-    ) -> JobExecutionResult:
-        """Apply the same bounded retry policy to provider and execution failures."""
-        exhausted = job.attempts >= self.max_attempts
-        retry_at = None
-        if not exhausted:
-            backoff_seconds = min(300, 30 * (2 ** (job.attempts - 1)))
-            retry_at = now + timedelta(seconds=backoff_seconds)
-        await self.job_repository.fail_job(
-            job_id=job.job_id, error=error, retry_at=retry_at, now=now
-        )
-        return JobExecutionResult(
-            job_id=job.job_id,
-            status="completed_max_attempts_exceeded" if exhausted else "retry_scheduled",
-            error=error,
-        )
-
-    async def _process_claimed_job(self, *, job: JobRecord, now: datetime) -> JobExecutionResult:
-        """Evaluate one claimed check; failures are handled by the retry boundary."""
-        job_id = job.job_id
         watch = await self.watch_repository.get(
             watch_id=job.watch_id,
             owner_id=job.owner_id,
@@ -150,9 +122,39 @@ class WorkerService:
                 if observation.failure is not None
                 else "transient_provider_failure"
             )
-            return await self._record_failure(job=job, now=now, error=err_msg)
+            if job.attempts >= self.max_attempts:
+                await self.job_repository.fail_job(
+                    job_id=job_id,
+                    error=err_msg,
+                    retry_at=None,
+                    now=now,
+                )
+                return JobExecutionResult(
+                    job_id=job_id,
+                    status="completed_max_attempts_exceeded",
+                    error=err_msg,
+                )
+
+            backoff_seconds = min(300, 30 * (2 ** (job.attempts - 1)))
+            retry_at = now + timedelta(seconds=backoff_seconds)
+            await self.job_repository.fail_job(
+                job_id=job_id,
+                error=err_msg,
+                retry_at=retry_at,
+                now=now,
+            )
+            return JobExecutionResult(
+                job_id=job_id,
+                status="retry_scheduled",
+                error=err_msg,
+            )
 
         previous = await self.observation_repository.get_latest_observation(watch_id=watch.watch_id)
+        await self.observation_repository.save_observation(
+            watch_id=watch.watch_id,
+            observation=observation,
+        )
+
         alert_triggered = should_alert(
             condition=watch.condition,
             previous=previous,
@@ -163,9 +165,7 @@ class WorkerService:
             status_value = observation.snapshot.status.value
             pos = observation.snapshot.position
             pos_label = f" #{pos}" if pos is not None else ""
-            assert previous is not None and previous.snapshot is not None
-            transition_id = previous.snapshot.observed_at.isoformat()
-            idempotency_key = f"alert:{watch.watch_id}:{transition_id}:{status_value}:{pos or 0}"
+            idempotency_key = f"alert:{watch.watch_id}:{status_value}:{pos or 0}"
             outbox_item = NotificationOutboxItem(
                 idempotency_key=idempotency_key,
                 owner_id=watch.owner_id,
@@ -184,12 +184,6 @@ class WorkerService:
                 },
             )
             await self.notification_outbox.save_notification(outbox_item)
-
-        # Advance the baseline only once a qualifying alert is durably in the outbox.
-        await self.observation_repository.save_observation(
-            watch_id=watch.watch_id,
-            observation=observation,
-        )
 
         days_left = (watch.query.journey_date - today).days
         interval_minutes = self.compute_next_interval_minutes(days_until_journey=days_left)

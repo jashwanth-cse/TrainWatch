@@ -467,6 +467,7 @@ async def test_firebase_fcm_sender_success_and_error() -> None:
     mock_messaging = MagicMock()
     mock_messaging.send_each_for_multicast.return_value = mock_resp
     mock_firebase_admin = MagicMock(messaging=mock_messaging)
+    mock_firebase_admin._apps = []
 
     fcm_modules = {
         "firebase_admin": mock_firebase_admin,
@@ -482,6 +483,17 @@ async def test_firebase_fcm_sender_success_and_error() -> None:
         )
         assert res.success_count == 1
         assert res.failure_count == 0
+        assert mock_firebase_admin.initialize_app.call_count == 1
+
+        # Cover branch where an app is already initialized or provided
+        mock_firebase_admin._apps = [MagicMock()]
+        res_existing = await sender.send_multicast(
+            tokens=["valid_token"],
+            title="Title",
+            body="Body",
+            data={"k": "v"},
+        )
+        assert res_existing.success_count == 1
 
     # 2. Failure mock with unregistered token and generic error token
     mock_resp_fail = MagicMock()

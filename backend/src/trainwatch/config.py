@@ -25,7 +25,8 @@ class AppSettings:
     rate_limit_per_minute: int = 60
     request_timeout_seconds: float = 15.0
     enable_rate_limiter: bool = True
-    auth_attempts_per_minute: int = 600
+    project_id: str = ""
+    firestore_database_id: str = "(default)"
 
     @classmethod
     def from_environment(cls) -> AppSettings:
@@ -43,29 +44,26 @@ class AppSettings:
         except ValueError as err:
             raise ValueError("RATE_LIMIT_PER_MINUTE must be a positive integer") from err
 
-        auth_attempts_raw = os.getenv("AUTH_ATTEMPTS_PER_MINUTE", "600").strip()
-        try:
-            auth_attempts_per_minute = int(auth_attempts_raw)
-            if auth_attempts_per_minute <= 0:
-                raise ValueError
-        except ValueError as err:
-            raise ValueError("AUTH_ATTEMPTS_PER_MINUTE must be a positive integer") from err
-
         timeout_raw = os.getenv("REQUEST_TIMEOUT_SECONDS", "15.0").strip()
         try:
             request_timeout_seconds = float(timeout_raw)
-            if not isfinite(request_timeout_seconds) or request_timeout_seconds <= 0:
+            if request_timeout_seconds <= 0:
                 raise ValueError
         except ValueError as err:
             raise ValueError("REQUEST_TIMEOUT_SECONDS must be a positive number") from err
 
-        limiter_raw = os.getenv("ENABLE_RATE_LIMITER", "true").strip().lower()
-        if limiter_raw in {"1", "true", "yes"}:
-            enable_rate_limiter = True
-        elif limiter_raw in {"0", "false", "no"}:
-            enable_rate_limiter = False
-        else:
-            raise ValueError("ENABLE_RATE_LIMITER must be one of: 1, true, yes, 0, false, no")
+        enable_rate_limiter = os.getenv("ENABLE_RATE_LIMITER", "true").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+
+        project_id = (
+            os.getenv("GOOGLE_CLOUD_PROJECT", os.getenv("GCP_PROJECT", "")).strip()
+        )
+        firestore_database_id = (
+            os.getenv("FIRESTORE_DATABASE_ID", "(default)").strip() or "(default)"
+        )
 
         if app_env not in _APP_ENVIRONMENTS:
             raise ValueError("APP_ENV must be one of: local, test, staging, production")
@@ -82,5 +80,6 @@ class AppSettings:
             rate_limit_per_minute=rate_limit_per_minute,
             request_timeout_seconds=request_timeout_seconds,
             enable_rate_limiter=enable_rate_limiter,
-            auth_attempts_per_minute=auth_attempts_per_minute,
+            project_id=project_id,
+            firestore_database_id=firestore_database_id,
         )

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -26,11 +26,12 @@ import {
   saveLastSearch,
 } from '../services/stationService';
 import { AvailabilityDetailModal } from '../components/AvailabilityDetailModal';
+import { watchService, WatchRecord, normalizeDateToIso } from '../services/watchService';
+import { Bell } from 'lucide-react-native';
 import { DatePickerModal, DateItem } from '../components/DatePickerModal';
 import { StationSearchModal } from '../components/StationSearchModal';
 import { TrainWatchLoader } from '../components/TrainWatchLoader';
 import { ResponsiveButton } from '../components/ResponsiveButton';
-import { resolveQuota } from '../utils/quota';
 import { parseAvailabilityStatus } from '../utils/availabilityHelper';
 import {
   ArrowLeft,
@@ -94,12 +95,38 @@ export const TrainResultsScreen: React.FC = () => {
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadMoreTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const nearbyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Availability & Alert Modal State
   const [selectedTrainForModal, setSelectedTrainForModal] = useState<TrainItem | null>(null);
   const [selectedClassForModal, setSelectedClassForModal] = useState<TravelClassInfo | null>(null);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [activeWatches, setActiveWatches] = useState<WatchRecord[]>([]);
+
+  const refreshActiveWatches = useCallback(() => {
+    watchService.listWatches().then(setActiveWatches).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshActiveWatches();
+  }, [refreshActiveWatches]);
+
+  const isClassTracked = useCallback((trainNumber: string, travelClass: string) => {
+    const targetTrain = trainNumber.trim();
+    const targetClass = travelClass.trim().toUpperCase();
+    const targetDateIso = normalizeDateToIso(currentDate);
+
+    return activeWatches.some((w) => {
+      const wTrain = w.query.train_number.trim();
+      const matchTrain =
+        wTrain === targetTrain ||
+        wTrain.replace(/^0+/, '') === targetTrain.replace(/^0+/, '');
+      const matchClass = w.query.travel_class.trim().toUpperCase() === targetClass;
+      const matchDate = normalizeDateToIso(w.query.journey_date) === targetDateIso;
+      const statusUpper = String(w.status || '').toUpperCase();
+      const matchStatus = statusUpper === 'ACTIVE' || statusUpper === 'PAUSED';
+      return matchTrain && matchClass && matchDate && matchStatus;
+    });
+  }, [activeWatches, currentDate]);
 
   // Half-screen date picker modal
   const [datePickerVisible, setDatePickerVisible] = useState(false);
@@ -134,6 +161,7 @@ export const TrainResultsScreen: React.FC = () => {
     setSelectedTrainForModal(train);
     setSelectedClassForModal(cls);
     setDetailModalVisible(true);
+    refreshActiveWatches();
   };
 
   // Dynamic Island Route Switcher Controls
@@ -192,8 +220,7 @@ export const TrainResultsScreen: React.FC = () => {
       source: islandSource,
       destination: islandDestination,
       travelClass: selectedClass,
-      quota: resolveQuota(quota).label,
-      quotaCode: quota,
+      quota,
     });
     void addRecentStation(islandSource);
     void addRecentStation(islandDestination);
@@ -250,16 +277,7 @@ export const TrainResultsScreen: React.FC = () => {
 
     return () => {
       active = false;
-      if (loadMoreTimeout.current !== null) {
-        clearTimeout(loadMoreTimeout.current);
-        loadMoreTimeout.current = null;
-      }
-      if (nearbyTimeout.current !== null) {
-        clearTimeout(nearbyTimeout.current);
-        nearbyTimeout.current = null;
-      }
-      setLoadingMore(false);
-      setRevealingNearby(false);
+      if (loadMoreTimeout.current) clearTimeout(loadMoreTimeout.current);
     };
   }, [currentSource, currentDestination, currentDate, quota, selectedClass, refreshIndex]);
 
@@ -278,10 +296,8 @@ export const TrainResultsScreen: React.FC = () => {
 
   // Handle user tapping "Show trains from Nearby Stations"
   const handleRevealNearby = () => {
-    if (nearbyTimeout.current !== null) return;
     setRevealingNearby(true);
-    nearbyTimeout.current = setTimeout(() => {
-      nearbyTimeout.current = null;
+    setTimeout(() => {
       setRevealingNearby(false);
       setShowNearby(true);
       setPage(1);
@@ -320,7 +336,6 @@ export const TrainResultsScreen: React.FC = () => {
 
     setLoadingMore(true);
     loadMoreTimeout.current = setTimeout(() => {
-      loadMoreTimeout.current = null;
       setPage((prev) => prev + 1);
       setLoadingMore(false);
     }, 450);
@@ -579,6 +594,7 @@ export const TrainResultsScreen: React.FC = () => {
             <TrainCard
               train={item}
               getStatusBadgeStyle={getStatusBadgeStyle}
+              isClassTracked={isClassTracked}
               onSelectClass={(cls) => handleOpenDetailModal(item, cls)}
             />
           )}
@@ -755,7 +771,19 @@ export const TrainResultsScreen: React.FC = () => {
         journeyDate={currentDate}
         displayDate={currentDisplayDate}
         quota={quota}
+        isAlreadyTracked={
+          selectedTrainForModal && selectedClassForModal
+            ? isClassTracked(selectedTrainForModal.train_number, selectedClassForModal.travel_class)
+            : false
+        }
         onClose={() => setDetailModalVisible(false)}
+        onSetAlert={() => {
+          refreshActiveWatches();
+        }}
+        onViewAlerts={() => {
+          setDetailModalVisible(false);
+          router.push('/alerts');
+        }}
       />
     </View>
   );
@@ -764,10 +792,11 @@ export const TrainResultsScreen: React.FC = () => {
 interface TrainCardProps {
   train: TrainItem;
   getStatusBadgeStyle: (avail: string) => { bg: string; text: string; dot: string; label: string };
+  isClassTracked: (trainNumber: string, travelClass: string) => boolean;
   onSelectClass: (cls: TravelClassInfo) => void;
 }
 
-const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onSelectClass }) => {
+const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, isClassTracked, onSelectClass }) => {
   return (
     <View style={styles.card}>
       {/* Train Identification */}
@@ -841,6 +870,13 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, onSel
                   {badge.label}
                 </Text>
               </View>
+
+              {isClassTracked(train.train_number, cls.travel_class) && (
+                <View style={styles.trackedPill}>
+                  <Bell size={10} color={colors.statusAvailable} strokeWidth={2.4} style={{ marginRight: 3 }} />
+                  <Text style={styles.trackedPillText}>Alert Active</Text>
+                </View>
+              )}
             </TouchableOpacity>
           );
         })}
@@ -1101,6 +1137,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  trackedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.statusAvailableBg,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    marginTop: 4,
+  },
+  trackedPillText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.statusAvailable,
+    letterSpacing: 0.2,
   },
   classBox: {
     flex: 1,

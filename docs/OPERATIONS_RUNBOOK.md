@@ -49,21 +49,6 @@ gcloud firestore import gs://trainwatch-firestore-backups-prod/2026-10-25T00:00:
 
 ## 3. Alerting Rules & Thresholds
 
-### Authentication attempt budget
-
-`AUTH_ATTEMPTS_PER_MINUTE` is a positive integer (default `600`) limiting requests
-with an Authorization header per client IP over a sliding 60-second window,
-before token verification. Once exhausted, requests receive HTTP 429 without
-invoking the verifier. This budget is shared by users behind the same IP; tune
-it for expected proxy and NAT traffic. It is separate from `RATE_LIMIT_PER_MINUTE`
-(default `60`), which limits verified users individually and anonymous or invalid
-credentials by IP. Limits are held in memory per application process.
-
-Existing health/metrics exemptions and `ENABLE_RATE_LIMITER=false` bypass both
-tiers. A rejected response's `X-RateLimit-Limit` and `Retry-After` describe the
-tier that rejected it. Successful requests retain the per-user or anonymous quota
-headers.
-
 Alerts are monitored in Google Cloud Monitoring with notifications routed to PagerDuty / On-call Slack.
 
 | Alert Name | Condition | Severity | Action Trigger |

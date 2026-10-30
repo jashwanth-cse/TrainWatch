@@ -26,19 +26,6 @@ _SENSITIVE_HEADERS = frozenset(
 logger = logging.getLogger("trainwatch.access")
 
 
-def _record_request_metrics(request: Request, status_code: int, duration_ms: float) -> None:
-    """Record completions using a route template or one fixed unmatched label."""
-    metrics = getattr(request.app.state, "metrics", None)
-    if metrics is not None:
-        route = request.scope.get("route")
-        metrics.record_request(
-            method=request.method,
-            path=getattr(route, "path", "/unmatched"),
-            status_code=status_code,
-            duration_seconds=duration_ms / 1000.0,
-        )
-
-
 def sanitize_headers(headers: dict[str, str] | Any) -> dict[str, str]:
     """Redact sensitive header values to prevent credential leakage in logs."""
     sanitized: dict[str, str] = {}
@@ -109,7 +96,15 @@ async def structured_logging_middleware(
         else:
             logger.info(entry)
 
-        _record_request_metrics(request, response.status_code, duration_ms)
+        # Record metrics if registry is initialized
+        metrics = getattr(request.app.state, "metrics", None)
+        if metrics is not None:
+            metrics.record_request(
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                duration_seconds=duration_ms / 1000.0,
+            )
 
         return response
     except Exception as exc:
@@ -126,5 +121,4 @@ async def structured_logging_middleware(
             extra={"error": type(exc).__name__},
         )
         logger.error(entry)
-        _record_request_metrics(request, 500, duration_ms)
         raise

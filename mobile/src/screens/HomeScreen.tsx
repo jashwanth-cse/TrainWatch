@@ -11,7 +11,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { resolveQuota } from '../utils/quota';
 import { AppHeader } from '../components/AppHeader';
 import {
   Station,
@@ -35,7 +34,10 @@ import {
   TrainFront,
   Armchair,
   ArrowRight,
+  Bell,
 } from 'lucide-react-native';
+import { colors } from '../theme/tokens';
+import { watchService } from '../services/watchService';
 
 export const HomeScreen: React.FC = () => {
   const router = useRouter();
@@ -60,6 +62,19 @@ export const HomeScreen: React.FC = () => {
   const [travelClass, setTravelClass] = useState<string>('All Classes');
   const [quota, setQuota] = useState<string>('General');
   const [quotaCode, setQuotaCode] = useState<string>('GN');
+  const [hasActiveAlerts, setHasActiveAlerts] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    watchService.listWatches().then((list) => {
+      if (isMounted) {
+        setHasActiveAlerts(list.some((w) => w.status === 'ACTIVE'));
+      }
+    }).catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Restore persisted last search on launch
   useEffect(() => {
@@ -69,9 +84,8 @@ export const HomeScreen: React.FC = () => {
         if (last.source) setSource(last.source);
         if (last.destination) setDestination(last.destination);
         if (last.travelClass) setTravelClass(last.travelClass);
-        const restoredQuota = resolveQuota(last.quotaCode, last.quota);
-        setQuota(restoredQuota.label);
-        setQuotaCode(restoredQuota.code);
+        if (last.quota) setQuota(last.quota);
+        if (last.quotaCode) setQuotaCode(last.quotaCode);
       }
     });
     return () => {
@@ -208,6 +222,18 @@ export const HomeScreen: React.FC = () => {
           },
         ]}
       >
+        {/* Top-Left Notification Bell Icon */}
+        <TouchableOpacity
+          style={[styles.bellBtn, { top: Math.max(insets.top, 14) }]}
+          onPress={() => router.push('/alerts')}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="My Seat Alerts"
+        >
+          <Bell size={20} color="#FFFFFF" strokeWidth={2.4} />
+          {hasActiveAlerts && <View style={styles.bellBadgeDot} />}
+        </TouchableOpacity>
+
         {/* Top Header & Tagline */}
         <View style={styles.topSection}>
           <AppHeader variant="light" />
@@ -393,6 +419,30 @@ const styles = StyleSheet.create({
   mainLayout: {
     flex: 1,
     paddingHorizontal: 20,
+  },
+  bellBtn: {
+    position: 'absolute',
+    left: 20,
+    zIndex: 10,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellBadgeDot: {
+    position: 'absolute',
+    top: 7,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.statusAvailable,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   topSection: {
     alignItems: 'center',

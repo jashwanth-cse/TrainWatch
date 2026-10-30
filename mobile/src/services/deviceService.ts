@@ -20,7 +20,10 @@ export async function registerDeviceToken(
 
   try {
     const deviceId = await authService.getDeviceId();
-    const baseUrl = process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL || DEFAULT_BASE_URL;
+    const baseUrl =
+      process.env.EXPO_PUBLIC_TRAINWATCH_API_URL ||
+      process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL ||
+      DEFAULT_BASE_URL;
     const url = `${baseUrl.replace(/\/$/, '')}/api/v1/devices/${deviceId}`;
 
     const res = await fetch(url, {
@@ -49,7 +52,10 @@ export async function registerDeviceToken(
 export async function revokeDeviceToken(): Promise<boolean> {
   try {
     const deviceId = await authService.getDeviceId();
-    const baseUrl = process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL || DEFAULT_BASE_URL;
+    const baseUrl =
+      process.env.EXPO_PUBLIC_TRAINWATCH_API_URL ||
+      process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL ||
+      DEFAULT_BASE_URL;
     const url = `${baseUrl.replace(/\/$/, '')}/api/v1/devices/${deviceId}`;
 
     const res = await fetch(url, {
