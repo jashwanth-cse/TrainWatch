@@ -6,6 +6,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: config.name ?? 'TrainWatch',
     slug: config.slug ?? 'trainwatch',
+    android: {
+      ...config.android,
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? config.android?.googleServicesFile,
+    },
     plugins: [
       ...(config.plugins ?? []),
       ...(iosClientId

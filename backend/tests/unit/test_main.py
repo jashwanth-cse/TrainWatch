@@ -116,7 +116,6 @@ def test_create_app_in_production_without_project_id_leaves_repositories_unconfi
     mock_create_client.assert_not_called()
 
 
-
 def test_create_app_in_staging_partial_injection(monkeypatch: pytest.MonkeyPatch) -> None:
     """Initialize only unprovided repositories in staging."""
     mock_create_client = MagicMock()
@@ -155,13 +154,14 @@ def test_create_app_in_staging_partial_injection(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.anyio
 async def test_firestore_watch_dispatcher_execution() -> None:
     """Validate FirestoreWatchDispatcher counts active reminders and handles errors."""
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
+
     from trainwatch.main import FirestoreWatchDispatcher
 
     mock_client = MagicMock()
     mock_group = MagicMock()
 
-    async def fake_get():
+    async def fake_get() -> list[MagicMock]:
         doc1 = MagicMock()
         doc1.to_dict.return_value = {"status": "active"}
         doc2 = MagicMock()
@@ -175,7 +175,7 @@ async def test_firestore_watch_dispatcher_execution() -> None:
     count = await dispatcher.dispatch_due_jobs(now=datetime.now(UTC))
     assert count == 1
 
-    async def fake_err():
+    async def fake_err() -> None:
         raise RuntimeError("network error")
 
     mock_group.get = fake_err
@@ -183,15 +183,21 @@ async def test_firestore_watch_dispatcher_execution() -> None:
     assert err_count == 0
 
 
-
 @pytest.mark.anyio
-async def test_firestore_watch_dispatcher_full_evaluation() -> None:
+async def test_firestore_watch_dispatcher_full_evaluation(monkeypatch: pytest.MonkeyPatch) -> None:
     """Validate FirestoreWatchDispatcher evaluates watches, alerts, and dispatches notifications."""
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
     from unittest.mock import AsyncMock, MagicMock
-    from trainwatch.domain.availability import AvailabilityObservation, AvailabilitySnapshot, AvailabilityStatus, ProviderFailure
-    from trainwatch.main import FirestoreWatchDispatcher, create_app
+
     from trainwatch.config import AppSettings
+    from trainwatch.domain.availability import (
+        AvailabilityObservation,
+        AvailabilitySnapshot,
+        AvailabilityStatus,
+        ProviderFailure,
+    )
+    from trainwatch.domain.watch import TrainQuery
+    from trainwatch.main import FirestoreWatchDispatcher, create_app
 
     now = datetime(2026, 11, 1, 10, 0, 0, tzinfo=UTC)
 
@@ -413,7 +419,7 @@ async def test_firestore_watch_dispatcher_full_evaluation() -> None:
     }
     doc_unparseable.reference = None  # test hasattr(ref, 'update') is False
 
-    async def fake_get_all():
+    async def fake_get_all() -> list[MagicMock]:
         return [
             doc_seats_below,
             doc_threshold,
@@ -427,12 +433,16 @@ async def test_firestore_watch_dispatcher_full_evaluation() -> None:
 
     mock_group.get = fake_get_all
 
-    async def fake_fetch(q):
+    async def fake_fetch(q: TrainQuery) -> AvailabilityObservation:
         if q.train_number == "12661":
             return AvailabilityObservation.success(snap_avl)
         if q.train_number == "99999":
             return AvailabilityObservation.success(snap_avl_unparseable)
-        if q.train_number == "06030" and q.source == "RJPM" and doc_threshold.to_dict()["condition"]["kind"] == "reaches_threshold":
+        if (
+            q.train_number == "06030"
+            and q.source == "RJPM"
+            and doc_threshold.to_dict()["condition"]["kind"] == "reaches_threshold"
+        ):
             return AvailabilityObservation.success(snap_rac)
         return AvailabilityObservation.success(snap_avl)
 
@@ -451,7 +461,9 @@ async def test_firestore_watch_dispatcher_full_evaluation() -> None:
     assert mock_notif_disp.dispatch_pending.call_count == 1
 
     # Also test provider failure path
-    mock_provider.fetch = AsyncMock(return_value=AvailabilityObservation.failed(ProviderFailure.TIMEOUT))
+    mock_provider.fetch = AsyncMock(
+        return_value=AvailabilityObservation.failed(ProviderFailure.TIMEOUT)
+    )
     count_fail = await dispatcher.dispatch_due_jobs(now=now)
     assert count_fail == 8
 
@@ -460,9 +472,20 @@ async def test_firestore_watch_dispatcher_full_evaluation() -> None:
     count_empty = await dispatcher.dispatch_due_jobs(now=now)
     assert count_empty == 0
 
-    # Test create_app with all services defaulting in staging
+    # Test default staging wiring without looking up credentials.
+    import trainwatch.infrastructure.firestore.client as fs_client_mod
+
+    mock_create_client = MagicMock(return_value=mock_client)
+    monkeypatch.setattr(fs_client_mod, "create_firestore_client", mock_create_client)
     app_default = create_app(
-        AppSettings(app_env="staging", project_id="trainwatch", train_api_base_url="https://dreamdestiny.cloud.run")
+        AppSettings(
+            app_env="staging",
+            project_id="trainwatch",
+            train_api_base_url="https://dreamdestiny.cloud.run",
+        )
     )
     assert app_default.state.dispatcher_service is not None
     assert app_default.state.notification_dispatcher_service is not None
+    mock_create_client.assert_called_once_with(
+        project_id="trainwatch", database_id="(default)", allow_live_access=True
+    )

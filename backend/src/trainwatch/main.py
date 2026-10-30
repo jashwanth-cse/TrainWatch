@@ -107,17 +107,28 @@ class FirestoreWatchDispatcher:
 
                 triggered = False
                 if prev_obs is not None:
-                    triggered = should_alert(condition=watch.condition, previous=prev_obs, current=obs)
+                    triggered = should_alert(
+                        condition=watch.condition, previous=prev_obs, current=obs
+                    )
                 elif watch.condition.kind is AlertKind.SEATS_BELOW:
-                    triggered = bool(seats is not None and watch.condition.maximum_position is not None and seats <= watch.condition.maximum_position)
+                    triggered = bool(
+                        seats is not None
+                        and watch.condition.maximum_position is not None
+                        and seats <= watch.condition.maximum_position
+                    )
                 elif watch.condition.kind is AlertKind.REACHES_THRESHOLD:
                     triggered = _meets_threshold(snap, watch.condition)
                 elif watch.condition.kind is AlertKind.BECOMES_AVAILABLE:
-                    triggered = (snap.status is AvailabilityStatus.AVAILABLE)
+                    triggered = snap.status is AvailabilityStatus.AVAILABLE
 
                 status_val = snap.status.value
                 pos_val = snap.position or seats or 0
-                idempotency_key = f"alert:{watch.watch_id}:{status_val}:{pos_val}"
+                previous_marker = (
+                    prev_data.get("observedAt") or data.get("lastCheckedAt") or "baseline"
+                    if isinstance(prev_data, dict)
+                    else "baseline"
+                )
+                idempotency_key = f"alert:{watch.watch_id}:{previous_marker}:{status_val}:{pos_val}"
                 if data.get("lastAlertedKey") == idempotency_key:
                     triggered = False
 
@@ -131,7 +142,8 @@ class FirestoreWatchDispatcher:
                         title=f"Seat Alert: Train {watch.query.train_number}",
                         body=(
                             f"Train {watch.query.train_number} ({watch.query.travel_class}) alert! "
-                            f"Status is now {status_val}{pos_label}{seat_label} on {watch.query.journey_date}."
+                            f"Status is now {status_val}{pos_label}{seat_label} "
+                            f"on {watch.query.journey_date}."
                         ),
                         created_at=now,
                         data={
@@ -158,13 +170,15 @@ class FirestoreWatchDispatcher:
                     update_fields["lastAlertedKey"] = idempotency_key
 
                 ref = getattr(doc, "reference", None)
-                if hasattr(ref, "update"):
+                if ref is not None and hasattr(ref, "update"):
                     await ref.update(update_fields)
             except Exception:
                 continue
 
         if self._notification_dispatcher is not None:
-            await self._notification_dispatcher.dispatch_pending(batch_size=50, lease_seconds=60, now=now)
+            await self._notification_dispatcher.dispatch_pending(
+                batch_size=50, lease_seconds=60, now=now
+            )
 
         return min(active_count, limit)
 
@@ -190,11 +204,11 @@ def create_app(
             "trainwatch" if resolved_settings.app_env == "staging" else ""
         )
         if (watch_repository is None or device_repository is None) and project_id:
+            from trainwatch.infrastructure.fcm.sender import FirebaseFcmSender
             from trainwatch.infrastructure.firestore.client import create_firestore_client
             from trainwatch.infrastructure.firestore.devices import FirestoreDeviceRepository
-            from trainwatch.infrastructure.firestore.watches import FirestoreWatchRepository
             from trainwatch.infrastructure.firestore.outbox import FirestoreNotificationOutbox
-            from trainwatch.infrastructure.fcm.sender import FirebaseFcmSender
+            from trainwatch.infrastructure.firestore.watches import FirestoreWatchRepository
             from trainwatch.services.notification_dispatcher import NotificationDispatcherService
 
             firestore_client = create_firestore_client(
@@ -219,7 +233,10 @@ def create_app(
                     DreamDestinyClient,
                     create_train_api_http_client,
                 )
-                http_client = create_train_api_http_client(base_url=resolved_settings.train_api_base_url)
+
+                http_client = create_train_api_http_client(
+                    base_url=resolved_settings.train_api_base_url
+                )
                 availability_provider = DreamDestinyClient(http_client)
                 dispatcher_service = FirestoreWatchDispatcher(
                     firestore_client,

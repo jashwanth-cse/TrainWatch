@@ -14,7 +14,8 @@
       },
       "env": {
         "EXPO_PUBLIC_TRAINWATCH_API_URL": "https://trainwatch-api-staging-141132468573.asia-south1.run.app"
-      }
+      },
+      "environment": "preview"
     },
     "production": {
       "distribution": "internal",
@@ -23,7 +24,8 @@
       },
       "env": {
         "EXPO_PUBLIC_TRAINWATCH_API_URL": "https://trainwatch-api-staging-141132468573.asia-south1.run.app"
-      }
+      },
+      "environment": "production"
     }
   },
   "submit": {

@@ -13,10 +13,15 @@ resource "google_secret_manager_secret" "internal_service_key" {
   }
 }
 
-# Initial secret version so versions/latest is available to Cloud Run
+# The generated value is stored in Terraform state; keep that state encrypted and restricted.
+resource "random_password" "internal_service_key" {
+  length  = 48
+  special = false
+}
+
 resource "google_secret_manager_secret_version" "internal_service_key_version" {
   secret      = google_secret_manager_secret.internal_service_key.id
-  secret_data = "placeholder"
+  secret_data = random_password.internal_service_key.result
 }
 
 resource "google_secret_manager_secret_iam_member" "api_internal_key_access" {

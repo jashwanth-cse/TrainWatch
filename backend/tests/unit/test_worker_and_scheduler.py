@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import patch
 from fastapi import FastAPI
 
 from tests.asgi import request
@@ -187,6 +187,9 @@ class InMemoryWatchRepository:
 
     async def get(self, *, watch_id: str, owner_id: str) -> Watch | None:
         return self.watches.get((watch_id, owner_id))
+
+    async def list_for_user(self, *, owner_id: str) -> list[Watch]:
+        return [watch for (_, owner), watch in self.watches.items() if owner == owner_id]
 
     async def save(self, watch: Watch) -> None:
         self.watches[(watch.watch_id, watch.owner_id)] = watch
@@ -682,7 +685,7 @@ async def test_worker_evaluates_condition_and_saves_outbox_idempotently() -> Non
     assert result.alert_triggered
 
     # Verify outbox item was created
-    expected_key = "alert:w1:AVAILABLE:0"
+    expected_key = f"alert:w1:{now.isoformat()}:AVAILABLE:0"
     item = await outbox.get_by_key(expected_key)
     assert item is not None
     assert "Seat Alert: Train 12661" in item.title

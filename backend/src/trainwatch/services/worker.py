@@ -150,11 +150,6 @@ class WorkerService:
             )
 
         previous = await self.observation_repository.get_latest_observation(watch_id=watch.watch_id)
-        await self.observation_repository.save_observation(
-            watch_id=watch.watch_id,
-            observation=observation,
-        )
-
         alert_triggered = should_alert(
             condition=watch.condition,
             previous=previous,
@@ -165,7 +160,9 @@ class WorkerService:
             status_value = observation.snapshot.status.value
             pos = observation.snapshot.position
             pos_label = f" #{pos}" if pos is not None else ""
-            idempotency_key = f"alert:{watch.watch_id}:{status_value}:{pos or 0}"
+            assert previous is not None and previous.snapshot is not None
+            transition_id = previous.snapshot.observed_at.isoformat()
+            idempotency_key = f"alert:{watch.watch_id}:{transition_id}:{status_value}:{pos or 0}"
             outbox_item = NotificationOutboxItem(
                 idempotency_key=idempotency_key,
                 owner_id=watch.owner_id,
@@ -184,6 +181,11 @@ class WorkerService:
                 },
             )
             await self.notification_outbox.save_notification(outbox_item)
+
+        await self.observation_repository.save_observation(
+            watch_id=watch.watch_id,
+            observation=observation,
+        )
 
         days_left = (watch.query.journey_date - today).days
         interval_minutes = self.compute_next_interval_minutes(days_until_journey=days_left)

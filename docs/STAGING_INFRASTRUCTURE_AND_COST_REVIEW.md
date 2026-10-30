@@ -125,18 +125,28 @@ All staging resources were selected to operate almost entirely within Google Clo
    docker build -t asia-south1-docker.pkg.dev/trainwatch-staging/trainwatch/backend:staging-latest backend/
    docker push asia-south1-docker.pkg.dev/trainwatch-staging/trainwatch/backend:staging-latest
    ```
-2. Apply Terraform definitions (if infrastructure changed):
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:9c5e8690501b2040b34925f1872abedfaf86ea9c62410d674c6cefdd98bd9bb3 -->
+
+2. Provision Firestore for a new staging project, before deploying the service. Confirm the project and Firestore location first: database locations cannot be changed later. If `(default)` already exists, verify that it is a Native-mode database in the intended location instead of creating it again. Enable Firebase for the project and install/authenticate the Firebase CLI, then run from the repository root:
    ```bash
-   cd infra/terraform
-   terraform init
-   terraform apply -var-file="terraform.tfvars"
+   gcloud firestore databases create --project="$GOOGLE_CLOUD_PROJECT" --database="(default)" --location="$GOOGLE_CLOUD_REGION" --type=firestore-native
+   firebase deploy --project "$GOOGLE_CLOUD_PROJECT" --only firestore:indexes
    ```
-3. Deploy new revision:
+   Wait for index creation to finish before using indexed queries.
+3. Configure an access-restricted, encrypted remote Terraform state backend before applying. Terraform state contains the generated internal service key; never commit, share publicly, or log it. From the repository root:
+   ```bash
+   (cd infra/terraform && terraform init && terraform apply -var-file="terraform.tfvars")
+   ```
+   The generated secret replaces the former known placeholder. For an existing deployment that used the placeholder, restrict internal endpoint access during rotation, deploy the new revision, and disable the old Secret Manager version after verifying the new key is active. Treat the old key as compromised.
+4. Deploy the new revision:
    ```bash
    ./deploy/staging/deploy.sh
    ```
-4. Automated verification:
-   The deployment script pings `/healthz` and checks HTTP 200 before completing.
+5. Automated verification: the script probes `/healthz` on the tagged revision before shifting traffic to that exact revision.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ### Instant Rollback Procedure (`deploy/staging/rollback.sh`):
 If an issue occurs post-deployment, roll back traffic instantaneously without rebuilding containers:
