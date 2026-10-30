@@ -1,6 +1,6 @@
 """In-process tests for the credential-free application factory."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -163,13 +163,19 @@ async def test_firestore_watch_dispatcher_execution() -> None:
 
     async def fake_get() -> list[MagicMock]:
         doc1 = MagicMock()
-        doc1.to_dict.return_value = {"status": "active"}
+        doc1.to_dict.return_value = {"status": "active", "createdAt": datetime.now(UTC)}
         doc2 = MagicMock()
-        doc2.to_dict.return_value = {"status": "paused"}
+        doc2.to_dict.return_value = {"status": "paused", "createdAt": datetime.now(UTC)}
         return [doc1, doc2]
 
     mock_group.get = fake_get
     mock_client.collection_group.return_value = mock_group
+    mock_group.where.return_value = mock_group
+    mock_group.order_by.return_value = mock_group
+    mock_group.limit.return_value = mock_group
+    cursor_ref = mock_client.collection.return_value.document.return_value
+    cursor_ref.get = AsyncMock(return_value=MagicMock(to_dict=lambda: {}))
+    cursor_ref.set = AsyncMock()
 
     dispatcher = FirestoreWatchDispatcher(mock_client)
     count = await dispatcher.dispatch_due_jobs(now=datetime.now(UTC))
@@ -204,6 +210,12 @@ async def test_firestore_watch_dispatcher_full_evaluation(monkeypatch: pytest.Mo
     mock_client = MagicMock()
     mock_group = MagicMock()
     mock_client.collection_group.return_value = mock_group
+    mock_group.where.return_value = mock_group
+    mock_group.order_by.return_value = mock_group
+    mock_group.limit.return_value = mock_group
+    cursor_ref = mock_client.collection.return_value.document.return_value
+    cursor_ref.get = AsyncMock(return_value=MagicMock(to_dict=lambda: {}))
+    cursor_ref.set = AsyncMock()
 
     mock_provider = MagicMock()
     mock_outbox = MagicMock()
@@ -329,7 +341,7 @@ async def test_firestore_watch_dispatcher_full_evaluation(monkeypatch: pytest.Mo
             "targetStatus": None,
             "maximumPosition": 160,
         },
-        "lastAlertedKey": "alert:w_004:RAC:30",
+        "lastAlertedKey": "alert:w_004:baseline:RAC:30",
         "createdAt": now,
         "updatedAt": now,
     }
@@ -417,7 +429,7 @@ async def test_firestore_watch_dispatcher_full_evaluation(monkeypatch: pytest.Mo
         "createdAt": now,
         "updatedAt": now,
     }
-    doc_unparseable.reference = None  # test hasattr(ref, 'update') is False
+    doc_unparseable.reference = MagicMock(spec=["path"])  # no update method
 
     async def fake_get_all() -> list[MagicMock]:
         return [

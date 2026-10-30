@@ -136,7 +136,14 @@ async def test_firestore_dispatcher_distinguishes_later_reentry() -> None:
 
     doc.reference.update = AsyncMock(side_effect=update)
     client = MagicMock()
-    client.collection_group.return_value.get = AsyncMock(return_value=[doc])
+    query = client.collection_group.return_value
+    query.where.return_value = query
+    query.order_by.return_value = query
+    query.limit.return_value = query
+    query.get = AsyncMock(return_value=[doc])
+    cursor_ref = client.collection.return_value.document.return_value
+    cursor_ref.get = AsyncMock(return_value=MagicMock(to_dict=lambda: {}))
+    cursor_ref.set = AsyncMock()
     provider = FakeAvailabilityProvider(observation=observation(AvailabilityStatus.AVAILABLE, now))
     outbox = InMemoryNotificationOutbox()
     dispatcher = FirestoreWatchDispatcher(client, availability_provider=provider, outbox=outbox)

@@ -1,7 +1,6 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import * as Device from 'expo-device';
-import Constants from 'expo-constants';
+import { AndroidImportance } from 'expo-notifications';
 import { registerDeviceToken } from './deviceService';
 import { authService } from './authService';
 
@@ -34,7 +33,7 @@ export async function initializeNotificationChannel(): Promise<void> {
     await Notifications.setNotificationChannelAsync(NOTIFICATION_CHANNEL_ID, {
       name: 'Seat Availability Alerts',
       description: 'Alerts when tracked train seats become available or match your criteria',
-      importance: Notifications.AndroidImportance.MAX,
+      importance: AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#1E3A8A',
       enableVibrate: true,
@@ -80,24 +79,18 @@ export async function requestNotificationPermissionsAndRegisterDevice(): Promise
 
     let pushToken: string | null = null;
 
-    // Try retrieving native FCM device push token first (standard for production Android builds)
+    // The backend sends through FCM, which requires an Android native token.
     try {
       const devicePush = await Notifications.getDevicePushTokenAsync();
-      if (devicePush && devicePush.data) {
+      if (
+        Platform.OS === 'android' &&
+        devicePush?.type === 'android' &&
+        typeof devicePush.data === 'string'
+      ) {
         pushToken = devicePush.data;
       }
     } catch {
-      // Fallback for Expo Go or development environments
-      try {
-        const projectId =
-          Constants.expoConfig?.extra?.eas?.projectId ?? 'f5ead958-336d-401d-b483-bc3a129dc9c9';
-        const expoPush = await Notifications.getExpoPushTokenAsync({ projectId });
-        if (expoPush && expoPush.data) {
-          pushToken = expoPush.data;
-        }
-      } catch (expoErr) {
-        // Handle physical vs emulator restriction
-      }
+      // No native Android FCM token is available in this environment.
     }
 
     if (pushToken && pushToken.trim()) {

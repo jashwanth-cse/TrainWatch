@@ -219,16 +219,26 @@ POST /api/v1/watches
 Authorization: Bearer <Firebase_ID_Token>
 ```
 * **Body:**
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:6b06e630718594e92c376ba6526e10530fe0be389135ab2bf08c6acd038680d9 -->
+
 ```json
 {
-  "train_no": "12661",
+  "train_number": "12661",
   "source": "MS",
   "destination": "SCT",
   "travel_class": "SL",
-  "journey_date": "15-11-2026",
-  "alert_on_status": ["AVAILABLE", "RAC"]
+  "journey_date": "2026-11-15",
+  "condition": {
+    "kind": "reaches_threshold",
+    "target_status": "RAC",
+    "maximum_position": 50
+  }
 }
 ```
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ---
 

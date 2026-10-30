@@ -1,3 +1,4 @@
+/* global __dirname */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -10,6 +11,7 @@ function loadNotificationService({
   initialPermissionStatus = 'undetermined',
   requestedPermissionStatus = 'granted',
   devicePushToken = 'fcm_native_test_token_123',
+  devicePushType = platform,
   registerSuccess = true,
 } = {}) {
   const filePath = path.join(__dirname, '../src/services/notificationService.ts');
@@ -28,6 +30,7 @@ function loadNotificationService({
   let registeredPlatform = null;
   let savedAuthToken = null;
   let channelConfig = null;
+  let expoTokenRequests = 0;
 
   const modules = {
     'react-native': {
@@ -43,9 +46,12 @@ function loadNotificationService({
       requestPermissionsAsync: async () => ({ status: requestedPermissionStatus }),
       getDevicePushTokenAsync: async () => {
         if (!devicePushToken) throw new Error('No device push token available');
-        return { data: devicePushToken };
+        return { type: devicePushType, data: devicePushToken };
       },
-      getExpoPushTokenAsync: async () => ({ data: 'expo_fallback_token' }),
+      getExpoPushTokenAsync: async () => {
+        expoTokenRequests += 1;
+        return { data: 'ExponentPushToken[synthetic]' };
+      },
     },
     'expo-device': {
       isDevice: true,
@@ -91,6 +97,7 @@ function loadNotificationService({
     getRegisteredPlatform: () => registeredPlatform,
     getSavedAuthToken: () => savedAuthToken,
     getChannelConfig: () => channelConfig,
+    getExpoTokenRequests: () => expoTokenRequests,
   };
 }
 
@@ -147,3 +154,22 @@ test('checkNotificationPermission returns true when granted and false when denie
   });
   assert.equal(await deniedService.checkNotificationPermission(), false);
 });
+
+for (const options of [
+  { platform: 'ios', devicePushType: 'ios', devicePushToken: 'apns_synthetic' },
+  { devicePushType: 'web', devicePushToken: { endpoint: 'https://example.invalid' } },
+  { devicePushType: 'android', devicePushToken: { invalid: true } },
+  { devicePushToken: null },
+  { devicePushToken: '   ' },
+]) {
+  test(`FCM registration rejects unsupported or missing native tokens: ${JSON.stringify(options)}`, async () => {
+    const service = loadNotificationService(options);
+    const result = await service.exports.requestNotificationPermissionsAndRegisterDevice();
+    assert.equal(result.granted, true);
+    assert.equal(result.token, null);
+    assert.ok(result.error);
+    assert.equal(service.getRegisteredToken(), null);
+    assert.equal(service.getSavedAuthToken(), null);
+    assert.equal(service.getExpoTokenRequests(), 0);
+  });
+}

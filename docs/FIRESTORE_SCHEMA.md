@@ -44,7 +44,29 @@ backend ownership checks remain mandatory.
 reads, writes, and deletes require none. Add an index only alongside the concrete query
 that needs it in a later approved phase.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:abb2d97607fad4790290f391c1511603d7a82db65ebc2a2003d0152f137f1677 -->
+
+## Staging dispatcher scan
+
+The staging dispatcher queries active reminders in descending `createdAt` and
+full document-path order, using the existing collection-group `status` /
+`createdAt` composite index. Every schema-v1 reminder has `createdAt`; watches
+without `lastCheckedAt` remain eligible. Each tick fetches at most its requested
+limit (50 by default) and processes batches of at most five concurrently.
+
+`dispatcherState/reminders` stores the last completed batch's `createdAt`
+(timestamp) and `path` (full reminder document path). The cursor persists across
+service restarts. An empty page resets the cursor for the next sweep. Failed,
+malformed, or expired watches do not block later pages; provider failures retain
+the previous observation for retry on the next sweep. This is a scan cursor,
+not a lease: overlapping scheduler invocations may repeat work, with the outbox
+retaining its existing transition idempotency behavior.
+
 ## Credential and validation status
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 The service-account key must remain outside the repository. Local execution may
 reference it through `GOOGLE_APPLICATION_CREDENTIALS`; deployed environments

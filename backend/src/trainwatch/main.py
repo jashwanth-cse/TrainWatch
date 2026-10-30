@@ -1,5 +1,6 @@
 """FastAPI application factory with credential-free dependency injection."""
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -45,12 +46,34 @@ class FirestoreWatchDispatcher:
         self._notification_dispatcher = notification_dispatcher
 
     async def dispatch_due_jobs(self, *, now: datetime, limit: int = 50) -> int:
+        if limit <= 0:
+            return 0
+
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        # createdAt exists on every schema-v1 watch; lastCheckedAt does not.
+        # Persist the cursor so cold starts also progress beyond the first page.
+        cursor_ref = self._client.collection("dispatcherState").document("reminders")
         try:
-            docs = await self._client.collection_group("reminders").get()
+            cursor = (await cursor_ref.get()).to_dict() or {}
+            query = (
+                self._client.collection_group("reminders")
+                .where(filter=FieldFilter("status", "==", "active"))  # type: ignore[no-untyped-call]
+                .order_by("createdAt", direction="DESCENDING")
+                .order_by("__name__", direction="DESCENDING")
+                .limit(limit)
+            )
+            if cursor:
+                query = query.start_after(
+                    {
+                        "createdAt": cursor["createdAt"],
+                        "__name__": self._client.document(cursor["path"]),
+                    }
+                )
+            docs = await query.get()
         except Exception:
             return 0
 
-        active_count = 0
         from trainwatch.domain.alerts import (
             AlertKind,
             _extract_available_seats,
@@ -65,14 +88,13 @@ class FirestoreWatchDispatcher:
         from trainwatch.infrastructure.firestore.watches import _decode
         from trainwatch.ports.notifications import NotificationOutboxItem
 
-        for doc in docs:
+        async def process_doc(doc: Any) -> int:
             data = doc.to_dict() or {}
             if data.get("status") != "active":
-                continue
-            active_count += 1
+                return 0
 
             if self._availability_provider is None or self._outbox is None:
-                continue
+                return 1
 
             try:
                 owner_id = str(data.get("ownerId") or "")
@@ -85,11 +107,11 @@ class FirestoreWatchDispatcher:
                 watch_id = str(getattr(doc, "id", "") or data.get("watchId", "unknown"))
                 watch = _decode(data, watch_id=watch_id, owner_id=owner_id)
                 if now.date() > watch.query.journey_date:
-                    continue
+                    return 1
 
                 obs = await self._availability_provider.fetch(watch.query)
                 if obs.snapshot is None:
-                    continue
+                    return 1
 
                 snap = obs.snapshot
                 seats = _extract_available_seats(snap.raw_availability)
@@ -173,14 +195,28 @@ class FirestoreWatchDispatcher:
                 if hasattr(doc_ref, "update"):
                     await doc_ref.update(update_fields)  # type: ignore[union-attr]
             except Exception:
-                continue
+                return 1
+            return 1
+
+        active_count = 0
+        for offset in range(0, len(docs), 5):
+            batch = docs[offset : offset + 5]
+            active_count += sum(await asyncio.gather(*(process_doc(doc) for doc in batch)))
+            # Advance only completed batches. Failures retain their alert baseline
+            # and get another attempt on the next sweep without blocking others.
+            last_doc = batch[-1]
+            await cursor_ref.set(
+                {"createdAt": last_doc.to_dict()["createdAt"], "path": last_doc.reference.path}
+            )
+        if not docs:
+            await cursor_ref.set({})
 
         if self._notification_dispatcher is not None:
             await self._notification_dispatcher.dispatch_pending(
                 batch_size=50, lease_seconds=60, now=now
             )
 
-        return min(active_count, limit)
+        return active_count
 
 
 def create_app(
