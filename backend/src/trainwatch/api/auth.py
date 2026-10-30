@@ -1,4 +1,4 @@
-"""Bearer-token extraction and injectable identity verification."""
+"""FastAPI dependency for extracting and verifying bearer tokens."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
 
-from fastapi import Header
+from fastapi import Header, Request
 
 from trainwatch.api.errors import ApiError
 from trainwatch.ports.identity import AuthenticatedUser, TokenVerificationError, TokenVerifier
@@ -17,11 +17,10 @@ _DEVICE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
 
 
 class RejectingTokenVerifier:
-    """Safe default used until an approved Firebase adapter is configured."""
+    """Default verifier rejecting all tokens with a verification error."""
 
     async def verify(self, bearer_value: str) -> AuthenticatedUser:
-        """Reject every token without inspecting credentials or contacting a service."""
-        del bearer_value
+        """Reject every token presentation."""
         raise TokenVerificationError
 
 
@@ -61,15 +60,17 @@ def _bearer_token(authorization: str | None) -> str:
             message="Authentication required",
             headers=_BEARER_CHALLENGE,
         )
-    scheme, separator, bearer_value = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not separator or not bearer_value or " " in bearer_value:
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer" or not parts[1]:
         raise ApiError(
             status_code=401,
             code="unauthorized",
             message="Authentication required",
             headers=_BEARER_CHALLENGE,
         )
-    return bearer_value
+
+    return parts[1]
 
 
 def build_current_user_dependency(
@@ -78,17 +79,32 @@ def build_current_user_dependency(
     """Bind one verifier to the FastAPI dependency used by protected routes."""
 
     async def current_user(
+        request: Request,
         authorization: Annotated[str | None, Header()] = None,
     ) -> AuthenticatedUser:
-        bearer_value = _bearer_token(authorization)
+        """Verify once per request and share the result with rate limiting and routes."""
+        cached_user = getattr(request.state, "user", None)
+        if isinstance(cached_user, AuthenticatedUser):
+            return cached_user
+        cached_error = getattr(request.state, "authentication_error", None)
+        if isinstance(cached_error, ApiError):
+            raise cached_error
         try:
-            return await verifier.verify(bearer_value)
+            bearer_value = _bearer_token(authorization)
+            user = await verifier.verify(bearer_value)
         except TokenVerificationError:
-            raise ApiError(
+            error = ApiError(
                 status_code=401,
                 code="unauthorized",
                 message="Authentication required",
                 headers=_BEARER_CHALLENGE,
-            ) from None
+            )
+            request.state.authentication_error = error
+            raise error from None
+        except ApiError as exc:
+            request.state.authentication_error = exc
+            raise
+        request.state.user = user
+        return user
 
     return current_user

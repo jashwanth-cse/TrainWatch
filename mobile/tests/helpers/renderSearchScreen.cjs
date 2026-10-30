@@ -21,6 +21,13 @@ function renderSearchScreen(name, { storage = {}, params = {}, resultType = 'dir
     },
     useRef(initial) { const slot = index++; slots[slot] ??= { current: initial }; return slots[slot]; },
     useMemo(fn) { index++; return fn(); },
+    useCallback(fn, dependencies = []) {
+      const slot = index++, previous = slots[slot];
+      if (!previous || dependencies.some((value, i) => !Object.is(value, previous.dependencies[i]))) {
+        slots[slot] = { dependencies, callback: fn };
+      }
+      return slots[slot].callback;
+    },
     useEffect(fn, dependencies) {
       const slot = index++, previous = slots[slot];
       if (!previous || dependencies.some((value, i) => !Object.is(value, previous.dependencies[i]))) {
@@ -78,6 +85,17 @@ function renderSearchScreen(name, { storage = {}, params = {}, resultType = 'dir
           const component = id.split('/').at(-1); return { [component]: component };
         }
         if (id === '../utils/availabilityHelper') return { parseAvailabilityStatus: () => ({}) };
+        if (id === '../services/watchService') return {
+          watchService: {
+            listWatches: async () => [],
+            createWatch: async () => ({}),
+            getWatch: async () => ({}),
+            updateWatchStatus: async () => ({}),
+            updateWatchCondition: async () => ({}),
+            deleteWatch: async () => ({}),
+          },
+        };
+        if (id === '../services/notificationService') return { requestNotificationPermissionsAndRegisterDevice: async () => ({ granted: true }) };
         throw new Error(`Unexpected screen dependency: ${id}`);
       },
     });

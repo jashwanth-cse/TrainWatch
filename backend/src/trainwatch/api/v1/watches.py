@@ -112,7 +112,7 @@ async def get_current_user(
 ) -> AuthenticatedUser:
     """Resolve caller identity using the application auth dependency."""
     dependency = request.app.state.current_user_dependency
-    user: AuthenticatedUser = await dependency(authorization=authorization)
+    user: AuthenticatedUser = await dependency(request=request, authorization=authorization)
     return user
 
 

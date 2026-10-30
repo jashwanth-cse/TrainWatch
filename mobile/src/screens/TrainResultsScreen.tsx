@@ -32,6 +32,7 @@ import { DatePickerModal, DateItem } from '../components/DatePickerModal';
 import { StationSearchModal } from '../components/StationSearchModal';
 import { TrainWatchLoader } from '../components/TrainWatchLoader';
 import { ResponsiveButton } from '../components/ResponsiveButton';
+import { resolveQuota } from '../utils/quota';
 import { parseAvailabilityStatus } from '../utils/availabilityHelper';
 import {
   ArrowLeft,
@@ -95,6 +96,7 @@ export const TrainResultsScreen: React.FC = () => {
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadMoreTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const nearbyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Availability & Alert Modal State
   const [selectedTrainForModal, setSelectedTrainForModal] = useState<TrainItem | null>(null);
@@ -220,7 +222,8 @@ export const TrainResultsScreen: React.FC = () => {
       source: islandSource,
       destination: islandDestination,
       travelClass: selectedClass,
-      quota,
+      quota: resolveQuota(quota).label,
+      quotaCode: quota,
     });
     void addRecentStation(islandSource);
     void addRecentStation(islandDestination);
@@ -277,7 +280,16 @@ export const TrainResultsScreen: React.FC = () => {
 
     return () => {
       active = false;
-      if (loadMoreTimeout.current) clearTimeout(loadMoreTimeout.current);
+      if (loadMoreTimeout.current !== null) {
+        clearTimeout(loadMoreTimeout.current);
+        loadMoreTimeout.current = null;
+      }
+      if (nearbyTimeout.current !== null) {
+        clearTimeout(nearbyTimeout.current);
+        nearbyTimeout.current = null;
+      }
+      setLoadingMore(false);
+      setRevealingNearby(false);
     };
   }, [currentSource, currentDestination, currentDate, quota, selectedClass, refreshIndex]);
 
@@ -296,8 +308,10 @@ export const TrainResultsScreen: React.FC = () => {
 
   // Handle user tapping "Show trains from Nearby Stations"
   const handleRevealNearby = () => {
+    if (nearbyTimeout.current !== null) return;
     setRevealingNearby(true);
-    setTimeout(() => {
+    nearbyTimeout.current = setTimeout(() => {
+      nearbyTimeout.current = null;
       setRevealingNearby(false);
       setShowNearby(true);
       setPage(1);
@@ -336,6 +350,7 @@ export const TrainResultsScreen: React.FC = () => {
 
     setLoadingMore(true);
     loadMoreTimeout.current = setTimeout(() => {
+      loadMoreTimeout.current = null;
       setPage((prev) => prev + 1);
       setLoadingMore(false);
     }, 450);
