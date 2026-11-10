@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-notifications/build/TopicSubscriptionModule.android.js b/node_modules/expo-notifications/build/TopicSubscriptionModule.android.js
+index 4ad9aff..a0e0252 100644
+--- a/node_modules/expo-notifications/build/TopicSubscriptionModule.android.js
++++ b/node_modules/expo-notifications/build/TopicSubscriptionModule.android.js
+@@ -1,4 +1,14 @@
+-import { requireNativeModule } from 'expo';
+-export default requireNativeModule('ExpoTopicSubscriptionModule');
++import { requireOptionalNativeModule } from 'expo';
+ 
+-//# sourceMappingURL=TopicSubscriptionModule.android.js.map
++const nativeModule = typeof requireOptionalNativeModule === 'function'
++  ? requireOptionalNativeModule('ExpoTopicSubscriptionModule')
++  : null;
++
++const fallback = {
++  addListener: () => {},
++  removeListeners: () => {},
++  subscribeToTopicAsync: () => Promise.resolve(null),
++  unsubscribeFromTopicAsync: () => Promise.resolve(null),
++};
++
++export default nativeModule || fallback;

@@ -7,15 +7,21 @@ import { authService } from './authService';
 /**
  * Configure default notification behavior when app is in foreground
  */
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+try {
+  if (typeof Notifications?.setNotificationHandler === 'function') {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        shouldShowBanner: true,
+        shouldShowList: true,
+      }),
+    });
+  }
+} catch {
+  // Silent fallback in environments without notification handlers (e.g. Expo Go / web)
+}
 
 export const NOTIFICATION_CHANNEL_ID = 'trainwatch-alerts';
 
