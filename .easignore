@@ -1,0 +1,7 @@
+# Root EAS ignore
+node_modules/
+.venv/
+venv/
+build/
+dist/
+!mobile/google-services.json
