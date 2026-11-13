@@ -59,22 +59,22 @@ jobs:
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
-      # Step 6.5: Configure google-services.json for Firebase
-      # Uses secret GOOGLE_SERVICES_JSON / GOOGLE_SERVICES_BASE64 if provided,
-      # otherwise falls back to google-services.json.example for prebuild
+      # Step 6.5: Configure google-services.json for Firebase FCM
       - name: Setup google-services.json
         working-directory: mobile
+        env:
+          GOOGLE_SERVICES_RAW: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
-          if [ -n "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
-            echo "${{ secrets.GOOGLE_SERVICES_JSON }}" > google-services.json
-            echo "Loaded google-services.json from GOOGLE_SERVICES_JSON secret."
-          elif [ -n "${{ secrets.GOOGLE_SERVICES_BASE64 }}" ]; then
-            echo "${{ secrets.GOOGLE_SERVICES_BASE64 }}" | base64 -d > google-services.json
-            echo "Decoded google-services.json from GOOGLE_SERVICES_BASE64 secret."
-          elif [ ! -f "google-services.json" ]; then
-            echo "google-services.json not found; copying template fallback."
-            cp google-services.json.example google-services.json
+          if [ -z "$GOOGLE_SERVICES_RAW" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON repository secret is missing. FCM notifications require google-services.json."
+            exit 1
           fi
+          if echo "$GOOGLE_SERVICES_RAW" | base64 -d >/dev/null 2>&1 && [[ "$GOOGLE_SERVICES_RAW" != *"{"* ]]; then
+            echo "$GOOGLE_SERVICES_RAW" | base64 -d > google-services.json
+          else
+            echo "$GOOGLE_SERVICES_RAW" > google-services.json
+          fi
+          echo "Successfully configured google-services.json from GOOGLE_SERVICES_JSON secret."
 
       # Step 6.6: Extract App Version from mobile/app.json
       - name: Extract App Version
