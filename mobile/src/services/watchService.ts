@@ -1,5 +1,6 @@
 import { authService } from './authService';
 import { getTransportApiBaseUrl } from './trainService';
+import { sanitizeError } from '../utils/errorUtils';
 
 export type WatchConditionKind =
   | 'becomes_available'
@@ -84,8 +85,31 @@ class WatchService {
     };
   }
 
+  private async safeFetch(url: string, init?: RequestInit): Promise<Response> {
+    try {
+      return await fetch(url, init);
+    } catch (err: unknown) {
+      const sanitized = sanitizeError(err);
+      throw new Error(sanitized.userMessage);
+    }
+  }
+
+  private sanitizeResponseError(defaultMsg: string, errorJson?: any): Error {
+    let msg = defaultMsg;
+    if (errorJson?.error?.message) {
+      msg = errorJson.error.message;
+    } else if (errorJson?.detail) {
+      msg = typeof errorJson.detail === 'string' ? errorJson.detail : JSON.stringify(errorJson.detail);
+    }
+    const sanitized = sanitizeError(new Error(msg));
+    return new Error(sanitized.userMessage);
+  }
+
   async createWatch(input: CreateWatchInput): Promise<WatchRecord> {
     const baseUrl = getTrainWatchApiBaseUrl();
+    if (!baseUrl) {
+      throw new Error('Seat alert service is not configured. Please check environment configuration.');
+    }
     const headers = await this.getAuthHeader();
     const isoDate = normalizeDateToIso(input.journeyDate);
 
@@ -99,28 +123,20 @@ class WatchService {
       condition: input.condition || { kind: 'becomes_available' },
     };
 
-    const response = await fetch(`${baseUrl}/api/v1/watches`, {
+    const response = await this.safeFetch(`${baseUrl}/api/v1/watches`, {
       method: 'POST',
       headers,
       body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-      let errorMessage = `Failed to create alert (${response.status})`;
+      let errorJson: any = null;
       try {
-        const errorJson = await response.json();
-        if (errorJson?.error?.message) {
-          errorMessage = errorJson.error.message;
-        } else if (errorJson?.detail) {
-          errorMessage =
-            typeof errorJson.detail === 'string'
-              ? errorJson.detail
-              : JSON.stringify(errorJson.detail);
-        }
+        errorJson = await response.json();
       } catch {
         // ignore fallback
       }
-      throw new Error(errorMessage);
+      throw this.sanitizeResponseError(`Failed to create alert (${response.status})`, errorJson);
     }
 
     const data = await response.json();
@@ -129,22 +145,24 @@ class WatchService {
 
   async listWatches(): Promise<WatchRecord[]> {
     const baseUrl = getTrainWatchApiBaseUrl();
+    if (!baseUrl) {
+      throw new Error('Seat alert service is not configured. Please check environment configuration.');
+    }
     const headers = await this.getAuthHeader();
 
-    const response = await fetch(`${baseUrl}/api/v1/watches`, {
+    const response = await this.safeFetch(`${baseUrl}/api/v1/watches`, {
       method: 'GET',
       headers,
     });
 
     if (!response.ok) {
-      let errorMessage = `Failed to list alerts (${response.status})`;
+      let errorJson: any = null;
       try {
-        const errorJson = await response.json();
-        if (errorJson?.error?.message) errorMessage = errorJson.error.message;
+        errorJson = await response.json();
       } catch {
         // ignore fallback
       }
-      throw new Error(errorMessage);
+      throw this.sanitizeResponseError(`Failed to list alerts (${response.status})`, errorJson);
     }
 
     const data = await response.json();
@@ -154,15 +172,18 @@ class WatchService {
 
   async getWatch(watchId: string): Promise<WatchRecord> {
     const baseUrl = getTrainWatchApiBaseUrl();
+    if (!baseUrl) {
+      throw new Error('Seat alert service is not configured. Please check environment configuration.');
+    }
     const headers = await this.getAuthHeader();
 
-    const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
+    const response = await this.safeFetch(`${baseUrl}/api/v1/watches/${watchId}`, {
       method: 'GET',
       headers,
     });
 
     if (!response.ok) {
-      throw new Error(`Watch not found (${response.status})`);
+      throw this.sanitizeResponseError(`Watch not found (${response.status})`);
     }
 
     const data = await response.json();
@@ -174,23 +195,25 @@ class WatchService {
     status: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED'
   ): Promise<WatchRecord> {
     const baseUrl = getTrainWatchApiBaseUrl();
+    if (!baseUrl) {
+      throw new Error('Seat alert service is not configured. Please check environment configuration.');
+    }
     const headers = await this.getAuthHeader();
 
-    const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
+    const response = await this.safeFetch(`${baseUrl}/api/v1/watches/${watchId}`, {
       method: 'PATCH',
       headers,
       body: JSON.stringify({ status: status.toLowerCase() }),
     });
 
     if (!response.ok) {
-      let errorMessage = `Failed to update alert (${response.status})`;
+      let errorJson: any = null;
       try {
-        const errorJson = await response.json();
-        if (errorJson?.error?.message) errorMessage = errorJson.error.message;
+        errorJson = await response.json();
       } catch {
         // ignore fallback
       }
-      throw new Error(errorMessage);
+      throw this.sanitizeResponseError(`Failed to update alert (${response.status})`, errorJson);
     }
 
     const data = await response.json();
@@ -202,23 +225,25 @@ class WatchService {
     condition: WatchCondition
   ): Promise<WatchRecord> {
     const baseUrl = getTrainWatchApiBaseUrl();
+    if (!baseUrl) {
+      throw new Error('Seat alert service is not configured. Please check environment configuration.');
+    }
     const headers = await this.getAuthHeader();
 
-    const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
+    const response = await this.safeFetch(`${baseUrl}/api/v1/watches/${watchId}`, {
       method: 'PATCH',
       headers,
       body: JSON.stringify({ condition }),
     });
 
     if (!response.ok) {
-      let errorMessage = `Failed to update alert condition (${response.status})`;
+      let errorJson: any = null;
       try {
-        const errorJson = await response.json();
-        if (errorJson?.error?.message) errorMessage = errorJson.error.message;
+        errorJson = await response.json();
       } catch {
         // ignore fallback
       }
-      throw new Error(errorMessage);
+      throw this.sanitizeResponseError(`Failed to update alert condition (${response.status})`, errorJson);
     }
 
     const data = await response.json();
@@ -227,15 +252,18 @@ class WatchService {
 
   async deleteWatch(watchId: string): Promise<void> {
     const baseUrl = getTrainWatchApiBaseUrl();
+    if (!baseUrl) {
+      throw new Error('Seat alert service is not configured. Please check environment configuration.');
+    }
     const headers = await this.getAuthHeader();
 
-    const response = await fetch(`${baseUrl}/api/v1/watches/${watchId}`, {
+    const response = await this.safeFetch(`${baseUrl}/api/v1/watches/${watchId}`, {
       method: 'DELETE',
       headers,
     });
 
     if (!response.ok && response.status !== 404) {
-      throw new Error(`Failed to delete alert (${response.status})`);
+      throw this.sanitizeResponseError(`Failed to delete alert (${response.status})`);
     }
   }
 }

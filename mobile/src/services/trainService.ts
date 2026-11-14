@@ -39,6 +39,8 @@ export interface TrainSearchResults {
   latency_ms?: number;
 }
 
+import { sanitizeError } from '../utils/errorUtils';
+
 export interface SearchTrainsParams {
   source: string;
   destination: string;
@@ -75,10 +77,13 @@ export interface LiveAvailabilityResult {
 }
 
 export function getTransportApiBaseUrl(): string {
-  if (process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL) {
-    return process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL.replace(/\/+$/, '');
+  const envUrl =
+    process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL ||
+    process.env.EXPO_PUBLIC_TRAINWATCH_API_URL;
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, '');
   }
-  return 'https://dreamdestiny.cloud.run';
+  return '';
 }
 
 /**
@@ -86,6 +91,9 @@ export function getTransportApiBaseUrl(): string {
  */
 export async function searchTrains(params: SearchTrainsParams): Promise<TrainSearchResults> {
   const baseUrl = getTransportApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error('API service endpoint is not configured. Please check environment configuration.');
+  }
   const url = new URL(`${baseUrl}/api/v1/trains/search`);
 
   url.searchParams.set('from', params.source.trim().toUpperCase());
@@ -102,12 +110,18 @@ export async function searchTrains(params: SearchTrainsParams): Promise<TrainSea
     url.searchParams.set('travelClass', params.travelClass);
   }
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (netErr) {
+    const sanitized = sanitizeError(netErr);
+    throw new Error(sanitized.userMessage);
+  }
 
   if (!response.ok) {
     let errorMsg = `Server error (${response.status})`;
@@ -118,7 +132,8 @@ export async function searchTrains(params: SearchTrainsParams): Promise<TrainSea
     } catch {
       // Fallback to HTTP error
     }
-    throw new Error(errorMsg);
+    const sanitized = sanitizeError(new Error(errorMsg));
+    throw new Error(sanitized.userMessage);
   }
 
   const json = await response.json();
@@ -147,6 +162,9 @@ export async function fetchLiveAvailability(
   params: LiveAvailabilityParams
 ): Promise<LiveAvailabilityResult> {
   const baseUrl = getTransportApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error('API service endpoint is not configured. Please check environment configuration.');
+  }
   const url = new URL(`${baseUrl}/api/v1/trains/availability`);
 
   url.searchParams.set('trainNo', params.trainNo.trim());
@@ -156,12 +174,18 @@ export async function fetchLiveAvailability(
   url.searchParams.set('date', params.date.trim());
   url.searchParams.set('quota', params.quota || 'GN');
 
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (netErr) {
+    const sanitized = sanitizeError(netErr);
+    throw new Error(sanitized.userMessage);
+  }
 
   if (!response.ok) {
     let errorMsg = `Availability error (${response.status})`;
@@ -171,7 +195,8 @@ export async function fetchLiveAvailability(
     } catch {
       // Fallback
     }
-    throw new Error(errorMsg);
+    const sanitized = sanitizeError(new Error(errorMsg));
+    throw new Error(sanitized.userMessage);
   }
 
   return await response.json();

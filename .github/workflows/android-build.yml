@@ -1,0 +1,190 @@
+name: Android APK Build (EAS Local)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if app version matches latest release'
+        required: false
+        default: false
+        type: boolean
+  push:
+    branches:
+      - build
+
+concurrency:
+  group: android-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  check-version:
+    name: Check App Version
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.version-check.outputs.should_build }}
+      app_version: ${{ steps.version-check.outputs.app_version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Compare App Version with Latest Release
+        id: version-check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_BUILD: ${{ inputs.force_build }}
+        run: |
+          # 1. Read app version from mobile/app.json
+          RAW_VERSION=$(node -p "require('./mobile/app.json').expo.version")
+          APP_VER_NORM="${RAW_VERSION#v}"
+          APP_TAG="v$APP_VER_NORM"
+          echo "Target App Version: $APP_TAG"
+
+          # 2. Fetch latest release tag from GitHub repository
+          LATEST_TAG=$(gh release view --json tagName -q .tagName 2>/dev/null || echo "")
+          LATEST_TAG_NORM="${LATEST_TAG#v}"
+          echo "Latest GitHub Release: ${LATEST_TAG:-None}"
+
+          # 3. Determine if build should execute
+          if [ "$FORCE_BUILD" = "true" ]; then
+            echo "Force build requested via workflow_dispatch."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "app_version=$APP_TAG" >> "$GITHUB_OUTPUT"
+          elif [ -n "$LATEST_TAG_NORM" ] && [ "$APP_VER_NORM" = "$LATEST_TAG_NORM" ]; then
+            echo "::notice::App version ($APP_TAG) matches latest release ($LATEST_TAG). Skipping build."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "app_version=$APP_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version detected ($APP_TAG vs ${LATEST_TAG:-None}). Proceeding with build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "app_version=$APP_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-android:
+    name: Build Android APK & Publish Release
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APP_VERSION: ${{ needs.check-version.outputs.app_version }}
+      ANDROID_HOME: /usr/local/lib/android/sdk
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configure Gradle JVM & Concurrency
+        run: |
+          mkdir -p ~/.gradle
+          cat << 'EOF' > ~/.gradle/gradle.properties
+          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          org.gradle.vfs.watch=false
+          EOF
+
+      - name: Setup Gradle Build Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli --no-audit --no-fund
+
+      - name: Setup google-services.json
+        working-directory: mobile
+        env:
+          GOOGLE_SERVICES_RAW: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_RAW" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON repository secret is missing. FCM notifications require google-services.json."
+            exit 1
+          fi
+          if echo "$GOOGLE_SERVICES_RAW" | base64 -d >/dev/null 2>&1 && [[ "$GOOGLE_SERVICES_RAW" != *"{"* ]]; then
+            echo "$GOOGLE_SERVICES_RAW" | base64 -d > google-services.json
+          else
+            echo "$GOOGLE_SERVICES_RAW" > google-services.json
+          fi
+          echo "Successfully configured google-services.json from GOOGLE_SERVICES_JSON secret."
+
+      - name: Setup build environment variables
+        working-directory: mobile
+        env:
+          TRAINWATCH_API_URL: ${{ secrets.EXPO_PUBLIC_TRAINWATCH_API_URL }}
+          TRANSPORT_SERVICE_URL: ${{ secrets.EXPO_PUBLIC_TRANSPORT_SERVICE_URL }}
+        run: |
+          if [ -n "$TRAINWATCH_API_URL" ]; then
+            echo "EXPO_PUBLIC_TRAINWATCH_API_URL=$TRAINWATCH_API_URL" >> .env.local
+            echo "Configured EXPO_PUBLIC_TRAINWATCH_API_URL."
+          else
+            echo "::warning::EXPO_PUBLIC_TRAINWATCH_API_URL repository secret is not set."
+          fi
+          if [ -n "$TRANSPORT_SERVICE_URL" ]; then
+            echo "EXPO_PUBLIC_TRANSPORT_SERVICE_URL=$TRANSPORT_SERVICE_URL" >> .env.local
+            echo "Configured EXPO_PUBLIC_TRANSPORT_SERVICE_URL."
+          else
+            echo "::warning::EXPO_PUBLIC_TRANSPORT_SERVICE_URL repository secret is not set."
+          fi
+
+      - name: Build Android APK with EAS local
+        working-directory: mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_PUBLIC_TRAINWATCH_API_URL: ${{ secrets.EXPO_PUBLIC_TRAINWATCH_API_URL }}
+          EXPO_PUBLIC_TRANSPORT_SERVICE_URL: ${{ secrets.EXPO_PUBLIC_TRANSPORT_SERVICE_URL }}
+        run: |
+          mkdir -p "${{ github.workspace }}/build"
+          eas build \
+            --platform android \
+            --profile preview \
+            --local \
+            --non-interactive \
+            --output "${{ github.workspace }}/build/TrainWatch-${{ env.APP_VERSION }}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: ${{ github.workspace }}/build/TrainWatch-${{ env.APP_VERSION }}.apk
+          retention-days: 14
+
+      - name: Publish APK to GitHub Release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.APP_VERSION }}
+          name: TrainWatch ${{ env.APP_VERSION }} - Performance Improvements
+          body: |
+            Release ${{ env.APP_VERSION }}
+
+            - Performance improvements and faster response times for live train search
+            - Improved network connectivity handling and offline recovery
+            - Enhanced seat alert tracking reliability
+            - Visual refinements and general stability fixes
+          files: |
+            ${{ github.workspace }}/build/TrainWatch-${{ env.APP_VERSION }}.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

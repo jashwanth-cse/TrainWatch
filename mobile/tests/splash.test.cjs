@@ -74,6 +74,18 @@ function fixture() {
     '../services/notificationService': { initializeNotificationChannel: async () => {}, checkNotificationPermission: async () => false, requestNotificationPermissionsAndRegisterDevice: async () => ({ granted: true }) },
     '../theme/tokens': { colors: { background: '#fff' } },
     '../../assets/brand-emblem.png': 'synthetic-emblem',
+    'expo-constants': { expoConfig: { version: '1.0.0' } },
+    '../services/updateService': {
+      checkForAppUpdate: async () => ({ hasUpdate: false }),
+      checkPostUpdateToast: async () => ({ isNewVersion: false }),
+      dismissUpdate: async () => {},
+      downloadAndInstallApk: async () => ({ success: true }),
+    },
+    '../components/UpdatePromptModal': { UpdatePromptModal: () => null },
+    '../components/UpdateToast': { UpdateToast: () => null },
+    '../services/networkService': {
+      checkNetworkStatus: async () => ({ isConnected: true, isInternetReachable: true }),
+    },
   };
   function load(file) {
     const source = readFileSync(path.join(path.dirname(require.resolve('../package.json')), file), 'utf8');

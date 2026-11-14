@@ -66,6 +66,14 @@ function loadAvailabilityDetailModal() {
       AlertCircle: 'AlertCircle',
       TrendingUp: 'TrendingUp',
       Check: 'Check',
+      Wifi: 'Wifi',
+      WifiOff: 'WifiOff',
+    },
+    '../utils/errorUtils': {
+      sanitizeError: (err) => ({ userMessage: err instanceof Error ? err.message : String(err) }),
+    },
+    '../services/networkService': {
+      openNetworkSettings: async () => {},
     },
     '../utils/availabilityHelper': {
       parseAvailabilityStatus: () => ({

@@ -37,6 +37,11 @@ import {
   ArrowRight,
   Bell,
 } from 'lucide-react-native';
+import {
+  addNetworkListener,
+  openNetworkSettings,
+  getCachedNetworkStatus,
+} from '../services/networkService';
 import { colors } from '../theme/tokens';
 import { watchService } from '../services/watchService';
 
@@ -63,6 +68,15 @@ export const HomeScreen: React.FC = () => {
   const [travelClass, setTravelClass] = useState<string>('All Classes');
   const [quota, setQuota] = useState<string>('General');
   const [quotaCode, setQuotaCode] = useState<string>('GN');
+  const [isOnline, setIsOnline] = useState(true);
+
+  // Network reachability listener
+  useEffect(() => {
+    const unsubscribe = addNetworkListener((status) => {
+      setIsOnline(status.isInternetReachable);
+    });
+    return unsubscribe;
+  }, []);
   const [hasActiveAlerts, setHasActiveAlerts] = useState(false);
 
   useEffect(() => {
@@ -161,12 +175,7 @@ export const HomeScreen: React.FC = () => {
     setQuotaCode(option.code);
   };
 
-  const handleSearchTrains = () => {
-    if (source.code === destination.code) {
-      Alert.alert('Invalid route', 'Departure and destination stations must be different.');
-      return;
-    }
-
+  const proceedToResults = () => {
     void saveLastSearch({
       source,
       destination,
@@ -188,6 +197,28 @@ export const HomeScreen: React.FC = () => {
         travelClass,
       },
     });
+  };
+
+  const handleSearchTrains = () => {
+    if (source.code === destination.code) {
+      Alert.alert('Invalid route', 'Departure and destination stations must be different.');
+      return;
+    }
+
+    if (!isOnline) {
+      Alert.alert(
+        'No Internet Connection',
+        'You appear to be offline. Would you like to enable mobile data or Wi-Fi?',
+        [
+          { text: 'Settings', onPress: () => void openNetworkSettings() },
+          { text: 'Search Anyway', onPress: proceedToResults },
+          { text: 'Cancel', style: 'cancel' },
+        ]
+      );
+      return;
+    }
+
+    proceedToResults();
   };
 
   const rotateInterpolation = swapRotate.interpolate({
@@ -450,6 +481,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 0,
     marginBottom: 4,
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(220, 38, 38, 0.95)',
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    marginTop: 6,
+    marginBottom: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  offlineBannerText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.1,
   },
   captionContainer: {
     alignItems: 'center',

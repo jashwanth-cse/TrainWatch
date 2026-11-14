@@ -45,3 +45,8 @@ google-services.json
 GoogleService-Info.plist
 !google-services.json.example
 !GoogleService-Info.plist.example
+
+# Keystores, credentials and build outputs
+*.keystore
+credentials.json
+build/
