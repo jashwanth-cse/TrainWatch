@@ -124,14 +124,20 @@ jobs:
       - name: Setup build environment variables
         working-directory: mobile
         env:
-          API_URL: ${{ secrets.EXPO_PUBLIC_TRAINWATCH_API_URL }}
+          TRAINWATCH_API_URL: ${{ secrets.EXPO_PUBLIC_TRAINWATCH_API_URL }}
+          TRANSPORT_SERVICE_URL: ${{ secrets.EXPO_PUBLIC_TRANSPORT_SERVICE_URL }}
         run: |
-          if [ -n "$API_URL" ]; then
-            echo "EXPO_PUBLIC_TRAINWATCH_API_URL=$API_URL" >> .env.local
-            echo "EXPO_PUBLIC_TRANSPORT_SERVICE_URL=$API_URL" >> .env.local
-            echo "Successfully configured API URL environment variables."
+          if [ -n "$TRAINWATCH_API_URL" ]; then
+            echo "EXPO_PUBLIC_TRAINWATCH_API_URL=$TRAINWATCH_API_URL" >> .env.local
+            echo "Configured EXPO_PUBLIC_TRAINWATCH_API_URL."
           else
             echo "::warning::EXPO_PUBLIC_TRAINWATCH_API_URL repository secret is not set."
+          fi
+          if [ -n "$TRANSPORT_SERVICE_URL" ]; then
+            echo "EXPO_PUBLIC_TRANSPORT_SERVICE_URL=$TRANSPORT_SERVICE_URL" >> .env.local
+            echo "Configured EXPO_PUBLIC_TRANSPORT_SERVICE_URL."
+          else
+            echo "::warning::EXPO_PUBLIC_TRANSPORT_SERVICE_URL repository secret is not set."
           fi
 
       - name: Build Android APK with EAS local
@@ -139,7 +145,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EXPO_PUBLIC_TRAINWATCH_API_URL: ${{ secrets.EXPO_PUBLIC_TRAINWATCH_API_URL }}
-          EXPO_PUBLIC_TRANSPORT_SERVICE_URL: ${{ secrets.EXPO_PUBLIC_TRAINWATCH_API_URL }}
+          EXPO_PUBLIC_TRANSPORT_SERVICE_URL: ${{ secrets.EXPO_PUBLIC_TRANSPORT_SERVICE_URL }}
         run: |
           mkdir -p "${{ github.workspace }}/build"
           eas build \

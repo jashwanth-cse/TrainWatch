@@ -78,8 +78,8 @@ export interface LiveAvailabilityResult {
 
 export function getTransportApiBaseUrl(): string {
   const envUrl =
-    process.env.EXPO_PUBLIC_TRAINWATCH_API_URL ||
-    process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL;
+    process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL ||
+    process.env.EXPO_PUBLIC_TRAINWATCH_API_URL;
   if (envUrl && envUrl.trim()) {
     return envUrl.trim().replace(/\/+$/, '');
   }

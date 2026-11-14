@@ -30,7 +30,7 @@ interface NoInternetViewProps {
  * Custom SVG Illustration: Themed Wi-Fi Router with Severed/Broken Wire and Electric Spark.
  * Styled in TrainWatch brand colors: Deep Navy (#091224), Cobalt (#2563EB), Warning Spark (#EF4444, #F59E0B).
  */
-export const BrokenWireRouterSvg: React.FC<{ size?: number }> = ({ size = 180 }) => {
+export const BrokenWireRouterSvg: React.FC<{ size?: number }> = ({ size = 120 }) => {
   return (
     <Svg width={size} height={size * 0.85} viewBox="0 0 200 170" fill="none">
       <Defs>
@@ -172,7 +172,7 @@ export const NoInternetView: React.FC<NoInternetViewProps> = ({
     <View style={[styles.container, compact && styles.containerCompact]}>
       {/* Broken Wire Router Vector Illustration */}
       <View style={styles.illustrationWrapper}>
-        <BrokenWireRouterSvg size={compact ? 130 : 170} />
+        <BrokenWireRouterSvg size={compact ? 90 : 120} />
       </View>
 
       {/* Title & Description */}
@@ -188,7 +188,7 @@ export const NoInternetView: React.FC<NoInternetViewProps> = ({
           activeOpacity={0.8}
           onPress={() => void openNetworkSettings()}
         >
-          <Wifi size={18} color="#FFFFFF" style={styles.btnIcon} />
+          <Wifi size={16} color="#FFFFFF" style={styles.btnIcon} />
           <Text style={styles.primaryButtonText}>Enable Wi-Fi / Data</Text>
         </TouchableOpacity>
 
@@ -200,9 +200,9 @@ export const NoInternetView: React.FC<NoInternetViewProps> = ({
             disabled={isRetrying}
           >
             {isRetrying ? (
-              <ActivityIndicator size="small" color="#60A5FA" style={styles.btnIcon} />
+              <ActivityIndicator size="small" color="#2563EB" style={styles.btnIcon} />
             ) : (
-              <RefreshCw size={17} color="#60A5FA" style={styles.btnIcon} />
+              <RefreshCw size={15} color="#2563EB" style={styles.btnIcon} />
             )}
             <Text style={styles.secondaryButtonText}>
               {isRetrying ? 'Checking...' : 'Retry'}
@@ -218,62 +218,52 @@ const styles = StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 32,
-    marginHorizontal: 16,
-    marginVertical: 12,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(51, 65, 85, 0.65)',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 20,
-    elevation: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    width: '100%',
+    backgroundColor: 'transparent',
   },
   containerCompact: {
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
   illustrationWrapper: {
-    marginBottom: 16,
+    marginBottom: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#F8FAFC',
+    color: '#0F172A',
     textAlign: 'center',
-    marginBottom: 8,
-    letterSpacing: -0.3,
+    marginBottom: 6,
+    letterSpacing: -0.2,
   },
   titleCompact: {
-    fontSize: 17,
-    marginBottom: 6,
+    fontSize: 15,
+    marginBottom: 4,
   },
   description: {
-    fontSize: 14,
-    color: '#94A3B8',
+    fontSize: 13.5,
+    color: '#64748B',
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-    maxWidth: 320,
+    lineHeight: 19,
+    marginBottom: 20,
+    maxWidth: 300,
   },
   descriptionCompact: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 16,
-    maxWidth: 280,
+    fontSize: 12.5,
+    lineHeight: 17,
+    marginBottom: 14,
+    maxWidth: 260,
   },
   actionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
     width: '100%',
   },
   actionRowCompact: {
@@ -284,37 +274,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#2563EB',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 14,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 12,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '600',
   },
   secondaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(30, 58, 138, 0.35)',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: 'rgba(96, 165, 250, 0.45)',
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 14,
+    borderColor: '#E2E8F0',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
   },
   secondaryButtonText: {
-    color: '#93C5FD',
-    fontSize: 14,
+    color: '#2563EB',
+    fontSize: 13.5,
     fontWeight: '600',
   },
   btnIcon: {
-    marginRight: 8,
+    marginRight: 6,
   },
 });

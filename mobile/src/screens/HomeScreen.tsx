@@ -36,7 +36,6 @@ import {
   Armchair,
   ArrowRight,
   Bell,
-  WifiOff,
 } from 'lucide-react-native';
 import {
   addNetworkListener,
@@ -271,19 +270,6 @@ export const HomeScreen: React.FC = () => {
         {/* Top Header & Tagline */}
         <View style={styles.topSection}>
           <AppHeader variant="light" />
-
-          {!isOnline && (
-            <TouchableOpacity
-              style={styles.offlineBanner}
-              activeOpacity={0.8}
-              onPress={() => void openNetworkSettings()}
-            >
-              <WifiOff size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-              <Text style={styles.offlineBannerText}>
-                No Internet — Tap to enable Wi-Fi / Data
-              </Text>
-            </TouchableOpacity>
-          )}
 
           <View style={styles.captionContainer}>
             <Text style={styles.captionMain}>Track your seats</Text>
