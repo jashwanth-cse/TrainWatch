@@ -6,6 +6,18 @@ const ts = require('typescript');
 const vm = require('node:vm');
 
 function loadTrainService(mockFetch) {
+  const errorUtilsPath = path.join(__dirname, '../src/utils/errorUtils.ts');
+  const errorUtilsSource = fs.readFileSync(errorUtilsPath, 'utf8');
+  const errorUtilsTranspiled = ts.transpileModule(errorUtilsSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+  });
+  const errorUtilsExports = {};
+  vm.runInNewContext(errorUtilsTranspiled.outputText, { exports: errorUtilsExports, require, Error: globalThis.Error });
+
   const filePath = path.join(__dirname, '../src/services/trainService.ts');
   const source = fs.readFileSync(filePath, 'utf8');
 
@@ -20,6 +32,7 @@ function loadTrainService(mockFetch) {
   const exports = {};
   const modules = {
     'react-native': { Platform: { OS: 'android' } },
+    '../utils/errorUtils': errorUtilsExports,
   };
   vm.runInNewContext(outputText, {
     exports,
@@ -30,6 +43,7 @@ function loadTrainService(mockFetch) {
     fetch: mockFetch,
     process: { env: { EXPO_PUBLIC_TRANSPORT_SERVICE_URL: 'https://test-transport.run.app' } },
     URL,
+    Error: globalThis.Error,
   });
 
   return exports;

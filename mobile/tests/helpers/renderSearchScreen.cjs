@@ -96,6 +96,12 @@ function renderSearchScreen(name, { storage = {}, params = {}, resultType = 'dir
           },
         };
         if (id === '../services/notificationService') return { requestNotificationPermissionsAndRegisterDevice: async () => ({ granted: true }) };
+        if (id === '../services/networkService') return {
+          addNetworkListener: () => () => {},
+          checkNetworkStatus: async () => ({ isConnected: true, isInternetReachable: true }),
+          getCachedNetworkStatus: () => ({ isConnected: true, isInternetReachable: true }),
+          openNetworkSettings: async () => {},
+        };
         throw new Error(`Unexpected screen dependency: ${id}`);
       },
     });

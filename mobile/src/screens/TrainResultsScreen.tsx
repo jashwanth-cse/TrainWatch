@@ -32,6 +32,8 @@ import { DatePickerModal, DateItem } from '../components/DatePickerModal';
 import { StationSearchModal } from '../components/StationSearchModal';
 import { TrainWatchLoader } from '../components/TrainWatchLoader';
 import { ResponsiveButton } from '../components/ResponsiveButton';
+import { NoInternetView } from '../components/NoInternetView';
+import { addNetworkListener, checkNetworkStatus } from '../services/networkService';
 import { resolveQuota } from '../utils/quota';
 import { parseAvailabilityStatus } from '../utils/availabilityHelper';
 import {
@@ -84,6 +86,7 @@ export const TrainResultsScreen: React.FC = () => {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
   const [results, setResults] = useState<TrainSearchResults | null>(null);
   const [selectedSort, setSelectedSort] = useState<'departure' | 'duration' | 'fare'>('departure');
   const [refreshIndex, setRefreshIndex] = useState(0);
@@ -111,6 +114,13 @@ export const TrainResultsScreen: React.FC = () => {
   useEffect(() => {
     refreshActiveWatches();
   }, [refreshActiveWatches]);
+
+  useEffect(() => {
+    const unsubscribe = addNetworkListener((status) => {
+      setIsOffline(!status.isInternetReachable);
+    });
+    return unsubscribe;
+  }, []);
 
   const isClassTracked = useCallback((trainNumber: string, travelClass: string) => {
     const targetTrain = trainNumber.trim();
@@ -153,6 +163,7 @@ export const TrainResultsScreen: React.FC = () => {
   const [islandSwapRotate] = useState(() => new Animated.Value(0));
 
   const handleRefresh = () => {
+    void checkNetworkStatus();
     setPage(1);
     setShowNearby(false);
     setRevealingNearby(false);
@@ -506,6 +517,15 @@ export const TrainResultsScreen: React.FC = () => {
             size="lg"
             message={`Searching live trains between ${currentSource} & ${currentDestination}...`}
             subMessage="Checking direct rail availability"
+          />
+        </View>
+      ) : isOffline || (error && /internet|offline|network/i.test(error)) ? (
+        <View style={styles.centerContainer}>
+          <NoInternetView
+            onRetry={handleRefresh}
+            isRetrying={loading}
+            title="No Internet Connection"
+            description="You appear to be offline. Turn on mobile data or Wi-Fi to search trains and check live seat availability."
           />
         </View>
       ) : error ? (

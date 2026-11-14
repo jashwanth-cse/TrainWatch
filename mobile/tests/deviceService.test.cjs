@@ -5,7 +5,7 @@ const path = require('node:path');
 const ts = require('typescript');
 const vm = require('node:vm');
 
-function loadDeviceService(mockFetch, mockDeviceId = 'device_xyz_789') {
+function loadDeviceService(mockFetch, mockDeviceId = 'device_xyz_789', apiUrl = 'https://api.trainwatch.app') {
   const filePath = path.join(__dirname, '../src/services/deviceService.ts');
   const source = fs.readFileSync(filePath, 'utf8');
 
@@ -35,7 +35,7 @@ function loadDeviceService(mockFetch, mockDeviceId = 'device_xyz_789') {
       return require(name);
     },
     fetch: mockFetch,
-    process: { env: {} },
+    process: { env: { EXPO_PUBLIC_TRAINWATCH_API_URL: apiUrl } },
     JSON,
     Error,
   });
@@ -61,7 +61,7 @@ test('registerDeviceToken sends PUT request with device auth header and token pa
   const success = await exports.registerDeviceToken('fcm_token_sample_123', 'android');
 
   assert.equal(success, true);
-  assert.equal(capturedUrl, 'https://dream-destiny.cloud.run/api/v1/devices/device_xyz_789');
+  assert.equal(capturedUrl, 'https://api.trainwatch.app/api/v1/devices/device_xyz_789');
   assert.equal(capturedOptions.method, 'PUT');
   assert.equal(capturedOptions.headers.Authorization, 'Bearer device_xyz_789');
   const body = JSON.parse(capturedOptions.body);
@@ -100,7 +100,7 @@ test('revokeDeviceToken sends DELETE request to device endpoint', async () => {
   const success = await exports.revokeDeviceToken();
 
   assert.equal(success, true);
-  assert.equal(capturedUrl, 'https://dream-destiny.cloud.run/api/v1/devices/device_xyz_789');
+  assert.equal(capturedUrl, 'https://api.trainwatch.app/api/v1/devices/device_xyz_789');
   assert.equal(capturedOptions.method, 'DELETE');
   assert.equal(capturedOptions.headers.Authorization, 'Bearer device_xyz_789');
 });

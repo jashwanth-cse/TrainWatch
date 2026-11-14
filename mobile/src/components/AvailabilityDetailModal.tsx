@@ -30,8 +30,12 @@ import {
   AlertCircle,
   TrendingUp,
   Check,
+  Wifi,
+  WifiOff,
 } from 'lucide-react-native';
 import { parseAvailabilityStatus } from '../utils/availabilityHelper';
+import { sanitizeError } from '../utils/errorUtils';
+import { openNetworkSettings } from '../services/networkService';
 
 export function extractAvailableSeats(raw: string | null | undefined): number | null {
   if (!raw) return null;
@@ -223,8 +227,8 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
         onSetAlert(train, selectedClass);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unable to track seat';
-      setAlertError(msg);
+      const sanitized = sanitizeError(err);
+      setAlertError(sanitized.userMessage);
     } finally {
       setCreatingAlert(false);
     }
@@ -387,7 +391,22 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               </View>
 
               {alertError ? (
-                <Text style={styles.errorText}>{alertError}</Text>
+                <View style={styles.alertErrorCard}>
+                  <View style={styles.alertErrorRow}>
+                    <WifiOff size={15} color="#DC2626" style={{ marginRight: 6 }} />
+                    <Text style={styles.alertErrorText}>{alertError}</Text>
+                  </View>
+                  {/internet|offline|network|connection|connect/i.test(alertError) && (
+                    <TouchableOpacity
+                      style={styles.alertEnableNetworkBtn}
+                      activeOpacity={0.8}
+                      onPress={() => void openNetworkSettings()}
+                    >
+                      <Wifi size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+                      <Text style={styles.alertEnableNetworkBtnText}>Enable Wi-Fi / Data</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               ) : null}
 
               {!parsedStatus.canTrack ? (
@@ -889,6 +908,40 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.error,
     marginBottom: 8,
+    fontWeight: '600',
+  },
+  alertErrorCard: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  alertErrorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  alertErrorText: {
+    flex: 1,
+    fontSize: 12.5,
+    color: '#B91C1C',
+    fontWeight: '600',
+    lineHeight: 17,
+  },
+  alertEnableNetworkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: colors.primary,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    marginTop: 8,
+  },
+  alertEnableNetworkBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
     fontWeight: '600',
   },
   alertDisabledBox: {

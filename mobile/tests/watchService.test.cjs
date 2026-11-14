@@ -6,6 +6,18 @@ const ts = require('typescript');
 const vm = require('node:vm');
 
 function loadWatchService(mockFetch, mockDeviceId = 'tw_test_device_123') {
+  const errorUtilsPath = path.join(__dirname, '../src/utils/errorUtils.ts');
+  const errorUtilsSource = fs.readFileSync(errorUtilsPath, 'utf8');
+  const errorUtilsTranspiled = ts.transpileModule(errorUtilsSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+  });
+  const errorUtilsExports = {};
+  vm.runInNewContext(errorUtilsTranspiled.outputText, { exports: errorUtilsExports, require, Error: globalThis.Error });
+
   const filePath = path.join(__dirname, '../src/services/watchService.ts');
   const source = fs.readFileSync(filePath, 'utf8');
 
@@ -27,6 +39,7 @@ function loadWatchService(mockFetch, mockDeviceId = 'tw_test_device_123') {
     './trainService': {
       getTransportApiBaseUrl: () => 'https://test-api.trainwatch.app',
     },
+    '../utils/errorUtils': errorUtilsExports,
   };
 
   vm.runInNewContext(outputText, {
@@ -118,6 +131,30 @@ test('createWatch handles validation errors from backend gracefully', async () =
         travelClass: '3A',
       }),
     /source and destination must differ/
+  );
+});
+
+test('createWatch catches UnknownHostException/network failure and masks hostname', async () => {
+  const mockFetch = async () => {
+    throw new Error('java.net.UnknownHostException: Unable to resolve host "trainwatch-api.run.app": No address associated with hostname');
+  };
+
+  const { watchService } = loadWatchService(mockFetch);
+  await assert.rejects(
+    () =>
+      watchService.createWatch({
+        trainNumber: '12661',
+        source: 'NDLS',
+        destination: 'CNB',
+        journeyDate: '2026-11-15',
+        travelClass: 'SL',
+      }),
+    (err) => {
+      assert.strictEqual(err.message.includes('run.app'), false);
+      assert.strictEqual(err.message.includes('UnknownHostException'), false);
+      assert.match(err.message, /No internet connection/);
+      return true;
+    }
   );
 });
 
