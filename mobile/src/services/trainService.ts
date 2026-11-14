@@ -77,10 +77,13 @@ export interface LiveAvailabilityResult {
 }
 
 export function getTransportApiBaseUrl(): string {
-  if (process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL) {
-    return process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL.replace(/\/+$/, '');
+  const envUrl =
+    process.env.EXPO_PUBLIC_TRAINWATCH_API_URL ||
+    process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL;
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, '');
   }
-  return 'https://dreamdestiny.cloud.run';
+  return '';
 }
 
 /**
@@ -88,6 +91,9 @@ export function getTransportApiBaseUrl(): string {
  */
 export async function searchTrains(params: SearchTrainsParams): Promise<TrainSearchResults> {
   const baseUrl = getTransportApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error('API service endpoint is not configured. Please check environment configuration.');
+  }
   const url = new URL(`${baseUrl}/api/v1/trains/search`);
 
   url.searchParams.set('from', params.source.trim().toUpperCase());
@@ -156,6 +162,9 @@ export async function fetchLiveAvailability(
   params: LiveAvailabilityParams
 ): Promise<LiveAvailabilityResult> {
   const baseUrl = getTransportApiBaseUrl();
+  if (!baseUrl) {
+    throw new Error('API service endpoint is not configured. Please check environment configuration.');
+  }
   const url = new URL(`${baseUrl}/api/v1/trains/availability`);
 
   url.searchParams.set('trainNo', params.trainNo.trim());

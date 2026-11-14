@@ -76,6 +76,7 @@ function loadUpdateService(options = {}) {
     JSON,
     Error,
     Math,
+    Date,
     parseInt,
     Number,
     Boolean,
@@ -229,6 +230,37 @@ test('checkForAppUpdate: identifies previously dismissed update versions', async
   await exports.clearDismissedUpdate();
   const resultAfterClear = await exports.checkForAppUpdate({ currentVersion: '1.0.0', fetchFn });
   assert.strictEqual(resultAfterClear.isDismissed, false);
+});
+
+test('checkForAppUpdate: 24-hour cooldown allows prompting again after 24 hours', async () => {
+  const storageMap = new Map();
+  const mockRelease = {
+    tag_name: 'v1.2.0',
+    assets: [{ name: 'app.apk', browser_download_url: 'https://example.invalid/app.apk' }],
+  };
+  const fetchFn = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => mockRelease,
+  });
+
+  const { exports } = loadUpdateService({ storageMap, fetchFn });
+
+  // 1. Dismiss at T0
+  const t0 = 1000000000;
+  await exports.dismissUpdate('v1.2.0', undefined, t0);
+
+  // 2. Check at T0 + 1 hour (within cooldown) -> isDismissed should be true
+  const withinCooldown = await exports.isUpdateDismissed('v1.2.0', undefined, t0 + 3600 * 1000);
+  assert.strictEqual(withinCooldown, true);
+
+  // 3. Check at T0 + 25 hours (cooldown expired) -> isDismissed should be false
+  const afterCooldown = await exports.isUpdateDismissed('v1.2.0', undefined, t0 + 25 * 3600 * 1000);
+  assert.strictEqual(afterCooldown, false);
+
+  // 4. Check for different version -> isDismissed should be false
+  const diffVersion = await exports.isUpdateDismissed('v1.3.0', undefined, t0 + 3600 * 1000);
+  assert.strictEqual(diffVersion, false);
 });
 
 test('checkPostUpdateToast: tracks version transitions and records first-run', async () => {

@@ -8,6 +8,12 @@ export const GITHUB_REPO_OWNER = 'jashwanth-cse';
 export const GITHUB_REPO_NAME = 'TrainWatch';
 export const LAST_INSTALLED_VERSION_KEY = 'trainwatch_last_installed_version';
 export const DISMISSED_UPDATE_KEY = 'trainwatch_dismissed_update_version';
+export const UPDATE_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24-hour reminder cooldown
+
+export interface DismissedUpdateRecord {
+  version: string;
+  dismissedAt: number;
+}
 
 export interface AppReleaseInfo {
   version: string;
@@ -130,8 +136,7 @@ export async function checkForAppUpdate(options?: {
       };
     }
 
-    const dismissedVersion = await storage.getItem(DISMISSED_UPDATE_KEY);
-    const isDismissed = dismissedVersion === tagName;
+    const isDismissed = await isUpdateDismissed(tagName, storage);
 
     const release: AppReleaseInfo = {
       version: tagName,
@@ -160,14 +165,53 @@ export async function checkForAppUpdate(options?: {
 }
 
 /**
- * Record that the user chose to dismiss / postpone an update.
+ * Check whether an update is dismissed and within the cooldown period.
+ */
+export async function isUpdateDismissed(
+  targetVersion: string,
+  storage: typeof AsyncStorage = AsyncStorage,
+  now: number = Date.now()
+): Promise<boolean> {
+  try {
+    const raw = await storage.getItem(DISMISSED_UPDATE_KEY);
+    if (!raw) return false;
+
+    // Handle JSON format with cooldown timestamp
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && parsed.version) {
+        if (parsed.version !== targetVersion) {
+          return false;
+        }
+        const dismissedAt = typeof parsed.dismissedAt === 'number' ? parsed.dismissedAt : 0;
+        return (now - dismissedAt) < UPDATE_COOLDOWN_MS;
+      }
+    } catch {
+      // Legacy fallback: raw version string
+      if (raw === targetVersion) {
+        return true;
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+/**
+ * Record that the user chose to dismiss / postpone an update with a 24hr cooldown.
  */
 export async function dismissUpdate(
   version: string,
-  storage: typeof AsyncStorage = AsyncStorage
+  storage: typeof AsyncStorage = AsyncStorage,
+  now: number = Date.now()
 ): Promise<void> {
   try {
-    await storage.setItem(DISMISSED_UPDATE_KEY, version);
+    const record: DismissedUpdateRecord = {
+      version,
+      dismissedAt: now,
+    };
+    await storage.setItem(DISMISSED_UPDATE_KEY, JSON.stringify(record));
   } catch {
     // Silent fallback
   }

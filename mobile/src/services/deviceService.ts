@@ -5,7 +5,12 @@
 
 import { authService } from './authService';
 
-const DEFAULT_BASE_URL = 'https://dream-destiny.cloud.run';
+export function getDeviceApiBaseUrl(): string {
+  const url =
+    process.env.EXPO_PUBLIC_TRAINWATCH_API_URL ||
+    process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL;
+  return url ? url.trim().replace(/\/+$/, '') : '';
+}
 
 export interface DeviceRegistrationResponse {
   status: string;
@@ -19,12 +24,10 @@ export async function registerDeviceToken(
   if (!fcmToken || !fcmToken.trim()) return false;
 
   try {
+    const baseUrl = getDeviceApiBaseUrl();
+    if (!baseUrl) return false;
     const deviceId = await authService.getDeviceId();
-    const baseUrl =
-      process.env.EXPO_PUBLIC_TRAINWATCH_API_URL ||
-      process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL ||
-      DEFAULT_BASE_URL;
-    const url = `${baseUrl.replace(/\/$/, '')}/api/v1/devices/${deviceId}`;
+    const url = `${baseUrl}/api/v1/devices/${deviceId}`;
 
     const res = await fetch(url, {
       method: 'PUT',
@@ -51,12 +54,10 @@ export async function registerDeviceToken(
 
 export async function revokeDeviceToken(): Promise<boolean> {
   try {
+    const baseUrl = getDeviceApiBaseUrl();
+    if (!baseUrl) return false;
     const deviceId = await authService.getDeviceId();
-    const baseUrl =
-      process.env.EXPO_PUBLIC_TRAINWATCH_API_URL ||
-      process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL ||
-      DEFAULT_BASE_URL;
-    const url = `${baseUrl.replace(/\/$/, '')}/api/v1/devices/${deviceId}`;
+    const url = `${baseUrl}/api/v1/devices/${deviceId}`;
 
     const res = await fetch(url, {
       method: 'DELETE',
