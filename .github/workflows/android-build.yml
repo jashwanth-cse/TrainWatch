@@ -70,6 +70,7 @@ jobs:
     timeout-minutes: 60
     env:
       APP_VERSION: ${{ needs.check-version.outputs.app_version }}
+      ANDROID_HOME: /usr/local/lib/android/sdk
 
     steps:
       - name: Check out repository
@@ -88,22 +89,27 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
+      - name: Configure Gradle JVM & Concurrency
+        run: |
+          mkdir -p ~/.gradle
+          cat << 'EOF' > ~/.gradle/gradle.properties
+          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          org.gradle.vfs.watch=false
+          EOF
+
+      - name: Setup Gradle Build Cache
+        uses: gradle/actions/setup-gradle@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('mobile/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          cache-read-only: false
 
       - name: Install dependencies
         working-directory: mobile
         run: npm ci
 
       - name: Install EAS CLI
-        run: npm install -g eas-cli
+        run: npm install -g eas-cli --no-audit --no-fund
 
       - name: Setup google-services.json
         working-directory: mobile
