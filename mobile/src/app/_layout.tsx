@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { AuthProvider, useAuth } from '../services/AuthContext';
 import { SplashScreen } from '../components/SplashScreen';
 import { initBackendWarmup } from '../services/backendWarmupService';
+import { checkNetworkStatus } from '../services/networkService';
 import {
   initializeNotificationChannel,
   checkNotificationPermission,
@@ -51,6 +52,9 @@ const AppContent: React.FC = () => {
   const [toastVersion, setToastVersion] = useState(currentVersion);
 
   useEffect(() => {
+    // Proactively verify internet reachability on startup via Google captive portal
+    checkNetworkStatus().catch(() => {});
+
     // Check for post-update toast banner
     checkPostUpdateToast(currentVersion)
       .then((res) => {

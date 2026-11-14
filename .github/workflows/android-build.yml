@@ -146,7 +146,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.APP_VERSION }}
-          name: TrainWatch ${{ env.APP_VERSION }}
+          name: TrainWatch ${{ env.APP_VERSION }} - bug fixes and improvements
+          body: |
+            Release ${{ env.APP_VERSION }}
+            Name: bug fixes and improvements
+
+            - Real-time internet reachability check on app launch via Google captive portal
+            - Clean hostname sanitization and error masking
+            - Themed broken-wire router illustration for offline state
+            - In-app shortcut to enable Wi-Fi and mobile data settings
+            - Custom branded splash screen replacing default Expo icon
           files: |
             ${{ github.workspace }}/build/TrainWatch-${{ env.APP_VERSION }}.apk
           draft: false

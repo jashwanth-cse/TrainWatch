@@ -39,6 +39,8 @@ export interface TrainSearchResults {
   latency_ms?: number;
 }
 
+import { sanitizeError } from '../utils/errorUtils';
+
 export interface SearchTrainsParams {
   source: string;
   destination: string;
@@ -102,12 +104,18 @@ export async function searchTrains(params: SearchTrainsParams): Promise<TrainSea
     url.searchParams.set('travelClass', params.travelClass);
   }
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (netErr) {
+    const sanitized = sanitizeError(netErr);
+    throw new Error(sanitized.userMessage);
+  }
 
   if (!response.ok) {
     let errorMsg = `Server error (${response.status})`;
@@ -118,7 +126,8 @@ export async function searchTrains(params: SearchTrainsParams): Promise<TrainSea
     } catch {
       // Fallback to HTTP error
     }
-    throw new Error(errorMsg);
+    const sanitized = sanitizeError(new Error(errorMsg));
+    throw new Error(sanitized.userMessage);
   }
 
   const json = await response.json();
@@ -156,12 +165,18 @@ export async function fetchLiveAvailability(
   url.searchParams.set('date', params.date.trim());
   url.searchParams.set('quota', params.quota || 'GN');
 
-  const response = await fetch(url.toString(), {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+  } catch (netErr) {
+    const sanitized = sanitizeError(netErr);
+    throw new Error(sanitized.userMessage);
+  }
 
   if (!response.ok) {
     let errorMsg = `Availability error (${response.status})`;
@@ -171,7 +186,8 @@ export async function fetchLiveAvailability(
     } catch {
       // Fallback
     }
-    throw new Error(errorMsg);
+    const sanitized = sanitizeError(new Error(errorMsg));
+    throw new Error(sanitized.userMessage);
   }
 
   return await response.json();

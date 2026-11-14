@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -63,14 +64,16 @@ PATTERNS = {
 
 def iter_text_files() -> list[Path]:
     """Return repository text files without traversing generated directories."""
-    return sorted(
-        path
-        for path in ROOT.rglob("*")
-        if path.is_file()
-        and path.name not in SKIPPED_FILES
-        and (path.suffix.lower() in TEXT_SUFFIXES or path.name.startswith(".env"))
-        and not any(part in SKIPPED_DIRECTORIES for part in path.parts)
-    )
+    files: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(ROOT):
+        dirnames[:] = [d for d in dirnames if d not in SKIPPED_DIRECTORIES]
+        for f in filenames:
+            path = Path(dirpath) / f
+            if path.name not in SKIPPED_FILES and (
+                path.suffix.lower() in TEXT_SUFFIXES or path.name.startswith(".env")
+            ):
+                files.append(path)
+    return sorted(files)
 
 
 def is_allowed_placeholder(match: re.Match[str]) -> bool:

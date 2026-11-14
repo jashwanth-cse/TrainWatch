@@ -83,6 +83,9 @@ function fixture() {
     },
     '../components/UpdatePromptModal': { UpdatePromptModal: () => null },
     '../components/UpdateToast': { UpdateToast: () => null },
+    '../services/networkService': {
+      checkNetworkStatus: async () => ({ isConnected: true, isInternetReachable: true }),
+    },
   };
   function load(file) {
     const source = readFileSync(path.join(path.dirname(require.resolve('../package.json')), file), 'utf8');
