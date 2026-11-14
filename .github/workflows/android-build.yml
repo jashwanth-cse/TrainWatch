@@ -2,6 +2,12 @@ name: Android APK Build (EAS Local)
 
 on:
   workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even if app version matches latest release'
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - build
@@ -14,17 +20,61 @@ permissions:
   contents: write
 
 jobs:
-  build-android:
-    name: Build Android APK & Publish Release
+  check-version:
+    name: Check App Version
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
+    outputs:
+      should_build: ${{ steps.version-check.outputs.should_build }}
+      app_version: ${{ steps.version-check.outputs.app_version }}
     steps:
-      # Step 1: Check out repository
       - name: Check out repository
         uses: actions/checkout@v4
 
-      # Step 2: Set up Node.js with npm caching for the mobile workspace
+      - name: Compare App Version with Latest Release
+        id: version-check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_BUILD: ${{ inputs.force_build }}
+        run: |
+          # 1. Read app version from mobile/app.json
+          RAW_VERSION=$(node -p "require('./mobile/app.json').expo.version")
+          APP_VER_NORM="${RAW_VERSION#v}"
+          APP_TAG="v$APP_VER_NORM"
+          echo "Target App Version: $APP_TAG"
+
+          # 2. Fetch latest release tag from GitHub repository
+          LATEST_TAG=$(gh release view --json tagName -q .tagName 2>/dev/null || echo "")
+          LATEST_TAG_NORM="${LATEST_TAG#v}"
+          echo "Latest GitHub Release: ${LATEST_TAG:-None}"
+
+          # 3. Determine if build should execute
+          if [ "$FORCE_BUILD" = "true" ]; then
+            echo "Force build requested via workflow_dispatch."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "app_version=$APP_TAG" >> "$GITHUB_OUTPUT"
+          elif [ -n "$LATEST_TAG_NORM" ] && [ "$APP_VER_NORM" = "$LATEST_TAG_NORM" ]; then
+            echo "::notice::App version ($APP_TAG) matches latest release ($LATEST_TAG). Skipping build."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "app_version=$APP_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "New version detected ($APP_TAG vs ${LATEST_TAG:-None}). Proceeding with build."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "app_version=$APP_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-android:
+    name: Build Android APK & Publish Release
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      APP_VERSION: ${{ needs.check-version.outputs.app_version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -32,14 +82,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: mobile/package-lock.json
 
-      # Step 3: Set up Java JDK 17 (Temurin)
       - name: Set up Java JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      # Step 4: Cache Gradle caches and wrapper to speed up subsequent builds
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
@@ -50,16 +98,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      # Step 5: Install dependencies using package-lock.json
       - name: Install dependencies
         working-directory: mobile
         run: npm ci
 
-      # Step 6: Install EAS CLI globally
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
-      # Step 6.5: Configure google-services.json for Firebase FCM
       - name: Setup google-services.json
         working-directory: mobile
         env:
@@ -76,16 +121,6 @@ jobs:
           fi
           echo "Successfully configured google-services.json from GOOGLE_SERVICES_JSON secret."
 
-      # Step 6.6: Extract App Version from mobile/app.json
-      - name: Extract App Version
-        working-directory: mobile
-        run: |
-          VERSION=$(node -p "require('./app.json').expo.version")
-          echo "APP_VERSION=v$VERSION" >> $GITHUB_ENV
-          echo "Target Release Version: v$VERSION"
-
-      # Step 7: Build Android APK locally using EAS CLI
-      # EAS CLI automatically fetches remote credentials using EXPO_TOKEN
       - name: Build Android APK with EAS local
         working-directory: mobile
         env:
@@ -99,7 +134,6 @@ jobs:
             --non-interactive \
             --output "${{ github.workspace }}/build/TrainWatch-${{ env.APP_VERSION }}.apk"
 
-      # Step 8: Upload build artifact to GitHub Actions run
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -107,8 +141,6 @@ jobs:
           path: ${{ github.workspace }}/build/TrainWatch-${{ env.APP_VERSION }}.apk
           retention-days: 14
 
-      # Step 9: Automatically publish GitHub Release with the APK asset
-      # Uses the built-in GITHUB_TOKEN with contents:write permission
       - name: Publish APK to GitHub Release
         if: success()
         uses: softprops/action-gh-release@v2
@@ -122,17 +154,3 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # =========================================================================
-      # Step 3 Optional Cloudflare R2 Upload (Commented out; enable as needed)
-      # =========================================================================
-      # - name: Upload APK to Cloudflare R2
-      #   if: success()
-      #   env:
-      #     AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-      #     AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-      #     AWS_DEFAULT_REGION: auto
-      #   run: |
-      #     aws s3 cp "${{ github.workspace }}/build/TrainWatch-${{ env.APP_VERSION }}.apk" \
-      #       "s3://${{ secrets.R2_BUCKET }}/builds/TrainWatch-${{ env.APP_VERSION }}.apk" \
-      #       --endpoint-url "https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
