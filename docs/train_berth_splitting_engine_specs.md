@@ -55,11 +55,22 @@ The engine supports the three primary passenger long-distance reserved classes:
 3. **Pooled Quota (`PQ` / `PQWL`):** A shared seat pool serving multiple minor/intermediate stations.
 4. **Roadside Quota (`RS` / `RSWL` / `RQWL`):** Earmarked accommodation from the origin up to a roadside stop.
 
+### 3.3 Dynamic Multi-Leg Horizon by Journey Duration
+The maximum permitted leg depth is determined dynamically by the total journey duration $T = \text{ArrivalTime}(D) - \text{DepartureTime}(O)$:
+- **$T < 12 \text{ hours}$:** Maximum **2 legs** (1 split point). Short/medium runs where a single berth switch is optimal.
+- **$12 \le T \le 24 \text{ hours}$:** Maximum **3 legs** (2 split points). Day-and-night long-distance journeys where intermediate sections frequently bottleneck.
+- **$T > 24 \text{ hours}$:** Maximum **4 legs** (3 split points). Multi-day cross-country journeys (e.g. Tamil Nadu Exp, Karnataka Exp) spanning multiple railway zones.
+- **Absolute Ceiling:** Maximum **4 legs** (3 split points) to prevent passenger fatigue.
+
+### 3.4 Timetable CDN Infrastructure
+- **Endpoint:** `https://trains.jashh.me/api/v1/trains/{trainNo}/schedule` (Cloudflare CDN edge-cached).
+- **Configuration:** Injected safely via `TRAIN_SCHEDULE_CDN_BASE_URL` with automatic fallback to upstream services.
+
 ---
 
 ## 4. Multi-Tier Candidate Split Pruning Algorithm
 
-To prevent issuing excessive live availability queries (which would degrade user latency and exhaust API rate limits), the engine filters intermediate stops $s \in (O, D)$ using a **4-tier deterministic pruning model**:
+To prevent issuing excessive live availability queries (which would degrade user latency and exhaust API rate limits), the engine filters intermediate stops $s \in (O, D)$ using a **4-tier deterministic pruning model** with a strict station importance hierarchy (**Major Hubs > Divisions > Junctions > Adjacent Fallback**):
 
 ### 4.1 Hard Filters (Disqualification)
 A station $s$ is immediately disqualified if any of the following apply:
