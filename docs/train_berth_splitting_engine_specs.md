@@ -363,3 +363,30 @@ Live availability queries were executed against upstream services across four ma
 - At Kalaburagi (`KLBG`) and Solapur (`SUR`), 3AC status is **`Regret`** (no bookings allowed at all).
 - An Origin Extension search reveals that booking from `SBC` is still open under `WL 62`. A passenger who would otherwise be completely blocked can still secure a waitlisted ticket by booking from `SBC` with boarding at `KLBG` or `SUR`.
 
+---
+
+## 10. Tiered Solution Hierarchy & Inter-Train Backup Architecture
+
+To provide an optimal balance between passenger convenience and confirmation probability, the engine organizes solutions into a strict three-tier hierarchy:
+
+### Tier 1 (Primary - Preferred): Same-Train Berth Splitting
+- **Definition:** The passenger travels on a single train ($T_1$), booking consecutive sub-legs ($O \to M$ and $M \to D$) on the exact same rake.
+- **Advantage:** Zero risk of missing a connecting train; passenger remains on board throughout the journey.
+- **Constraints:** Maximum 1 split point (2 legs); minimum 5-minute halt at transfer station $M$; homogeneous travel class.
+
+### Tier 2 (Primary - Direct Extension): Origin Extension with Boarding Point Modification ("Ghost Leg")
+- **Definition:** The passenger books a single through-ticket from an earlier station $O_{\text{ext}}$ where General Quota seats exist, setting their official boarding station as $O$.
+- **Advantage:** Single PNR, zero berth switching, guaranteed confirmed or early RAC status.
+- **Constraints:** Extra fare $\le \min(₹100 \text{ in SL } / ₹250 \text{ in 3A}, \; 20\% \times \text{Direct Fare})$; added distance $\le 150 \text{ km}$.
+
+### Tier 3 (Secondary - Backup / Fallback): Inter-Train Transfer (Hub Connection)
+- **Definition:** When no viable Tier 1 or Tier 2 solution exists, the engine evaluates connecting two different trains ($T_1$ and $T_2$) via a major commercial junction hub $H$ (e.g., Madurai `MDU`, Tiruchirappalli `TPJ`, Bhopal `BPL`, Itarsi `ET`, Vijayawada `BZA`).
+- **Operational Safety Guardrails (Strict):**
+  1. **Transfer Buffer Window:**
+     $$30 \text{ minutes} \le \text{DepartureTime}(T_2, H) - \text{ArrivalTime}(T_1, H) \le 120 \text{ minutes}$$
+     - Minimum 30 minutes prevents missed connections due to minor delays.
+     - Maximum 120 minutes prevents excessive passenger fatigue on station platforms.
+  2. **Major Hub Requirement:** Transfer must occur at an `A1` or `A` category junction equipped with 24/7 waiting halls, porter services, and multi-platform passenger infrastructure.
+  3. **Visual Disambiguation in UI:** Must be clearly labeled in the application as **`Train Transfer (Change Trains at [Hub])`**, distinct from same-train berth splitting.
+
+
