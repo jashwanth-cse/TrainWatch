@@ -259,3 +259,107 @@ The mobile interface prominently shows: `Total: ₹[X] (+₹[Delta] vs direct ti
   ]
 }
 ```
+
+---
+
+## 8. Origin Extension & Boarding Station Optimization ("Ghost Leg")
+
+### 8.1 Mechanism & Legal Compliance
+Indian Railways permits passengers to book a ticket from an earlier station $O_{\text{ext}}$ ($seq(O_{\text{ext}}) < seq(O)$) to destination $D$, and explicitly designate $O$ as their **Boarding Point** during IRCTC booking or up to 4 hours before chart preparation.
+- **Why it works:** Intermediate stations often fall into restricted Pooled Quota (`PQWL`) or smaller Remote Quotas (`RLWL`), while the train origin retains the vast majority of physical berths under the General Quota (`GNWL`).
+- **Passenger Experience:** Zero berth switching required. The passenger boards at their intended station $O$ directly into a confirmed berth.
+
+### 8.2 Bounded Surcharge & Distance Tolerance Rules
+To prevent recommending absurd or uneconomic bookings (e.g. paying ₹1000 for a ₹300 trip on a multi-day train), the engine enforces strict affordability bounds:
+1. **Absolute Fare Delta Ceiling:**
+   $$\text{Fare}(O_{\text{ext}} \to D) - \text{Fare}(O \to D) \le \text{MAX\_EXTENSION\_SURCHARGE}$$
+   - For Sleeper (`SL`): $\text{MAX\_EXTENSION\_SURCHARGE} = ₹100$.
+   - For 3AC (`3A`): $\text{MAX\_EXTENSION\_SURCHARGE} = ₹250$.
+   - For 2AC (`2A`): $\text{MAX\_EXTENSION\_SURCHARGE} = ₹350$.
+2. **Relative Fare Delta Cap:**
+   $$\frac{\text{Fare}(O_{\text{ext}} \to D) - \text{Fare}(O \to D)}{\text{Fare}(O \to D)} \le 20\%$$
+3. **Distance Cap:**
+   $$\text{Distance}(O) - \text{Distance}(O_{\text{ext}}) \le \min(150 \text{ km}, \; 0.20 \times \text{Distance}(O \to D))$$
+
+---
+
+## 9. Empirical Field Study & Live Quota Observations (Tested 16-12-2026)
+
+Live availability queries were executed against upstream services across four major train corridors on journey date **16-12-2026** to evaluate quota divergences.
+
+### 9.1 Train 1: 12662 POTHIGAI SF EXP (Sengottai SCT -> Chennai Egmore MS)
+- Total Distance: 670 km | Stops: 18
+
+| From | Station Name | Distance | SL Status (Fare) | 3A Status (Fare) | Quota Analysis |
+| :--- | :--- | :---: | :--- | :--- | :--- |
+| **SCT** | SENGOTTAI (Origin) | 0 km | RAC 99 (₹437) | AVL 115 (₹1110) | Primary General Quota (`GN`) |
+| **TSI** | TENKASI JN | 8 km | RAC 99 (₹437) | AVL 115 (₹1110) | Primary General Quota (`GN`) |
+| **KDNL** | KADAYANALLUR | 24 km | RAC 99 (₹427) | AVL 115 (₹1090) | Primary General Quota (`GN`) |
+| **SNKL** | SANKARANKOVIL | 45 km | RAC 99 (₹417) | AVL 115 (₹1070) | Primary General Quota (`GN`) |
+| **RJPM** | RAJAPALAYAM | 78 km | RAC 99 (₹407) | AVL 115 (₹1035) | Primary General Quota (`GN`) |
+| **SVKS** | SIVAKASI | 106 km | RAC 99 (₹392) | AVL 115 (₹1000) | Primary General Quota (`GN`) |
+| **VPT** | VIRUDHUNAGAR JN | 130 km | WL 6 (₹382) | AVL 21 (₹975) | Boundary: Drops into Pooled Quota (`PQ`) |
+| **MDU** | MADURAI JN | 174 km | WL 6 (₹357) | AVL 23 (₹890) | Remote Quota (`RL`): Independent pool |
+| **DG** | DINDIGUL JN | 240 km | WL 6 (₹327) | AVL 21 (₹820) | Remote Quota (`RL`): Independent pool |
+| **TPJ** | TIRUCHIRAPPALLI | 334 km | WL 8 (₹282) | AVL (₹695) | Remote Quota (`RL`): Independent pool |
+
+**Key Takeaways:**
+- Stations from `SCT` through `RJPM` and `SVKS` share the exact same primary quota pool (`RAC 99` in SL, `AVL 115` in 3A). The fare delta between `SCT` and `RJPM` is only **₹30** (7.3%).
+- Once the train reaches `VPT` and `MDU`, Sleeper availability collapses from `RAC 99` directly to `WL 6`. A passenger at Virudhunagar or Madurai who faces `WL 6` can book from `RJPM` or `SCT` for an extra ₹25–₹50, set their boarding point to `VPT`/`MDU`, and get `RAC 99` guaranteed travel!
+
+---
+
+### 9.2 Train 2: 12622 TAMIL NADU EXP (New Delhi NDLS -> Chennai Central MAS)
+- Total Distance: 2,182 km | Stops: 11
+
+| From | Station Name | Distance | SL Status (Fare) | 3A Status (Fare) | Quota Analysis |
+| :--- | :--- | :---: | :--- | :--- | :--- |
+| **NDLS** | NEW DELHI (Origin) | 0 km | RAC 43 (₹907) | RAC 52 (₹2270) | General Quota (`GN`) |
+| **AGC** | AGRA CANTT | 195 km | WL 1 (₹862) | WL 1 (₹2170) | Pooled Quota (`PQWL`) |
+| **GWL** | GWALIOR | 313 km | WL 17 (₹827) | WL 10 (₹2080) | Pooled Quota (`PQWL`) |
+| **VGLJ** | V LAKSHMIBAI JHANSI | 410 km | WL 17 (₹797) | WL 10 (₹2005) | Pooled Quota (`PQWL`) |
+| **BPL** | BHOPAL JN | 701 km | **AVL 8** (₹712) | WL 1 (₹1800) | Major RL Hub: 8 Confirmed Berths in SL |
+| **ET** | ITARSI JN | 793 km | **AVL 8** (₹682) | WL 1 (₹1725) | Major RL Hub: 8 Confirmed Berths in SL |
+| **NGP** | NAGPUR | 1,090 km | WL 1 (₹587) | **AVL 19** (₹1500) | Major RL Hub: 19 Confirmed Berths in 3A |
+| **BPQ** | BALHARSHAH | 1,301 km | WL 1 (₹517) | **AVL 19** (₹1315) | Major RL Hub: 19 Confirmed Berths in 3A |
+| **WL** | WARANGAL | 1,544 km | **AVL 4** (₹427) | **AVL 7** (₹1080) | Major RL Hub: 4 SL & 7 3A Confirmed |
+| **BZA** | VIJAYAWADA JN | 1,751 km | WL 1 (₹327) | **AVL 2** (₹820) | Major RL Hub: 2 3A Confirmed |
+
+**Key Takeaways:**
+1. **Origin Extension Proof:** A passenger from Gwalior (`GWL`) searching to Chennai gets **`WL 17`**. But booking from `NDLS` gives **`RAC 43`** (guaranteed boarding). Fare difference is only **₹80** on an ₹827 ticket (9.6% surcharge).
+2. **Intermediate Split Proof:** Bhopal (`BPL`) and Itarsi (`ET`) have **`AVL 8` (8 Confirmed Seats)** in Sleeper, while Nagpur (`NGP`) and Balharshah (`BPQ`) have **`AVL 19` (19 Confirmed Seats)** in 3A! A traveler from Delhi or Gwalior who cannot get direct confirmed seats can split at Bhopal (`BPL`) or Nagpur (`NGP`) to get confirmed travel!
+
+---
+
+### 9.3 Train 3: 12302 HOWRAH RAJDHANI EXP (New Delhi NDLS -> Howrah HWH)
+- Total Distance: 1,449 km | Stops: 7
+
+| From | Station Name | Distance | 3A Status (Fare) | 2A Status (Fare) | Quota Analysis |
+| :--- | :--- | :---: | :--- | :--- | :--- |
+| **NDLS** | NEW DELHI (Origin) | 0 km | RAC 64 (₹3140) | WL 8 (₹4260) | General Quota (`GN`) |
+| **CNB** | KANPUR CENTRAL | 441 km | WL 3 (₹2545) | WL 3 (₹3435) | Intermediate Pooled Quota |
+| **PRYJ** | PRAYAGRAJ JN | 636 km | WL 2 (₹2070) | WL 2 (₹2835) | Intermediate Pooled Quota |
+| **DDU** | DD UPADHYAYA JN | 788 km | WL 3 (₹1830) | WL 2 (₹2495) | Intermediate Pooled Quota |
+| **GAYA** | GAYA JN | 991 km | **AVL 11** (₹1080) | **AVL 8** (₹1420) | Remote Quota: 11 3A & 8 2A Confirmed |
+| **DHN** | DHANBAD JN | 1,190 km | **AVL 39** (₹1020) | **AVL 2** (₹1335) | Remote Quota: 39 3A & 2 2A Confirmed |
+
+---
+
+### 9.4 Train 4: 12627 KARNATAKA EXP (KSR Bengaluru SBC -> New Delhi NDLS)
+- Total Distance: 2,395 km | Stops: 15
+
+| From | Station Name | Distance | SL Status (Fare) | 3A Status (Fare) | Quota Analysis |
+| :--- | :--- | :---: | :--- | :--- | :--- |
+| **SBC** | KSR BENGALURU | 0 km | WL 61 (₹947) | WL 62 (₹2360) | General Quota (`GN`) |
+| **DMM** | DHARMAVARAM JN | 201 km | WL 62 (₹907) | WL 62 (₹2270) | Pooled Quota |
+| **GTL** | GUNTAKAL JN | 320 km | WL 115 (₹882) | WL 90 (₹2210) | Pooled Quota (Deep Waitlist) |
+| **KLBG** | KALABURAGI | 567 km | WL 50 (₹817) | **Regret** (₹2060) | Quota Exhausted: Booking Closed in 3A |
+| **SUR** | SOLAPUR JN | 680 km | WL 51 (₹782) | **Regret** (₹1965) | Quota Exhausted: Booking Closed in 3A |
+| **BSL** | BHUSAVAL JN | 1,289 km | WL 20 (₹597) | WL 6 (₹1520) | Remote Location Quota |
+| **BPL** | BHOPAL JN | 1,694 km | WL 20 (₹452) | WL 6 (₹1155) | Remote Location Quota |
+| **VGLJ** | V LAKSHMIBAI JHANSI | 1,985 km | WL 9 (₹312) | WL 4 (₹780) | Remote Location Quota |
+
+**Key Takeaways:**
+- At Kalaburagi (`KLBG`) and Solapur (`SUR`), 3AC status is **`Regret`** (no bookings allowed at all).
+- An Origin Extension search reveals that booking from `SBC` is still open under `WL 62`. A passenger who would otherwise be completely blocked can still secure a waitlisted ticket by booking from `SBC` with boarding at `KLBG` or `SUR`.
+
