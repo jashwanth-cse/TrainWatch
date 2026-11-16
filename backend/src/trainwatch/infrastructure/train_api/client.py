@@ -273,8 +273,10 @@ class DreamDestinyClient:
             classes=classes,
         )
 
-    async def fetch(self, query: TrainQuery) -> AvailabilityObservation:
-        """Fetch one availability observation and fail closed on every error."""
+    async def fetch_with_fare(
+        self, query: TrainQuery
+    ) -> tuple[AvailabilityObservation, int | None]:
+        """Fetch availability snapshot and fare in a single provider call."""
         try:
             response = await self._request(
                 "POST",
@@ -294,7 +296,8 @@ class DreamDestinyClient:
                 raw_availability=_string(data.get("availability")),
                 observed_at=self._clock(),
             )
-            return AvailabilityObservation.success(snapshot)
+            fare = _optional_int(data.get("total_fare")) or _optional_int(data.get("fare"))
+            return AvailabilityObservation.success(snapshot), fare
         except TrainApiError as exc:
             failure = {
                 TrainApiFailure.TIMEOUT: ProviderFailure.TIMEOUT,
@@ -305,4 +308,9 @@ class DreamDestinyClient:
                 TrainApiFailure.TRANSPORT: ProviderFailure.UPSTREAM,
                 TrainApiFailure.UPSTREAM: ProviderFailure.UPSTREAM,
             }[exc.failure]
-            return AvailabilityObservation.failed(failure)
+            return AvailabilityObservation.failed(failure), None
+
+    async def fetch(self, query: TrainQuery) -> AvailabilityObservation:
+        """Fetch one availability observation and fail closed on every error."""
+        obs, _ = await self.fetch_with_fare(query)
+        return obs
