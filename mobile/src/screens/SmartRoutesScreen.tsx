@@ -18,6 +18,7 @@ import {
   SmartRouteSolution,
   SubLeg,
 } from '../services/smartRouteService';
+import { getStationName } from '../services/stationService';
 import { NostalgicTrainLoader } from '../components/NostalgicTrainLoader';
 import {
   ArrowLeft,
@@ -262,15 +263,22 @@ export const SmartRoutesScreen: React.FC = () => {
         >
           {/* Train & Route Identity Banner */}
           <View style={styles.routeBanner}>
-            <View style={styles.trainNumberBadge}>
-              <TrainFront size={14} color="#2563EB" strokeWidth={2.4} style={{ marginRight: 4 }} />
-              <Text style={styles.trainNumberText}>{params.trainNo}</Text>
+            <View style={styles.routeBannerTop}>
+              <View style={styles.trainNumberBadge}>
+                <TrainFront size={14} color="#2563EB" strokeWidth={2.4} style={{ marginRight: 4 }} />
+                <Text style={styles.trainNumberText}>{params.trainNo}</Text>
+              </View>
+              <Text style={styles.trainNameText} numberOfLines={1}>
+                {params.trainName || resultData?.train_name || 'Express'}
+              </Text>
+              <View style={styles.classBadge}>
+                <Text style={styles.classBadgeText}>{params.travelClass}</Text>
+              </View>
             </View>
-            <Text style={styles.trainNameText} numberOfLines={1}>
-              {params.trainName || resultData?.train_name || 'Express'}
-            </Text>
-            <View style={styles.classBadge}>
-              <Text style={styles.classBadgeText}>{params.travelClass}</Text>
+            <View style={styles.routePathRow}>
+              <Text style={styles.routePathText} numberOfLines={1}>
+                {params.source} ({params.sourceName || getStationName(params.source)}) ➔ {params.destination} ({params.destinationName || getStationName(params.destination)})
+              </Text>
             </View>
           </View>
 
@@ -351,7 +359,7 @@ export const SmartRoutesScreen: React.FC = () => {
                 <Text style={styles.solutionHeadline}>
                   Stay on the same train! Just shift your seat at{' '}
                   <Text style={{ fontWeight: '800', color: '#1E40AF' }}>
-                    {bestSolution.split_stations.join(', ')}
+                    {bestSolution.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')}
                   </Text>
                   .
                 </Text>
@@ -378,8 +386,11 @@ export const SmartRoutesScreen: React.FC = () => {
                           </View>
 
                           <View style={styles.legRouteRow}>
-                            <View>
+                            <View style={{ flex: 1 }}>
                               <Text style={styles.legStationCode}>{leg.from_station}</Text>
+                              <Text style={styles.legStationName} numberOfLines={1}>
+                                {getStationName(leg.from_station)}
+                              </Text>
                               <Text style={styles.legTimeText}>{leg.departure_time || 'Dep'}</Text>
                             </View>
                             <View style={styles.legArrowBlock}>
@@ -390,8 +401,11 @@ export const SmartRoutesScreen: React.FC = () => {
                                 <View style={styles.legDot} />
                               </View>
                             </View>
-                            <View style={{ alignItems: 'flex-end' }}>
+                            <View style={{ flex: 1, alignItems: 'flex-end' }}>
                               <Text style={styles.legStationCode}>{leg.to_station}</Text>
+                              <Text style={[styles.legStationName, { textAlign: 'right' }]} numberOfLines={1}>
+                                {getStationName(leg.to_station)}
+                              </Text>
                               <Text style={styles.legTimeText}>{leg.arrival_time || 'Arr'}</Text>
                             </View>
                           </View>
@@ -404,7 +418,7 @@ export const SmartRoutesScreen: React.FC = () => {
                             <View style={styles.shiftBadge}>
                               <Split size={14} color="#D97706" strokeWidth={2.4} style={{ marginRight: 6 }} />
                               <Text style={styles.shiftBadgeText}>
-                                Shift seat at {leg.to_station} (Same Train)
+                                Shift seat at {leg.to_station} ({getStationName(leg.to_station)}) (Same Train)
                               </Text>
                             </View>
                             <View style={styles.shiftLineVertical} />
@@ -420,7 +434,7 @@ export const SmartRoutesScreen: React.FC = () => {
                   <Text style={styles.bookingGuideTitle}>How to book on IRCTC:</Text>
                   {bestSolution.legs.map((leg: SubLeg, idx: number) => (
                     <Text key={idx} style={styles.bookingGuideStep}>
-                      {idx + 1}. Book Ticket {idx + 1}: {leg.from_station} to {leg.to_station} on Train {leg.train_no} ({leg.travel_class})
+                      {idx + 1}. Book Ticket {idx + 1}: {leg.from_station} ({getStationName(leg.from_station)}) to {leg.to_station} ({getStationName(leg.to_station)}) on Train {leg.train_no} ({leg.travel_class})
                     </Text>
                   ))}
                   <Text style={styles.bookingGuideNote}>
@@ -453,7 +467,7 @@ export const SmartRoutesScreen: React.FC = () => {
                     <Text style={styles.altFareText}>₹{sol.total_fare}</Text>
                   </View>
                   <Text style={styles.altRouteText}>
-                    Split at: {sol.split_stations.join(', ')} ({sol.legs.length} legs)
+                    Split at: {sol.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')} ({sol.legs.length} legs)
                   </Text>
                 </View>
               ))}
@@ -600,18 +614,31 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   routeBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radius.full,
+    paddingVertical: 10,
+    borderRadius: radius.lg,
     marginBottom: 12,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  routeBannerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  routePathRow: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  routePathText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1E40AF',
   },
   trainNumberBadge: {
     flexDirection: 'row',
@@ -887,6 +914,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
+  },
+  legStationName: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#64748B',
+    marginTop: 1,
+    maxWidth: 110,
   },
   legTimeText: {
     fontSize: 12,

@@ -17,6 +17,7 @@ import {
   TravelClassInfo,
   fetchLiveAvailability,
 } from '../services/trainService';
+import { getStationName } from '../services/stationService';
 import { watchService, WatchCondition } from '../services/watchService';
 import { requestNotificationPermissionsAndRegisterDevice } from '../services/notificationService';
 import {
@@ -47,6 +48,8 @@ export function extractAvailableSeats(raw: string | null | undefined): number | 
   return null;
 }
 
+export const SMART_SPLIT_ELIGIBLE_CLASSES = ['SL', '3A', '3AC', '2A', '2AC'];
+
 interface AvailabilityDetailModalProps {
   visible: boolean;
   train: TrainItem | null;
@@ -54,6 +57,7 @@ interface AvailabilityDetailModalProps {
   journeyDate: string;
   displayDate: string;
   quota: string;
+  searchMode?: 'track' | 'multileg';
   isAlreadyTracked?: boolean;
   onClose: () => void;
   onSetAlert?: (train: TrainItem, travelClass: TravelClassInfo) => void;
@@ -68,6 +72,7 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   journeyDate,
   displayDate,
   quota,
+  searchMode = 'track',
   isAlreadyTracked = false,
   onClose,
   onSetAlert,
@@ -109,6 +114,12 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   const currentStatus = liveAvailability || selectedClass.availability;
   const parsedStatus = parseAvailabilityStatus(currentStatus);
   const availableSeatsCap = extractAvailableSeats(currentStatus);
+
+  const normalizedClass = (selectedClass.travel_class || '').trim().toUpperCase();
+  const isClassEligibleForSplit = SMART_SPLIT_ELIGIBLE_CLASSES.includes(normalizedClass);
+  const isStatusEligibleForSplit =
+    parsedStatus.badgeLabel === 'RAC' || parsedStatus.badgeLabel === 'WAITLIST';
+  const shouldShowSmartSplit = isClassEligibleForSplit && isStatusEligibleForSplit;
 
   const badge = {
     bg: parsedStatus.bgColor,
@@ -310,6 +321,9 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               <View style={styles.routeRow}>
                 <View style={styles.timeBlock}>
                   <Text style={styles.stationCode}>{train.from.code}</Text>
+                  <Text style={styles.stationFullName} numberOfLines={1}>
+                    {train.from.name || getStationName(train.from.code)}
+                  </Text>
                   <Text style={styles.timeValue}>{train.departure_time}</Text>
                 </View>
 
@@ -324,6 +338,9 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
 
                 <View style={[styles.timeBlock, { alignItems: 'flex-end' }]}>
                   <Text style={styles.stationCode}>{train.to.code}</Text>
+                  <Text style={[styles.stationFullName, { textAlign: 'right' }]} numberOfLines={1}>
+                    {train.to.name || getStationName(train.to.code)}
+                  </Text>
                   <Text style={styles.timeValue}>{train.arrival_time}</Text>
                 </View>
               </View>
@@ -378,58 +395,101 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               </TouchableOpacity>
             </View>
 
-            {/* Smart Split Option */}
-            <TouchableOpacity
-              style={styles.smartSplitCard}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Smart Split: get a seat by changing seat mid journey"
-              onPress={() => {
-                handleModalClose();
-                if (onOpenSmartSplit) {
-                  onOpenSmartSplit(train, selectedClass);
-                } else {
-                  router.push({
-                    pathname: '/smart-routes',
-                    params: {
-                      trainNo: train.train_number,
-                      trainName: train.train_name,
-                      source: train.from.code,
-                      sourceName: train.from.name,
-                      destination: train.to.code,
-                      destinationName: train.to.name,
-                      date: journeyDate,
-                      displayDate,
-                      travelClass: selectedClass.travel_class,
-                      quota,
-                      directStatus: currentStatus,
-                      directFare: selectedClass.fare > 0 ? String(selectedClass.fare) : '',
-                    },
-                  });
-                }
-              }}
-            >
-              <View style={styles.smartSplitHeaderRow}>
-                <View style={styles.smartSplitIconCircle}>
-                  <Route size={18} color="#2563EB" strokeWidth={2.4} />
-                </View>
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <View style={styles.smartSplitTitleRow}>
-                    <Text style={styles.smartSplitTitle}>Smart Split</Text>
-                    <View style={styles.smartSplitBadge}>
-                      <Text style={styles.smartSplitBadgeText}>CONFIRM BERTH</Text>
-                    </View>
+            {/* Smart Split Option - Strictly for eligible classes (SL, 3A, 2A) and statuses (RAC, WL) */}
+            {shouldShowSmartSplit && (
+              <TouchableOpacity
+                style={styles.smartSplitCard}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Smart Split: get a seat by changing seat mid journey"
+                onPress={() => {
+                  handleModalClose();
+                  if (onOpenSmartSplit) {
+                    onOpenSmartSplit(train, selectedClass);
+                  } else {
+                    router.push({
+                      pathname: '/smart-routes',
+                      params: {
+                        trainNo: train.train_number,
+                        trainName: train.train_name,
+                        source: train.from.code,
+                        sourceName: train.from.name || getStationName(train.from.code),
+                        destination: train.to.code,
+                        destinationName: train.to.name || getStationName(train.to.code),
+                        date: journeyDate,
+                        displayDate,
+                        travelClass: selectedClass.travel_class,
+                        quota,
+                        directStatus: currentStatus,
+                        directFare: selectedClass.fare > 0 ? String(selectedClass.fare) : '',
+                      },
+                    });
+                  }
+                }}
+              >
+                <View style={styles.smartSplitHeaderRow}>
+                  <View style={styles.smartSplitIconCircle}>
+                    <Route size={18} color="#2563EB" strokeWidth={2.4} />
                   </View>
-                  <Text style={styles.smartSplitCaption}>
-                    get a seat by changing seat mid journey
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <View style={styles.smartSplitTitleRow}>
+                      <Text style={styles.smartSplitTitle}>Smart Split</Text>
+                      <View style={styles.smartSplitBadge}>
+                        <Text style={styles.smartSplitBadgeText}>CONFIRM BERTH</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.smartSplitCaption}>
+                      get a seat by changing seat mid journey
+                    </Text>
+                  </View>
+                  <ArrowRight size={18} color="#2563EB" strokeWidth={2.2} />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* In Multi-leg mode, if Split is not shown, provide clear feedback */}
+            {searchMode === 'multileg' && parsedStatus.badgeLabel === 'AVAILABLE' && (
+              <View style={styles.multiLegNoticeCard}>
+                <CheckCircle2 size={18} color="#15803D" strokeWidth={2.2} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.multiLegNoticeTitle}>Direct Seats Available</Text>
+                  <Text style={styles.multiLegNoticeDesc}>
+                    Direct berths are currently available for booking. Multi-leg split is not required.
                   </Text>
                 </View>
-                <ArrowRight size={18} color="#2563EB" strokeWidth={2.2} />
               </View>
-            </TouchableOpacity>
+            )}
 
-            {/* Alert Configuration Option */}
-            <View style={styles.alertOptionBox}>
+            {searchMode === 'multileg' && !isClassEligibleForSplit && (
+              <View style={styles.multiLegNoticeCard}>
+                <AlertCircle size={18} color="#B45309" strokeWidth={2.2} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.multiLegNoticeTitle}>Class Not Eligible</Text>
+                  <Text style={styles.multiLegNoticeDesc}>
+                    Smart Split is only available for Sleeper (SL), 3AC, and 2AC classes.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {searchMode === 'multileg' &&
+              isClassEligibleForSplit &&
+              !isStatusEligibleForSplit &&
+              parsedStatus.badgeLabel !== 'AVAILABLE' && (
+                <View style={styles.multiLegNoticeCard}>
+                  <AlertCircle size={18} color="#B45309" strokeWidth={2.2} style={{ marginRight: 10 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.multiLegNoticeTitle}>Split Not Available</Text>
+                    <Text style={styles.multiLegNoticeDesc}>
+                      Smart Split is only available for RAC or Waitlist berths.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+            {/* Alert Configuration Option - Strictly hidden in multileg mode */}
+            {searchMode !== 'multileg' && (
+              <View style={styles.alertOptionBox}>
               <View style={styles.alertHeader}>
                 <View style={styles.alertIconCircle}>
                   <Bell size={17} color={colors.primary} strokeWidth={2.4} />
@@ -704,6 +764,7 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
                 </View>
               )}
             </View>
+            )}
           </ScrollView>
         </View>
       </View>
@@ -811,6 +872,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: colors.textPrimary,
+  },
+  stationFullName: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: 1,
+    marginBottom: 2,
+    maxWidth: 120,
   },
   timeValue: {
     fontSize: 12,
@@ -977,6 +1046,27 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#3B82F6',
     marginTop: 2,
+  },
+  multiLegNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    marginBottom: spacing.md,
+  },
+  multiLegNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  multiLegNoticeDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
   },
   alertOptionBox: {
     backgroundColor: colors.surfaceSubtle,

@@ -64,11 +64,36 @@ export const POPULAR_STATIONS: Station[] = [
 ];
 
 /**
+ * Format a station name to elegant Title Case for presentation
+ */
+export function formatStationName(str: string | null | undefined): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .split(' ')
+    .filter((w) => w.length > 0)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/**
  * Look up a station by exact station code (case-insensitive)
  */
 export function getStationByCode(code: string): Station | undefined {
   if (!code) return undefined;
   return stationCodeMap.get(code.trim().toUpperCase());
+}
+
+/**
+ * Return formatted station full name by station code, falling back to uppercase code
+ */
+export function getStationName(code: string | null | undefined): string {
+  if (!code) return '';
+  const station = getStationByCode(code);
+  if (station && station.name) {
+    return formatStationName(station.name);
+  }
+  return code.trim().toUpperCase();
 }
 
 /**

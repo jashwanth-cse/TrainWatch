@@ -304,7 +304,7 @@ test('HomeScreen dual-mode navigation toggles between Track Seat and Multi leg',
   home.unmount();
 });
 
-test('AvailabilityDetailModal renders Smart Split option with caption and handles callback', async () => {
+function loadModalComponent() {
   const modalPath = path.join(__dirname, '../src/components/AvailabilityDetailModal.tsx');
   const source = fs.readFileSync(modalPath, 'utf8');
   const { outputText } = ts.transpileModule(source, {
@@ -313,6 +313,20 @@ test('AvailabilityDetailModal renders Smart Split option with caption and handle
       target: ts.ScriptTarget.ES2022,
       jsx: ts.JsxEmit.React,
       esModuleInterop: true,
+    },
+  });
+
+  const helperPath = path.join(__dirname, '../src/utils/availabilityHelper.ts');
+  const helperSource = fs.readFileSync(helperPath, 'utf8');
+  const { outputText: helperTranspiled } = ts.transpileModule(helperSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  });
+  const helperExports = {};
+  vm.runInNewContext(helperTranspiled, {
+    exports: helperExports,
+    require: (mod) => {
+      if (mod === '../theme/tokens') return { colors: {} };
+      return require(mod);
     },
   });
 
@@ -343,9 +357,13 @@ test('AvailabilityDetailModal renders Smart Split option with caption and handle
     '../services/watchService': { watchService: {} },
     '../services/notificationService': { requestNotificationPermissionsAndRegisterDevice: async () => {} },
     'lucide-react-native': new Proxy({}, { get: (_, k) => String(k) }),
-    '../utils/availabilityHelper': { parseAvailabilityStatus: () => ({ bgColor: '#E', textColor: '#0', dotColor: '#0', modalLabel: 'WAITLIST', badgeLabel: 'WAITLIST', canTrack: true }) },
+    '../utils/availabilityHelper': helperExports,
     '../utils/errorUtils': { sanitizeError: (e) => ({ userMessage: String(e) }) },
     '../services/networkService': { openNetworkSettings: async () => {} },
+    '../services/stationService': {
+      getStationName: (code) => String(code || ''),
+      formatStationName: (s) => String(s || ''),
+    },
   };
 
   const exports = {};
@@ -359,16 +377,38 @@ test('AvailabilityDetailModal renders Smart Split option with caption and handle
     isNaN,
   });
 
+  return { exports, getPushed: () => pushed };
+}
+
+function findNode(predicate, node) {
+  if (!node) return null;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const res = findNode(predicate, item);
+      if (res) return res;
+    }
+    return null;
+  }
+  if (typeof node === 'object') {
+    if (predicate(node)) return node;
+    return findNode(predicate, Object.values(node.props || {}));
+  }
+  return null;
+}
+
+const defaultTestTrain = {
+  train_number: '12662',
+  train_name: 'Pothigai Express',
+  from: { code: 'RJPM', name: 'Rajapalayam' },
+  to: { code: 'MS', name: 'Chennai Egmore' },
+  departure_time: '20:00',
+  arrival_time: '06:50',
+  duration: '10:50',
+};
+
+test('AvailabilityDetailModal renders Smart Split option with caption and handles callback', async () => {
+  const { exports } = loadModalComponent();
   let smartSplitTriggered = false;
-  const mockTrain = {
-    train_number: '12662',
-    train_name: 'Pothigai Express',
-    from: { code: 'RJPM', name: 'Rajapalayam' },
-    to: { code: 'MS', name: 'Chennai Egmore' },
-    departure_time: '20:00',
-    arrival_time: '06:50',
-    duration: '10:50',
-  };
   const mockClass = {
     travel_class: 'SL',
     fare: 360,
@@ -380,7 +420,7 @@ test('AvailabilityDetailModal renders Smart Split option with caption and handle
 
   const tree = exports.AvailabilityDetailModal({
     visible: true,
-    train: mockTrain,
+    train: defaultTestTrain,
     selectedClass: mockClass,
     journeyDate: '2026-11-20',
     displayDate: '20 Nov',
@@ -391,22 +431,6 @@ test('AvailabilityDetailModal renders Smart Split option with caption and handle
     },
   });
 
-  function findNode(predicate, node) {
-    if (!node) return null;
-    if (Array.isArray(node)) {
-      for (const item of node) {
-        const res = findNode(predicate, item);
-        if (res) return res;
-      }
-      return null;
-    }
-    if (typeof node === 'object') {
-      if (predicate(node)) return node;
-      return findNode(predicate, Object.values(node.props || {}));
-    }
-    return null;
-  }
-
   const smartSplitBtn = findNode(
     (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
     tree
@@ -415,4 +439,198 @@ test('AvailabilityDetailModal renders Smart Split option with caption and handle
 
   smartSplitBtn.props.onPress();
   assert.equal(smartSplitTriggered, true, 'onOpenSmartSplit callback must fire when pressed');
+});
+
+test('AvailabilityDetailModal does NOT render Smart Split option when seats are AVAILABLE', async () => {
+  const { exports } = loadModalComponent();
+  const mockClass = {
+    travel_class: 'SL',
+    fare: 360,
+    availability: 'AVAILABLE 45',
+    prediction: 0,
+    bookable: true,
+    availability_source: 'live',
+  };
+
+  const tree = exports.AvailabilityDetailModal({
+    visible: true,
+    train: defaultTestTrain,
+    selectedClass: mockClass,
+    journeyDate: '2026-11-20',
+    displayDate: '20 Nov',
+    quota: 'GN',
+    onClose: () => {},
+  });
+
+  const smartSplitBtn = findNode(
+    (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
+    tree
+  );
+  assert.equal(smartSplitBtn, null, 'Smart Split must NOT be rendered when seats are AVAILABLE');
+});
+
+test('AvailabilityDetailModal does NOT render Smart Split option for 1AC (1A) even if waitlisted', async () => {
+  const { exports } = loadModalComponent();
+  const mockClass = {
+    travel_class: '1A',
+    fare: 2200,
+    availability: 'WL 5',
+    prediction: 0,
+    bookable: true,
+    availability_source: 'live',
+  };
+
+  const tree = exports.AvailabilityDetailModal({
+    visible: true,
+    train: defaultTestTrain,
+    selectedClass: mockClass,
+    journeyDate: '2026-11-20',
+    displayDate: '20 Nov',
+    quota: 'GN',
+    onClose: () => {},
+  });
+
+  const smartSplitBtn = findNode(
+    (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
+    tree
+  );
+  assert.equal(smartSplitBtn, null, 'Smart Split must NOT be rendered for 1A class');
+});
+
+test('AvailabilityDetailModal does NOT render Smart Split option for REGRET or NOT AVAILABLE', async () => {
+  const { exports } = loadModalComponent();
+  const mockClass = {
+    travel_class: 'SL',
+    fare: 360,
+    availability: 'REGRET/WL 200',
+    prediction: 0,
+    bookable: false,
+    availability_source: 'live',
+  };
+
+  const tree = exports.AvailabilityDetailModal({
+    visible: true,
+    train: defaultTestTrain,
+    selectedClass: mockClass,
+    journeyDate: '2026-11-20',
+    displayDate: '20 Nov',
+    quota: 'GN',
+    onClose: () => {},
+  });
+
+  const smartSplitBtn = findNode(
+    (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
+    tree
+  );
+  assert.equal(smartSplitBtn, null, 'Smart Split must NOT be rendered for REGRET status');
+});
+
+test('AvailabilityDetailModal DOES render Smart Split for SL, 3A, and 2A when RAC or WAITLIST', async () => {
+  const { exports } = loadModalComponent();
+  const eligiblePairs = [
+    { cls: 'SL', status: 'WL 10' },
+    { cls: '3A', status: 'RAC 4' },
+    { cls: '2A', status: 'GNWL 2' },
+  ];
+
+  for (const pair of eligiblePairs) {
+    const tree = exports.AvailabilityDetailModal({
+      visible: true,
+      train: defaultTestTrain,
+      selectedClass: {
+        travel_class: pair.cls,
+        fare: 500,
+        availability: pair.status,
+        prediction: 0,
+        bookable: true,
+        availability_source: 'live',
+      },
+      journeyDate: '2026-11-20',
+      displayDate: '20 Nov',
+      quota: 'GN',
+      onClose: () => {},
+    });
+
+    const smartSplitBtn = findNode(
+      (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
+      tree
+    );
+    assert.ok(smartSplitBtn, `Smart Split must be rendered for ${pair.cls} with ${pair.status}`);
+  }
+});
+
+test('AvailabilityDetailModal in multileg mode strictly hides seat alert form', async () => {
+  const { exports } = loadModalComponent();
+  const mockClass = {
+    travel_class: '3A',
+    fare: 950,
+    availability: 'WL 14',
+    prediction: 0,
+    bookable: true,
+    availability_source: 'live',
+  };
+
+  const tree = exports.AvailabilityDetailModal({
+    visible: true,
+    train: defaultTestTrain,
+    selectedClass: mockClass,
+    journeyDate: '2026-11-20',
+    displayDate: '20 Nov',
+    quota: 'GN',
+    searchMode: 'multileg',
+    onClose: () => {},
+  });
+
+  const smartSplitBtn = findNode(
+    (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
+    tree
+  );
+  assert.ok(smartSplitBtn, 'Smart Split must be visible in multileg mode when waitlisted');
+
+  // Verify that "Track This Seat" or alert options are NOT rendered
+  const trackSeatBtn = findNode(
+    (n) => n.props?.children && (
+      (Array.isArray(n.props.children) && n.props.children.includes('Track This Seat')) ||
+      n.props.children === 'Track This Seat'
+    ),
+    tree
+  );
+  assert.equal(trackSeatBtn, null, 'Track This Seat button must NOT exist in multileg mode');
+});
+
+test('AvailabilityDetailModal in multileg mode shows direct seats notice when status is AVAILABLE', async () => {
+  const { exports } = loadModalComponent();
+  const mockClass = {
+    travel_class: '3A',
+    fare: 950,
+    availability: 'AVAILABLE 12',
+    prediction: 0,
+    bookable: true,
+    availability_source: 'live',
+  };
+
+  const tree = exports.AvailabilityDetailModal({
+    visible: true,
+    train: defaultTestTrain,
+    selectedClass: mockClass,
+    journeyDate: '2026-11-20',
+    displayDate: '20 Nov',
+    quota: 'GN',
+    searchMode: 'multileg',
+    onClose: () => {},
+  });
+
+  const smartSplitBtn = findNode(
+    (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
+    tree
+  );
+  assert.equal(smartSplitBtn, null, 'Smart Split must NOT be rendered when seats are AVAILABLE in multileg mode');
+
+  const directSeatsNotice = findNode(
+    (n) =>
+      (Array.isArray(n.props?.children) && n.props.children.includes('Direct Seats Available')) ||
+      n.props?.children === 'Direct Seats Available',
+    tree
+  );
+  assert.ok(directSeatsNotice, 'Direct Seats Available notice must be rendered in multileg mode when AVL');
 });

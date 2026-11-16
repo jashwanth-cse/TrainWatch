@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
 import Svg, { Circle, Line, G, Rect, Path, Defs, RadialGradient, Stop } from 'react-native-svg';
 import { colors, radius, spacing } from '../theme/tokens';
+import { getStationName } from '../services/stationService';
 import { Sparkles } from 'lucide-react-native';
 
 const RAILWAY_FACTS = [
@@ -128,8 +129,8 @@ export const NostalgicTrainLoader: React.FC<NostalgicTrainLoaderProps> = ({
       {/* Route & Train Header Tag */}
       {trainNumber && (
         <View style={styles.headerTag}>
-          <Text style={styles.headerTagText}>
-            Train {trainNumber} • {source || 'Origin'} ➔ {destination || 'Dest'}
+          <Text style={styles.headerTagText} numberOfLines={1}>
+            Train {trainNumber} • {source || 'Origin'} ({getStationName(source)}) ➔ {destination || 'Dest'} ({getStationName(destination)})
             {travelClass ? ` • ${travelClass}` : ''}
           </Text>
         </View>

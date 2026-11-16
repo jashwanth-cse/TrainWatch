@@ -24,6 +24,7 @@ import {
   Station,
   addRecentStation,
   saveLastSearch,
+  getStationName,
 } from '../services/stationService';
 import { AvailabilityDetailModal } from '../components/AvailabilityDetailModal';
 import { watchService, WatchRecord, normalizeDateToIso } from '../services/watchService';
@@ -67,6 +68,7 @@ export const TrainResultsScreen: React.FC = () => {
     displayDate?: string;
     quota?: string;
     travelClass?: string;
+    mode?: 'track' | 'multileg';
   }>();
 
   // Active query state allowing live in-screen updates
@@ -806,6 +808,7 @@ export const TrainResultsScreen: React.FC = () => {
         journeyDate={currentDate}
         displayDate={currentDisplayDate}
         quota={quota}
+        searchMode={params.mode === 'multileg' ? 'multileg' : 'track'}
         isAlreadyTracked={
           selectedTrainForModal && selectedClassForModal
             ? isClassTracked(selectedTrainForModal.train_number, selectedClassForModal.travel_class)
@@ -827,9 +830,9 @@ export const TrainResultsScreen: React.FC = () => {
               trainNo: train.train_number,
               trainName: train.train_name,
               source: train.from.code,
-              sourceName: train.from.name,
+              sourceName: train.from.name || getStationName(train.from.code),
               destination: train.to.code,
-              destinationName: train.to.name,
+              destinationName: train.to.name || getStationName(train.to.code),
               date: currentDate,
               displayDate: currentDisplayDate,
               travelClass: cls.travel_class,
@@ -883,6 +886,9 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, isCla
         <View style={styles.timeBlock}>
           <Text style={styles.timeText}>{train.departure_time}</Text>
           <Text style={styles.stationCodeText}>{train.from.code}</Text>
+          <Text style={styles.stationNameText} numberOfLines={1}>
+            {train.from.name || getStationName(train.from.code)}
+          </Text>
         </View>
 
         <View style={styles.durationBlock}>
@@ -897,6 +903,9 @@ const TrainCard: React.FC<TrainCardProps> = ({ train, getStatusBadgeStyle, isCla
         <View style={[styles.timeBlock, { alignItems: 'flex-end' }]}>
           <Text style={styles.timeText}>{train.arrival_time}</Text>
           <Text style={styles.stationCodeText}>{train.to.code}</Text>
+          <Text style={[styles.stationNameText, { textAlign: 'right' }]} numberOfLines={1}>
+            {train.to.name || getStationName(train.to.code)}
+          </Text>
         </View>
       </View>
 
@@ -1160,6 +1169,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: '600',
     marginTop: 2,
+  },
+  stationNameText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: colors.textMuted,
+    marginTop: 1,
+    maxWidth: 95,
   },
   durationBlock: {
     flex: 1,
