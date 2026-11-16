@@ -40,9 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 SegmentQuerier = Callable[[str, str], Awaitable[tuple[AvailabilityObservation, int | None]]]
 
 
-def _calculate_duration_minutes(
-    dep_stop: ScheduleStop, arr_stop: ScheduleStop
-) -> int:
+def _calculate_duration_minutes(dep_stop: ScheduleStop, arr_stop: ScheduleStop) -> int:
     """Calculate running duration in minutes between two schedule stops."""
     dep_h, dep_m = (int(x) for x in dep_stop.departure_time.split(":")[:2])
     arr_h, arr_m = (int(x) for x in arr_stop.arrival_time.split(":")[:2])
@@ -601,9 +599,7 @@ class SmartRoutingEngine:
 
         # Check surcharge guardrails: max <= 100 extra in SL, or <= 20% surcharge
         surcharge = (
-            (ext_fare - direct_fare)
-            if (ext_fare is not None and direct_fare is not None)
-            else 0
+            (ext_fare - direct_fare) if (ext_fare is not None and direct_fare is not None) else 0
         )
         surcharge_pct = (
             ((surcharge / direct_fare) * 100.0) if (direct_fare and direct_fare > 0) else 0.0

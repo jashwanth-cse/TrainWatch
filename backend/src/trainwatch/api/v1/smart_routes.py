@@ -155,27 +155,18 @@ async def find_smart_routes(
             message="Origin and destination stations must differ",
         )
 
-    try:
-        domain_query = SmartRouteQuery(
-            train_no=payload.train_no,
-            origin=payload.origin,
-            destination=payload.destination,
-            journey_date=payload.journey_date,
-            travel_class=payload.travel_class,
-            quota=payload.quota,
-        )
-    except ValueError as exc:
-        raise ApiError(
-            status_code=400,
-            code="invalid_request",
-            message=str(exc),
-        ) from exc
+    domain_query = SmartRouteQuery(
+        train_no=payload.train_no,
+        origin=payload.origin,
+        destination=payload.destination,
+        journey_date=payload.journey_date,
+        travel_class=payload.travel_class,
+        quota=payload.quota,
+    )
 
     result: SmartRouteResult = await engine.search(domain_query)
 
-    direct_status_str = (
-        result.direct_status.raw_availability if result.direct_status else None
-    )
+    direct_status_str = result.direct_status.raw_availability if result.direct_status else None
 
     solutions_payload = [
         SmartRouteSolutionPayload(

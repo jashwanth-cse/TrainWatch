@@ -69,6 +69,15 @@ def test_smart_route_query_validation() -> None:
             travel_class="SL",
         )
 
+    with pytest.raises(ValueError, match="destination"):
+        SmartRouteQuery(
+            train_no="12662",
+            origin="RJPM",
+            destination="M",
+            journey_date=date(2026, 12, 16),
+            travel_class="SL",
+        )
+
     # Same origin and destination
     with pytest.raises(ValueError, match="must differ"):
         SmartRouteQuery(

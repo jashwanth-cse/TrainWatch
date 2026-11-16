@@ -199,3 +199,17 @@ async def test_find_smart_routes_invalid_inputs(
             },
         )
         assert res2.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_get_smart_routing_engine_lazy_init() -> None:
+    """Verify lazy initialization of SmartRoutingEngine on application state."""
+    from fastapi import Request
+
+    from trainwatch.api.v1.smart_routes import get_smart_routing_engine
+
+    app = create_app(settings=AppSettings(app_env="test"))
+    req = Request({"type": "http", "app": app})
+    engine = get_smart_routing_engine(req)
+    assert engine is not None
+    assert app.state.smart_routing_engine is engine
