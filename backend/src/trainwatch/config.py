@@ -21,6 +21,7 @@ class AppSettings:
     app_env: AppEnvironment = "local"
     log_level: LogLevel = "INFO"
     train_api_base_url: str = "https://example.invalid"
+    train_schedule_cdn_base_url: str = "https://trains.jashh.me"
     internal_service_key: str = ""
     rate_limit_per_minute: int = 60
     request_timeout_seconds: float = 15.0
@@ -35,6 +36,9 @@ class AppSettings:
         app_env = os.getenv("APP_ENV", "local").lower()
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         train_api_base_url = os.getenv("TRAIN_API_BASE_URL", "https://example.invalid").strip()
+        train_schedule_cdn_base_url = os.getenv(
+            "TRAIN_SCHEDULE_CDN_BASE_URL", "https://trains.jashh.me"
+        ).strip()
         internal_service_key = os.getenv("INTERNAL_SERVICE_KEY", "").strip()
 
         rate_limit_raw = os.getenv("RATE_LIMIT_PER_MINUTE", "60").strip()
@@ -80,11 +84,14 @@ class AppSettings:
             raise ValueError("LOG_LEVEL must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL")
         if not train_api_base_url.startswith(("https://", "http://")):
             raise ValueError("TRAIN_API_BASE_URL must be an HTTP(S) URL")
+        if not train_schedule_cdn_base_url.startswith(("https://", "http://")):
+            raise ValueError("TRAIN_SCHEDULE_CDN_BASE_URL must be an HTTP(S) URL")
 
         return cls(
             app_env=cast(AppEnvironment, app_env),
             log_level=cast(LogLevel, log_level),
             train_api_base_url=train_api_base_url.rstrip("/"),
+            train_schedule_cdn_base_url=train_schedule_cdn_base_url.rstrip("/"),
             internal_service_key=internal_service_key,
             rate_limit_per_minute=rate_limit_per_minute,
             request_timeout_seconds=request_timeout_seconds,

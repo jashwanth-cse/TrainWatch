@@ -230,6 +230,7 @@ def create_app(
     notification_dispatcher_service: NotificationDispatcherService | None = None,
     metrics_registry: MetricsRegistry | None = None,
     rate_limiter: SlidingWindowRateLimiter | None = None,
+    smart_routing_engine: Any = None,
 ) -> FastAPI:
     """Create an isolated application without initializing external clients."""
     resolved_settings = settings or AppSettings.from_environment()
@@ -299,6 +300,7 @@ def create_app(
     application.state.notification_dispatcher_service = notification_dispatcher_service
     application.state.metrics = metrics_registry or MetricsRegistry()
     application.state.rate_limiter = rate_limiter or SlidingWindowRateLimiter(window_seconds=60)
+    application.state.smart_routing_engine = smart_routing_engine
 
     @application.get("/healthz", tags=["health"])
     def root_liveness() -> dict[str, str]:

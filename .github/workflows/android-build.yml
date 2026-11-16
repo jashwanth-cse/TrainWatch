@@ -97,6 +97,8 @@ jobs:
           org.gradle.parallel=true
           org.gradle.caching=true
           org.gradle.vfs.watch=false
+          reactNativeArchitectures=arm64-v8a
+          android.enableMinifyInReleaseBuilds=true
           EOF
 
       - name: Setup Gradle Build Cache

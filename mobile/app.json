@@ -3,7 +3,7 @@
     "name": "TrainWatch",
     "slug": "trainwatch",
     "scheme": "trainwatch",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.trainwatch.app",
-      "versionCode": 3,
+      "versionCode": 4,
       "googleServicesFile": "./google-services.json",
       "splash": {
         "image": "./assets/splash-icon.png",
@@ -50,6 +50,16 @@
         {
           "icon": "./assets/icon.png",
           "color": "#1E3A8A"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "buildArchs": ["arm64-v8a"],
+            "enableMinifyInReleaseBuilds": true,
+            "extraProguardRules": "-keep class com.swmansion.reanimated.** { *; }\n-keep class com.facebook.react.turbomodule.** { *; }\n-keepattributes *Annotation*\n-keepclassmembers class * {\n  @com.facebook.react.bridge.ReactMethod *;\n  @com.facebook.react.bridge.ReactContextBaseJavaModule *;\n  @com.facebook.proguard.annotations.DoNotStrip *;\n}\n-keep class com.google.android.gms.auth.api.signin.** { *; }\n-keep class com.reactnativegooglesignin.** { *; }\n-keep class com.reactnativecommunity.asyncstorage.** { *; }"
+          }
         }
       ]
     ],

@@ -16,6 +16,16 @@ from trainwatch.domain.notifications import (
     NotificationDeliveryStatus,
     NotificationRecord,
 )
+from trainwatch.domain.smart_routes import (
+    SmartRouteQuery,
+    SmartRouteResult,
+    SmartRouteSolution,
+    SolutionTier,
+    StationRole,
+    SubLeg,
+    calculate_recommendation_score,
+    compute_leg_horizon,
+)
 from trainwatch.domain.watch import TrainQuery, Watch, WatchStatus
 
 __all__ = [
@@ -31,10 +41,18 @@ __all__ = [
     "NotificationDeliveryStatus",
     "NotificationRecord",
     "ProviderFailure",
+    "SmartRouteQuery",
+    "SmartRouteResult",
+    "SmartRouteSolution",
+    "SolutionTier",
+    "StationRole",
+    "SubLeg",
     "TrainQuery",
     "Watch",
     "WatchStatus",
+    "calculate_recommendation_score",
     "compare_availability",
+    "compute_leg_horizon",
     "parse_availability",
     "should_alert",
 ]

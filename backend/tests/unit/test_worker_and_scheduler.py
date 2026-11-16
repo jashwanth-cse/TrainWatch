@@ -214,7 +214,7 @@ def _sample_watch(
             train_number="12661",
             source="MS",
             destination="TEN",
-            journey_date=journey_date or date(2026, 11, 15),
+            journey_date=journey_date or date(2026, 12, 15),
             travel_class="3A",
             quota="GN",
         ),
