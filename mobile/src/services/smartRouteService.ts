@@ -1,6 +1,38 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getTransportApiBaseUrl } from './trainService';
 import { sanitizeError } from '../utils/errorUtils';
+
+export function normalizeDateToIso(dateStr: string | null | undefined): string {
+  if (!dateStr) return '';
+  const parts = dateStr.trim().split(/[-/]/);
+  if (parts.length === 3) {
+    if (parts[0].length <= 2 && parts[2].length === 4) {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+  }
+  return dateStr;
+}
+
+export function normalizeTravelClass(rawClass: string | null | undefined): string {
+  if (!rawClass) return 'SL';
+  const clean = rawClass.trim().toUpperCase();
+  if (clean === '3AC') return '3A';
+  if (clean === '2AC') return '2A';
+  if (clean === '1AC') return '1A';
+  return clean;
+}
+
+export function getSmartRoutesApiBaseUrl(): string {
+  const url =
+    process.env.EXPO_PUBLIC_TRAINWATCH_API_URL ||
+    process.env.EXPO_PUBLIC_TRANSPORT_SERVICE_URL;
+  if (url && url.trim()) {
+    return url.trim().replace(/\/+$/, '');
+  }
+  return '';
+}
 
 export interface SubLeg {
   leg_number: number;
@@ -96,7 +128,9 @@ export function buildSmartRouteCacheKey(params: {
   quota?: string;
 }): string {
   const q = (params.quota || 'GN').trim().toUpperCase();
-  return `${params.trainNo.trim()}_${params.origin.trim().toUpperCase()}_${params.destination.trim().toUpperCase()}_${params.journeyDate.trim()}_${params.travelClass.trim().toUpperCase()}_${q}`;
+  const dateIso = normalizeDateToIso(params.journeyDate);
+  const cls = normalizeTravelClass(params.travelClass);
+  return `${params.trainNo.trim()}_${params.origin.trim().toUpperCase()}_${params.destination.trim().toUpperCase()}_${dateIso}_${cls}_${q}`;
 }
 
 /**
@@ -158,7 +192,7 @@ export async function fetchSmartRoutes(
   let requestPromise = inFlightRequests.get(cacheKey);
   if (!requestPromise) {
     requestPromise = (async () => {
-      const baseUrl = getTransportApiBaseUrl();
+      const baseUrl = getSmartRoutesApiBaseUrl();
       if (!baseUrl) {
         throw new Error('API service endpoint is not configured. Please check environment configuration.');
       }
@@ -168,8 +202,8 @@ export async function fetchSmartRoutes(
         train_no: params.trainNo.trim(),
         origin: params.origin.trim().toUpperCase(),
         destination: params.destination.trim().toUpperCase(),
-        journey_date: params.journeyDate.trim(),
-        travel_class: params.travelClass.trim().toUpperCase(),
+        journey_date: normalizeDateToIso(params.journeyDate),
+        travel_class: normalizeTravelClass(params.travelClass),
         quota: (params.quota || 'GN').trim().toUpperCase(),
       };
 

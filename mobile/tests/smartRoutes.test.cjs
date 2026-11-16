@@ -60,7 +60,7 @@ function loadSmartRouteService(mockFetch, mockStorage = new Map()) {
       return require(name);
     },
     fetch: mockFetch,
-    process: { env: {} },
+    process: { env: { EXPO_PUBLIC_TRAINWATCH_API_URL: 'https://test-api.trainwatch.app' } },
     Date: globalThis.Date,
     Math: globalThis.Math,
     JSON: globalThis.JSON,
