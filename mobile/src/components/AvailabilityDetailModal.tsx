@@ -29,9 +29,9 @@ import {
   X,
   AlertCircle,
   TrendingUp,
-  Check,
   Wifi,
   WifiOff,
+  Route,
 } from 'lucide-react-native';
 import { parseAvailabilityStatus } from '../utils/availabilityHelper';
 import { sanitizeError } from '../utils/errorUtils';
@@ -58,6 +58,7 @@ interface AvailabilityDetailModalProps {
   onClose: () => void;
   onSetAlert?: (train: TrainItem, travelClass: TravelClassInfo) => void;
   onViewAlerts?: () => void;
+  onOpenSmartSplit?: (train: TrainItem, travelClass: TravelClassInfo) => void;
 }
 
 export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = ({
@@ -71,6 +72,7 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   onClose,
   onSetAlert,
   onViewAlerts,
+  onOpenSmartSplit,
 }) => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -91,14 +93,14 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   useEffect(() => {
     if (selectedClass) {
       const seats = extractAvailableSeats(selectedClass.availability);
-      if (seats && seats > 0) {
-        const defaultVal = Math.min(25, Math.max(1, Math.floor(seats / 2)));
+      const defaultVal = seats && seats > 0
+        ? Math.min(25, Math.max(1, Math.floor(seats / 2)))
+        : 25;
+      queueMicrotask(() => {
         setAvlThreshold(String(defaultVal));
-      } else {
-        setAvlThreshold('25');
-      }
-      setThresholdError(null);
-      setAlertError(null);
+        setThresholdError(null);
+        setAlertError(null);
+      });
     }
   }, [selectedClass]);
 
@@ -375,6 +377,56 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
                 )}
               </TouchableOpacity>
             </View>
+
+            {/* Smart Split Option */}
+            <TouchableOpacity
+              style={styles.smartSplitCard}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Smart Split: get a seat by changing seat mid journey"
+              onPress={() => {
+                handleModalClose();
+                if (onOpenSmartSplit) {
+                  onOpenSmartSplit(train, selectedClass);
+                } else {
+                  router.push({
+                    pathname: '/smart-routes',
+                    params: {
+                      trainNo: train.train_number,
+                      trainName: train.train_name,
+                      source: train.from.code,
+                      sourceName: train.from.name,
+                      destination: train.to.code,
+                      destinationName: train.to.name,
+                      date: journeyDate,
+                      displayDate,
+                      travelClass: selectedClass.travel_class,
+                      quota,
+                      directStatus: currentStatus,
+                      directFare: selectedClass.fare > 0 ? String(selectedClass.fare) : '',
+                    },
+                  });
+                }
+              }}
+            >
+              <View style={styles.smartSplitHeaderRow}>
+                <View style={styles.smartSplitIconCircle}>
+                  <Route size={18} color="#2563EB" strokeWidth={2.4} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <View style={styles.smartSplitTitleRow}>
+                    <Text style={styles.smartSplitTitle}>Smart Split</Text>
+                    <View style={styles.smartSplitBadge}>
+                      <Text style={styles.smartSplitBadgeText}>CONFIRM BERTH</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.smartSplitCaption}>
+                    get a seat by changing seat mid journey
+                  </Text>
+                </View>
+                <ArrowRight size={18} color="#2563EB" strokeWidth={2.2} />
+              </View>
+            </TouchableOpacity>
 
             {/* Alert Configuration Option */}
             <View style={styles.alertOptionBox}>
@@ -871,6 +923,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.primary,
+  },
+  smartSplitCard: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  smartSplitHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  smartSplitIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smartSplitTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  smartSplitTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E3A8A',
+    letterSpacing: -0.3,
+  },
+  smartSplitBadge: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    marginLeft: 8,
+  },
+  smartSplitBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  smartSplitCaption: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#3B82F6',
+    marginTop: 2,
   },
   alertOptionBox: {
     backgroundColor: colors.surfaceSubtle,

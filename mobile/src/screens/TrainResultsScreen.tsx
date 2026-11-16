@@ -27,7 +27,6 @@ import {
 } from '../services/stationService';
 import { AvailabilityDetailModal } from '../components/AvailabilityDetailModal';
 import { watchService, WatchRecord, normalizeDateToIso } from '../services/watchService';
-import { Bell } from 'lucide-react-native';
 import { DatePickerModal, DateItem } from '../components/DatePickerModal';
 import { StationSearchModal } from '../components/StationSearchModal';
 import { TrainWatchLoader } from '../components/TrainWatchLoader';
@@ -37,6 +36,7 @@ import { addNetworkListener, checkNetworkStatus } from '../services/networkServi
 import { resolveQuota } from '../utils/quota';
 import { parseAvailabilityStatus } from '../utils/availabilityHelper';
 import {
+  Bell,
   ArrowLeft,
   ArrowRight,
   RotateCcw,
@@ -818,6 +818,26 @@ export const TrainResultsScreen: React.FC = () => {
         onViewAlerts={() => {
           setDetailModalVisible(false);
           router.push('/alerts');
+        }}
+        onOpenSmartSplit={(train, cls) => {
+          setDetailModalVisible(false);
+          router.push({
+            pathname: '/smart-routes',
+            params: {
+              trainNo: train.train_number,
+              trainName: train.train_name,
+              source: train.from.code,
+              sourceName: train.from.name,
+              destination: train.to.code,
+              destinationName: train.to.name,
+              date: currentDate,
+              displayDate: currentDisplayDate,
+              travelClass: cls.travel_class,
+              quota,
+              directStatus: cls.availability,
+              directFare: cls.fare > 0 ? String(cls.fare) : '',
+            },
+          });
         }}
       />
     </View>
