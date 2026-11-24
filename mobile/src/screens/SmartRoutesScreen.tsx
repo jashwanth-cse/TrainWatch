@@ -30,7 +30,72 @@ import {
   ShieldCheck,
   Split,
   TrainFront,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react-native';
+
+interface OptionTheme {
+  primary: string;
+  gradient: [string, string];
+  accent: string;
+  badgeBg: string;
+  badgeText: string;
+  lightBg: string;
+  borderColor: string;
+}
+
+const OPTION_THEMES: OptionTheme[] = [
+  // Option 1 (Royal Sapphire)
+  {
+    primary: '#1E40AF',
+    gradient: ['#1E3A8A', '#2563EB'],
+    accent: '#2563EB',
+    badgeBg: '#EFF6FF',
+    badgeText: '#1D4ED8',
+    lightBg: '#F8FAFC',
+    borderColor: '#BFDBFE',
+  },
+  // Option 2 (Emerald Forest)
+  {
+    primary: '#065F46',
+    gradient: ['#065F46', '#059669'],
+    accent: '#059669',
+    badgeBg: '#ECFDF5',
+    badgeText: '#047857',
+    lightBg: '#F0FDF4',
+    borderColor: '#A7F3D0',
+  },
+  // Option 3 (Royal Violet)
+  {
+    primary: '#5B21B6',
+    gradient: ['#5B21B6', '#7C3AED'],
+    accent: '#7C3AED',
+    badgeBg: '#F5F3FF',
+    badgeText: '#6D28D9',
+    lightBg: '#FAF5FF',
+    borderColor: '#DDD6FE',
+  },
+  // Option 4 (Warm Amber)
+  {
+    primary: '#9A3412',
+    gradient: ['#9A3412', '#D97706'],
+    accent: '#D97706',
+    badgeBg: '#FFFBEB',
+    badgeText: '#B45309',
+    lightBg: '#FEFCE8',
+    borderColor: '#FDE68A',
+  },
+  // Option 5 (Deep Teal)
+  {
+    primary: '#115E59',
+    gradient: ['#115E59', '#0D9488'],
+    accent: '#0D9488',
+    badgeBg: '#F0FDFA',
+    badgeText: '#0F766E',
+    lightBg: '#F0FDFA',
+    borderColor: '#99F6E4',
+  },
+];
 
 export const SmartRoutesScreen: React.FC = () => {
   const router = useRouter();
@@ -56,7 +121,15 @@ export const SmartRoutesScreen: React.FC = () => {
   const [isFromCache, setIsFromCache] = useState(false);
   const [remainingSec, setRemainingSec] = useState<number>(0);
   const [toastNotice, setToastNotice] = useState<string | null>(null);
+  const [expandedOptionIds, setExpandedOptionIds] = useState<Record<string, boolean>>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const toggleOptionExpansion = useCallback((solKey: string) => {
+    setExpandedOptionIds((prev) => ({
+      ...prev,
+      [solKey]: !prev[solKey],
+    }));
+  }, []);
 
   // Normalize date format to YYYY-MM-DD
   const formatToIsoDate = (d: string): string => {
@@ -455,21 +528,206 @@ export const SmartRoutesScreen: React.FC = () => {
           {/* Alternative Split Options */}
           {alternativeSolutions.length > 0 && (
             <View style={styles.altSection}>
-              <Text style={styles.altSectionTitle}>Alternative Split Options</Text>
-              {alternativeSolutions.map((sol: SmartRouteSolution, idx: number) => (
-                <View key={sol.solution_id || idx} style={styles.altCard}>
-                  <View style={styles.altCardHeader}>
-                    <View style={styles.altBadge}>
-                      <Text style={styles.altBadgeText}>Option {idx + 2}</Text>
-                    </View>
-                    <Text style={styles.altScoreText}>Score: {Math.round(sol.recommendation_score)}</Text>
-                    <Text style={styles.altFareText}>₹{sol.total_fare}</Text>
+              <View style={styles.altSectionHeaderRow}>
+                <Text style={styles.altSectionTitle}>Alternative Split Options</Text>
+                <Text style={styles.altSectionCount}>
+                  {alternativeSolutions.length} {alternativeSolutions.length === 1 ? 'option available' : 'options available'}
+                </Text>
+              </View>
+              {alternativeSolutions.map((sol: SmartRouteSolution, idx: number) => {
+                const optionNum = idx + 2;
+                const solKey = sol.solution_id || `alt-option-${optionNum}`;
+                const isExpanded = !!expandedOptionIds[solKey];
+                const theme = OPTION_THEMES[(idx + 1) % OPTION_THEMES.length];
+
+                return (
+                  <View
+                    key={solKey}
+                    style={[
+                      styles.altCard,
+                      {
+                        borderColor: isExpanded ? theme.accent : '#E2E8F0',
+                        borderWidth: isExpanded ? 1.5 : 1,
+                      },
+                    ]}
+                  >
+                    {/* Clickable Card Header */}
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => toggleOptionExpansion(solKey)}
+                      style={[
+                        styles.altCardHeaderTouchable,
+                        isExpanded && {
+                          backgroundColor: theme.lightBg,
+                          borderBottomWidth: 1,
+                          borderBottomColor: theme.borderColor,
+                        },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Option ${optionNum}, split at ${sol.split_stations.join(', ')}. Tap to ${isExpanded ? 'collapse' : 'expand'} details.`}
+                    >
+                      <View style={styles.altHeaderRow}>
+                        <View style={styles.altHeaderLeft}>
+                          <View
+                            style={[
+                              styles.altOptionBadge,
+                              { backgroundColor: theme.badgeBg, borderColor: theme.borderColor },
+                            ]}
+                          >
+                            <View style={[styles.altColorIndicator, { backgroundColor: theme.accent }]} />
+                            <Text style={[styles.altOptionBadgeText, { color: theme.badgeText }]}>
+                              Option {optionNum}
+                            </Text>
+                          </View>
+                          <View style={styles.altScoreBadge}>
+                            <Text style={styles.altScoreText}>Score: {Math.round(sol.recommendation_score)}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.altHeaderRight}>
+                          <Text style={styles.altFareValue}>₹{sol.total_fare}</Text>
+                          <View
+                            style={[
+                              styles.expandTogglePill,
+                              { backgroundColor: isExpanded ? theme.badgeBg : '#F1F5F9' },
+                            ]}
+                          >
+                            <Text style={[styles.expandToggleText, { color: isExpanded ? theme.accent : '#64748B' }]}>
+                              {isExpanded ? 'Hide' : 'Details'}
+                            </Text>
+                            {isExpanded ? (
+                              <ChevronUp size={13} color={theme.accent} strokeWidth={2.4} />
+                            ) : (
+                              <ChevronDown size={13} color="#64748B" strokeWidth={2.4} />
+                            )}
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* Route Summary Row */}
+                      <View style={styles.altRouteSummaryRow}>
+                        <Split size={13} color={theme.accent} style={{ marginRight: 6 }} />
+                        <Text style={styles.altRouteSummaryText} numberOfLines={isExpanded ? undefined : 1}>
+                          Shift at {sol.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')} • {sol.legs.length} confirmed legs
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+
+                    {/* Detailed Leg Breakdown (when expanded) */}
+                    {isExpanded && (
+                      <View style={styles.altExpandedBody}>
+                        <Text style={styles.solutionHeadline}>
+                          Stay on the same train! Just shift your seat at{' '}
+                          <Text style={{ fontWeight: '800', color: theme.primary }}>
+                            {sol.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')}
+                          </Text>
+                          .
+                        </Text>
+
+                        {/* Leg-by-Leg Journey Timeline */}
+                        <View style={styles.timelineContainer}>
+                          {sol.legs.map((leg: SubLeg, legIdx: number) => {
+                            const isLastLeg = legIdx === sol.legs.length - 1;
+                            return (
+                              <React.Fragment key={legIdx}>
+                                {/* Leg Card */}
+                                <View style={[styles.legCard, { borderLeftColor: theme.accent, borderLeftWidth: 3 }]}>
+                                  <View style={styles.legHeaderRow}>
+                                    <View
+                                      style={[
+                                        styles.legNumberCircle,
+                                        { backgroundColor: theme.badgeBg, borderColor: theme.borderColor },
+                                      ]}
+                                    >
+                                      <Text style={[styles.legNumberText, { color: theme.badgeText }]}>
+                                        Leg {leg.leg_number}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.legStatusPill}>
+                                      <CheckCircle2
+                                        size={12}
+                                        color="#15803D"
+                                        strokeWidth={2.4}
+                                        style={{ marginRight: 4 }}
+                                      />
+                                      <Text style={styles.legStatusPillText}>{leg.raw_status}</Text>
+                                    </View>
+                                    {leg.fare !== null && (
+                                      <Text style={styles.legFareText}>₹{leg.fare}</Text>
+                                    )}
+                                  </View>
+
+                                  <View style={styles.legRouteRow}>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.legStationCode}>{leg.from_station}</Text>
+                                      <Text style={styles.legStationName} numberOfLines={1}>
+                                        {getStationName(leg.from_station)}
+                                      </Text>
+                                      <Text style={styles.legTimeText}>{leg.departure_time || 'Dep'}</Text>
+                                    </View>
+                                    <View style={styles.legArrowBlock}>
+                                      <Text style={styles.legDistanceText}>{leg.distance_km} km</Text>
+                                      <View style={styles.legLine}>
+                                        <View style={[styles.legDot, { backgroundColor: theme.accent }]} />
+                                        <View style={styles.legDash} />
+                                        <View style={[styles.legDot, { backgroundColor: theme.accent }]} />
+                                      </View>
+                                    </View>
+                                    <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                                      <Text style={styles.legStationCode}>{leg.to_station}</Text>
+                                      <Text style={[styles.legStationName, { textAlign: 'right' }]} numberOfLines={1}>
+                                        {getStationName(leg.to_station)}
+                                      </Text>
+                                      <Text style={styles.legTimeText}>{leg.arrival_time || 'Arr'}</Text>
+                                    </View>
+                                  </View>
+                                </View>
+
+                                {/* Shift Point Connector */}
+                                {!isLastLeg && (
+                                  <View style={styles.shiftConnector}>
+                                    <View style={styles.shiftLineVertical} />
+                                    <View
+                                      style={[
+                                        styles.shiftBadge,
+                                        { backgroundColor: theme.badgeBg, borderColor: theme.borderColor },
+                                      ]}
+                                    >
+                                      <Split
+                                        size={14}
+                                        color={theme.accent}
+                                        strokeWidth={2.4}
+                                        style={{ marginRight: 6 }}
+                                      />
+                                      <Text style={[styles.shiftBadgeText, { color: theme.primary }]}>
+                                        Shift seat at {leg.to_station} ({getStationName(leg.to_station)}) (Same Train)
+                                      </Text>
+                                    </View>
+                                    <View style={styles.shiftLineVertical} />
+                                  </View>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </View>
+
+                        {/* IRCTC Booking Guidance Box */}
+                        <View style={[styles.bookingGuideBox, { borderLeftColor: theme.accent }]}>
+                          <Text style={styles.bookingGuideTitle}>How to book on IRCTC:</Text>
+                          {sol.legs.map((leg: SubLeg, legIdx: number) => (
+                            <Text key={legIdx} style={styles.bookingGuideStep}>
+                              {legIdx + 1}. Book Ticket {legIdx + 1}: {leg.from_station} ({getStationName(leg.from_station)}) to {leg.to_station} ({getStationName(leg.to_station)}) on Train {leg.train_no} ({leg.travel_class})
+                            </Text>
+                          ))}
+                          <Text style={[styles.bookingGuideNote, { color: theme.primary }]}>
+                            You remain on Train {params.trainNo} throughout the entire journey.
+                          </Text>
+                        </View>
+                      </View>
+                    )}
                   </View>
-                  <Text style={styles.altRouteText}>
-                    Split at: {sol.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')} ({sol.legs.length} legs)
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
 
@@ -1021,53 +1279,119 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   altSection: {
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  altSectionTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 8,
-    letterSpacing: -0.2,
-  },
-  altCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: radius.md,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  altCardHeader: {
+  altSectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 10,
   },
-  altBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
+  altSectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
   },
-  altBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#2563EB',
-  },
-  altScoreText: {
-    fontSize: 12,
+  altSectionCount: {
+    fontSize: 11,
     fontWeight: '600',
     color: '#64748B',
   },
-  altFareText: {
-    fontSize: 14,
+  altCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.lg,
+    marginBottom: 12,
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  altCardHeaderTouchable: {
+    padding: 14,
+  },
+  altHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  altHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  altOptionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    marginRight: 8,
+  },
+  altColorIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  altOptionBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  altScoreBadge: {
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  altScoreText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  altHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  altFareValue: {
+    fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
+    marginRight: 10,
   },
-  altRouteText: {
+  expandTogglePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  expandToggleText: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginRight: 3,
+  },
+  altRouteSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  altRouteSummaryText: {
+    flex: 1,
     fontSize: 12,
     color: '#475569',
+    fontWeight: '500',
+  },
+  altExpandedBody: {
+    padding: 14,
+    paddingTop: 12,
+    backgroundColor: '#FFFFFF',
   },
   cacheNoticeFooter: {
     flexDirection: 'row',

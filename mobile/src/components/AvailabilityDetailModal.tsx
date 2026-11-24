@@ -283,12 +283,19 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
       visible={visible}
       animationType="slide"
       transparent
+      statusBarTranslucent
       onRequestClose={handleModalClose}
     >
       <View style={styles.overlay}>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleModalClose} />
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={handleModalClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close availability modal backdrop"
+        />
 
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
           {/* Top Drag Indicator */}
           <View style={styles.dragHandle} />
 
@@ -787,18 +794,26 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
   },
   sheet: {
-    backgroundColor: colors.cardBackground,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
     paddingTop: spacing.sm,
     paddingHorizontal: spacing.lg,
-    maxHeight: '92%',
+    maxHeight: '90%',
+    width: '100%',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 24,
   },
   scrollContent: {
     paddingBottom: spacing.lg,
