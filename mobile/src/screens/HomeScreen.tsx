@@ -563,12 +563,10 @@ const styles = StyleSheet.create({
   },
   mainLayout: {
     flex: 1,
-    justifyContent: 'space-between',
   },
   contentBody: {
     flex: 1,
     paddingHorizontal: 20,
-    justifyContent: 'space-between',
   },
   bellBtn: {
     position: 'absolute',
