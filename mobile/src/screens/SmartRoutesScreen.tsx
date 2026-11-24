@@ -526,7 +526,7 @@ export const SmartRoutesScreen: React.FC = () => {
                 </View>
 
                 {/* Show Booking Trick Button */}
-                {bestSolution.booking_strategy && (
+                {bestSolution.legs && bestSolution.legs.length > 1 && (
                   <TouchableOpacity
                     style={styles.showTrickBtn}
                     activeOpacity={0.8}
@@ -642,6 +642,31 @@ export const SmartRoutesScreen: React.FC = () => {
                           Shift at {sol.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')} • {sol.legs.length} confirmed legs
                         </Text>
                       </View>
+
+                      {/* Quick Booking Trick trigger on collapsed card */}
+                      {sol.legs && sol.legs.length > 1 && !isExpanded && (
+                        <TouchableOpacity
+                          style={[
+                            styles.altQuickTrickBtn,
+                            { borderColor: theme.borderColor, backgroundColor: theme.badgeBg },
+                          ]}
+                          activeOpacity={0.7}
+                          onPress={() =>
+                            setTrickModalState({
+                              visible: true,
+                              solution: sol,
+                              optionNumber: optionNum,
+                            })
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={`Show same coach booking trick for Option ${optionNum}`}
+                        >
+                          <Zap size={12} color={theme.accent} strokeWidth={2.4} style={{ marginRight: 5 }} />
+                          <Text style={[styles.altQuickTrickText, { color: theme.accent }]}>
+                            Show Same-Coach Booking Trick
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </TouchableOpacity>
 
                     {/* Detailed Leg Breakdown (when expanded) */}
@@ -756,7 +781,7 @@ export const SmartRoutesScreen: React.FC = () => {
                         </View>
 
                         {/* Show Booking Trick Button for Alternative Option */}
-                        {sol.booking_strategy && (
+                        {sol.legs && sol.legs.length > 1 && (
                           <TouchableOpacity
                             style={[styles.showTrickBtnAlt, { backgroundColor: theme.primary }]}
                             activeOpacity={0.8}
@@ -1493,6 +1518,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  altQuickTrickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  altQuickTrickText: {
+    fontSize: 12,
+    fontWeight: '700',
     letterSpacing: -0.2,
   },
 });
