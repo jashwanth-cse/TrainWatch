@@ -20,7 +20,11 @@ import {
   ShieldCheck,
 } from 'lucide-react-native';
 import { radius } from '../theme/tokens';
-import { SmartRouteSolution, BookingOrderStep } from '../services/smartRouteService';
+import {
+  SmartRouteSolution,
+  BookingOrderStep,
+  ensureBookingStrategy,
+} from '../services/smartRouteService';
 import { getStationName } from '../services/stationService';
 
 interface BookingTrickModalProps {
@@ -42,11 +46,11 @@ export const BookingTrickModal: React.FC<BookingTrickModalProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
 
-  if (!solution || !solution.booking_strategy) {
+  if (!solution) {
     return null;
   }
 
-  const strat = solution.booking_strategy;
+  const strat = solution.booking_strategy || ensureBookingStrategy(solution);
 
   const getProbabilityBadge = (prob: string) => {
     switch (prob) {
