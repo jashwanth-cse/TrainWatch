@@ -654,7 +654,9 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
         return getattr(x, "station_code", str(x))
 
     # 1. _evaluate_2leg_candidate: obs2 is None / failed (line 312)
-    async def query_seg_none(src: object, dst: object) -> tuple[AvailabilityObservation, int | None]:
+    async def query_seg_none(
+        src: object, dst: object
+    ) -> tuple[AvailabilityObservation, int | None]:
         if _code(src) == "S1" and _code(dst) == "S2":
             return _avail(AvailabilityStatus.AVAILABLE, "AVL 10"), 100
         return AvailabilityObservation.failed(ProviderFailure.OTHER), None
@@ -673,7 +675,9 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
     assert sol_2leg is None
 
     # 2. _evaluate_3leg_candidate: obs3 is None (line 389)
-    async def query_seg_3leg_none(src: object, dst: object) -> tuple[AvailabilityObservation, int | None]:
+    async def query_seg_3leg_none(
+        src: object, dst: object
+    ) -> tuple[AvailabilityObservation, int | None]:
         if _code(src) == "S2" and _code(dst) == "S3":
             return _avail(AvailabilityStatus.AVAILABLE, "AVL 10"), 100
         return AvailabilityObservation.failed(ProviderFailure.OTHER), None
@@ -778,7 +782,7 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
 
 @pytest.mark.anyio
 async def test_multi_day_midnight_date_offsets_and_subleg_dates() -> None:
-    """Verify that multi-day journeys calculate and query exact calendar dates across midnight rollovers."""
+    """Verify multi-day journeys calculate and query exact dates across midnight."""
     from datetime import timedelta
 
     stops = [
@@ -788,7 +792,9 @@ async def test_multi_day_midnight_date_offsets_and_subleg_dates() -> None:
         _stop(4, "VIJAYAWADA JN", "BZA", "01:50", "02:00", 10, 4, 2410),
         _stop(5, "KANYAKUMARI", "CAPE", "22:00", "22:00", 0, 4, 4154),
     ]
-    sched = _make_mock_schedule(train_no="15906", train_name="Vivek Express", stops=stops, total_duration_minutes=4475)
+    sched = _make_mock_schedule(
+        train_no="15906", train_name="Vivek Express", stops=stops, total_duration_minutes=4475
+    )
 
     captured_queries: list[tuple[str, str, date]] = []
     mock_train_client = AsyncMock(spec=DreamDestinyClient)
@@ -852,7 +858,7 @@ async def test_multi_day_midnight_date_offsets_and_subleg_dates() -> None:
         travel_class="SL",
         quota="GN",
     )
-    result_day2 = await engine.search(query_from_day2)
+    _ = await engine.search(query_from_day2)
     # Origin extension should query DBRG (Day 1) on Sunday - 1 day = Saturday (2026-12-05)
     dbrg_to_cape_queries = [
         jdate for (src, dst, jdate) in captured_queries if src == "DBRG" and dst == "CAPE"

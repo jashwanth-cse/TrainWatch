@@ -16,7 +16,6 @@ from trainwatch.domain.availability import (
     ProviderFailure,
 )
 from trainwatch.domain.smart_routes import (
-    BookingStrategy,
     SmartRouteQuery,
     SmartRouteResult,
     SmartRouteSolution,
@@ -40,7 +39,9 @@ from trainwatch.infrastructure.train_api.client import DreamDestinyClient
 
 _LOGGER = logging.getLogger(__name__)
 
-SegmentQuerier = Callable[[ScheduleStop, ScheduleStop], Awaitable[tuple[AvailabilityObservation, int | None]]]
+SegmentQuerier = Callable[
+    [ScheduleStop, ScheduleStop], Awaitable[tuple[AvailabilityObservation, int | None]]
+]
 
 
 def _calculate_leg_journey_date(

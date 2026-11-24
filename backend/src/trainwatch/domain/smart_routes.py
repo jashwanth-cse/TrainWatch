@@ -230,10 +230,8 @@ def _extract_numeric_seats(subleg: SubLeg) -> int:
     return 1 if subleg.status is AvailabilityStatus.AVAILABLE else 0
 
 
-def calculate_booking_strategy(
-    legs: tuple[SubLeg, ...], origin_date: date
-) -> BookingStrategy:
-    """Evaluate berth inventory across split legs and generate optimal coach-matching booking order."""
+def calculate_booking_strategy(legs: tuple[SubLeg, ...], origin_date: date) -> BookingStrategy:
+    """Evaluate berth inventory across split legs and generate optimal coach-matching order."""
     if len(legs) <= 1:
         leg = legs[0]
         leg_date = leg.journey_date or origin_date
@@ -270,27 +268,43 @@ def calculate_booking_strategy(
     seats1 = _extract_numeric_seats(first_leg)
     seats2 = _extract_numeric_seats(second_leg)
 
+    order: tuple[int, ...]
+    steps: tuple[BookingOrderStep, ...]
     if len(legs) == 2:
         if seats2 > seats1:
             order = (second_leg.leg_number, first_leg.leg_number)
             primary_leg = second_leg
             dependent_leg = first_leg
-            headline = f"Book Leg {second_leg.leg_number} ({second_leg.from_station} to {second_leg.to_station}) first for coach matching"
+            headline = (
+                f"Book Leg {second_leg.leg_number} "
+                f"({second_leg.from_station} to {second_leg.to_station}) "
+                "first for coach matching"
+            )
             reason = (
-                f"Leg {second_leg.leg_number} has more open seats ({seats2} available) than Leg {first_leg.leg_number} ({seats1} available). "
-                f"Securing your booking on Leg {second_leg.leg_number} first locks in your confirmed coach ID (e.g., S3 or B2). "
-                f"You can then enter that coach ID as your 'Preferred Coach' when booking Leg {first_leg.leg_number}."
+                f"Leg {second_leg.leg_number} has more open seats ({seats2} available) than "
+                f"Leg {first_leg.leg_number} ({seats1} available). "
+                f"Securing your booking on Leg {second_leg.leg_number} first locks in your "
+                "confirmed coach ID (e.g., S3 or B2). "
+                f"You can then enter that coach ID as your 'Preferred Coach' when booking "
+                f"Leg {first_leg.leg_number}."
             )
             probability = "HIGH" if seats2 >= 4 and seats1 >= 1 else "MODERATE"
         elif seats1 > seats2:
             order = (first_leg.leg_number, second_leg.leg_number)
             primary_leg = first_leg
             dependent_leg = second_leg
-            headline = f"Book Leg {first_leg.leg_number} ({first_leg.from_station} to {first_leg.to_station}) first for coach matching"
+            headline = (
+                f"Book Leg {first_leg.leg_number} "
+                f"({first_leg.from_station} to {first_leg.to_station}) "
+                "first for coach matching"
+            )
             reason = (
-                f"Leg {first_leg.leg_number} has more open seats ({seats1} available) than Leg {second_leg.leg_number} ({seats2} available). "
-                f"Securing your booking on Leg {first_leg.leg_number} first locks in your confirmed coach ID. "
-                f"You can then enter that coach ID as your 'Preferred Coach' when booking Leg {second_leg.leg_number}."
+                f"Leg {first_leg.leg_number} has more open seats ({seats1} available) than "
+                f"Leg {second_leg.leg_number} ({seats2} available). "
+                f"Securing your booking on Leg {first_leg.leg_number} first locks in your "
+                "confirmed coach ID. "
+                f"You can then enter that coach ID as your 'Preferred Coach' when booking "
+                f"Leg {second_leg.leg_number}."
             )
             probability = "HIGH" if seats1 >= 4 and seats2 >= 1 else "MODERATE"
         else:
@@ -298,18 +312,26 @@ def calculate_booking_strategy(
             primary_leg = first_leg
             dependent_leg = second_leg
             if seats1 <= 1:
-                headline = f"Book Leg {first_leg.leg_number} first, then select nearby coach preference for Leg {second_leg.leg_number}"
+                headline = (
+                    f"Book Leg {first_leg.leg_number} first, then select nearby coach "
+                    f"preference for Leg {second_leg.leg_number}"
+                )
                 reason = (
                     "Both legs have scarce inventory (1 seat each). Book Leg "
-                    f"{first_leg.leg_number} immediately to secure confirmation, then enter its coach ID when "
-                    f"booking Leg {second_leg.leg_number}. If that exact coach is full, IRCTC PRS will allocate the nearest available coach."
+                    f"{first_leg.leg_number} immediately to confirm, then enter its coach "
+                    f"ID when booking Leg {second_leg.leg_number}. If that coach is full, "
+                    "IRCTC PRS will allocate the nearest available coach."
                 )
                 probability = "BEST_EFFORT"
             else:
-                headline = f"Book Leg {first_leg.leg_number} first, then match coach in Leg {second_leg.leg_number}"
+                headline = (
+                    f"Book Leg {first_leg.leg_number} first, then match coach in "
+                    f"Leg {second_leg.leg_number}"
+                )
                 reason = (
-                    f"Both legs have balanced availability ({seats1} seats each). Book Leg {first_leg.leg_number} to receive "
-                    f"your coach number, then set that coach as preferred when booking Leg {second_leg.leg_number}."
+                    f"Both legs have balanced availability ({seats1} seats each). Book Leg "
+                    f"{first_leg.leg_number} to receive your coach number, then set that coach as "
+                    f"preferred when booking Leg {second_leg.leg_number}."
                 )
                 probability = "HIGH" if seats1 >= 5 else "MODERATE"
 
@@ -325,13 +347,19 @@ def calculate_booking_strategy(
             departure_time=primary_leg.departure_time,
             raw_status=primary_leg.raw_status,
             available_seats=_extract_numeric_seats(primary_leg),
-            action_title=f"Step 1: Book Leg {primary_leg.leg_number} ({primary_leg.from_station} -> {primary_leg.to_station})",
+            action_title=(
+                f"Step 1: Book Leg {primary_leg.leg_number} "
+                f"({primary_leg.from_station} -> {primary_leg.to_station})"
+            ),
             action_instructions=(
                 f"Book on IRCTC for journey date {date_primary.strftime('%d-%b-%Y')} "
-                f"(Dep: {primary_leg.departure_time or 'Scheduled'}). Complete payment and note down "
-                "the assigned Coach ID (e.g. S4, B2, M1) from your confirmation screen."
+                f"(Dep: {primary_leg.departure_time or 'Scheduled'}). Complete payment and note "
+                "assigned Coach ID (e.g. S4, B2, M1) from your confirmation screen."
             ),
-            preferred_coach_tip="Do not set preferred coach for this first ticket. Let IRCTC assign the primary coach.",
+            preferred_coach_tip=(
+                "Do not set preferred coach for this first ticket. "
+                "Let IRCTC assign the primary coach."
+            ),
         )
 
         step2 = BookingOrderStep(
@@ -343,11 +371,14 @@ def calculate_booking_strategy(
             departure_time=dependent_leg.departure_time,
             raw_status=dependent_leg.raw_status,
             available_seats=_extract_numeric_seats(dependent_leg),
-            action_title=f"Step 2: Book Leg {dependent_leg.leg_number} ({dependent_leg.from_station} -> {dependent_leg.to_station})",
+            action_title=(
+                f"Step 2: Book Leg {dependent_leg.leg_number} "
+                f"({dependent_leg.from_station} -> {dependent_leg.to_station})"
+            ),
             action_instructions=(
                 f"Immediately book on IRCTC for journey date {date_dependent.strftime('%d-%b-%Y')} "
-                f"(Dep: {dependent_leg.departure_time or 'Scheduled'}). On the Passenger Details page, "
-                "expand 'Other Preferences' and enter the Coach ID you received from Step 1."
+                f"(Dep: {dependent_leg.departure_time or 'Scheduled'}). On the Passenger Details "
+                "page, expand 'Other Preferences' and enter the Coach ID from Step 1."
             ),
             preferred_coach_tip=(
                 "Entering the Coach ID from Step 1 instructs IRCTC to seat you in the same coach. "
@@ -357,12 +388,18 @@ def calculate_booking_strategy(
 
         steps = (step1, step2)
     else:
-        sorted_legs = sorted(legs, key=lambda l: (_extract_numeric_seats(l), l.distance_km), reverse=True)
-        order = tuple(l.leg_number for l in sorted_legs)
+        sorted_legs = sorted(
+            legs, key=lambda item: (_extract_numeric_seats(item), item.distance_km), reverse=True
+        )
+        order = tuple(item.leg_number for item in sorted_legs)
         first = sorted_legs[0]
-        headline = f"Book Leg {first.leg_number} ({first.from_station} to {first.to_station}) first as anchor coach"
+        headline = (
+            f"Book Leg {first.leg_number} ({first.from_station} to {first.to_station}) "
+            "first as anchor coach"
+        )
         reason = (
-            f"Leg {first.leg_number} has the highest seat buffer ({_extract_numeric_seats(first)} seats). "
+            f"Leg {first.leg_number} has the highest seat buffer "
+            f"({_extract_numeric_seats(first)} seats). "
             "Booking it first establishes your anchor coach ID for the remaining connecting legs."
         )
         probability = "MODERATE"
@@ -382,9 +419,10 @@ def calculate_booking_strategy(
                     action_title=f"Step 1: Book Leg {leg.leg_number} (Anchor Leg)",
                     action_instructions=(
                         f"Book on IRCTC for journey date {ldate.strftime('%d-%b-%Y')} "
-                        f"({leg.from_station} -> {leg.to_station}). Note down the allotted Coach ID."
+                        f"({leg.from_station} -> {leg.to_station}). "
+                        "Note down the allotted Coach ID."
                     ),
-                    preferred_coach_tip="Let IRCTC assign the primary coach for this anchor ticket.",
+                    preferred_coach_tip="Let IRCTC assign primary coach for this anchor ticket.",
                 )
             else:
                 s = BookingOrderStep(
@@ -399,7 +437,7 @@ def calculate_booking_strategy(
                     action_title=f"Step {idx + 1}: Book Leg {leg.leg_number} with Coach Preference",
                     action_instructions=(
                         f"Book on IRCTC for journey date {ldate.strftime('%d-%b-%Y')} "
-                        f"({leg.from_station} -> {leg.to_station}). Enter the Coach ID from Step 1."
+                        f"({leg.from_station} -> {leg.to_station}). Enter Coach ID from Step 1."
                     ),
                     preferred_coach_tip="Set Preferred Coach ID to match your anchor ticket.",
                 )
@@ -407,10 +445,13 @@ def calculate_booking_strategy(
         steps = tuple(step_list)
 
     insider_tips = (
-        "Book during standard IRCTC hours (00:20 to 23:45 IST) to prevent payment gateway timeouts.",
-        "Add all passenger profiles into your IRCTC Master List beforehand to autofill details in seconds.",
-        "On the IRCTC passenger page, expand 'Other Preferences' and enter the coach number in 'Preferred Coach ID'.",
-        "If exact coach matching is unavailable, IRCTC will automatically place you in the nearest adjacent coach on the same train.",
+        "Book during standard IRCTC hours (00:20 to 23:45 IST) to prevent payment timeouts.",
+        "Add all passenger profiles into your IRCTC Master List to autofill details in seconds.",
+        (
+            "On IRCTC passenger details page, expand 'Other Preferences' "
+            "and enter the coach number in 'Preferred Coach ID'."
+        ),
+        "If exact coach is full, IRCTC automatically places you in the nearest adjacent coach.",
     )
 
     return BookingStrategy(
