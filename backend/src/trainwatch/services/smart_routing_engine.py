@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from datetime import date, timedelta
 from uuid import uuid4
 
 from trainwatch.domain.availability import (
@@ -20,6 +21,7 @@ from trainwatch.domain.smart_routes import (
     SmartRouteSolution,
     SolutionTier,
     SubLeg,
+    calculate_booking_strategy,
     calculate_recommendation_score,
     compute_leg_horizon,
 )
@@ -37,7 +39,17 @@ from trainwatch.infrastructure.train_api.client import DreamDestinyClient
 
 _LOGGER = logging.getLogger(__name__)
 
-SegmentQuerier = Callable[[str, str], Awaitable[tuple[AvailabilityObservation, int | None]]]
+SegmentQuerier = Callable[
+    [ScheduleStop, ScheduleStop], Awaitable[tuple[AvailabilityObservation, int | None]]
+]
+
+
+def _calculate_leg_journey_date(
+    query_origin_date: date, origin_stop: ScheduleStop, leg_from_stop: ScheduleStop
+) -> date:
+    """Calculate the calendar departure date for a leg based on stop day offsets."""
+    day_offset = leg_from_stop.day - origin_stop.day
+    return query_origin_date + timedelta(days=day_offset)
 
 
 def _calculate_duration_minutes(dep_stop: ScheduleStop, arr_stop: ScheduleStop) -> int:
@@ -93,14 +105,15 @@ class SmartRoutingEngine:
         journey_distance_km = max(1, dest_stop.distance_km - origin_stop.distance_km)
         max_leg_horizon = compute_leg_horizon(journey_duration_hours)
 
-        # Memoization cache for segment queries: (from_stn, to_stn) -> (obs, fare)
-        memo: dict[tuple[str, str], tuple[AvailabilityObservation, int | None]] = {}
+        # Memoization cache for segment queries: (from_stn, to_stn, dep_date) -> (obs, fare)
+        memo: dict[tuple[str, str, date], tuple[AvailabilityObservation, int | None]] = {}
 
         async def query_segment(
-            from_code: str, to_code: str
+            from_stop: ScheduleStop, to_stop: ScheduleStop
         ) -> tuple[AvailabilityObservation, int | None]:
             nonlocal query_counter
-            key = (from_code, to_code)
+            dep_date = _calculate_leg_journey_date(query.journey_date, origin_stop, from_stop)
+            key = (from_stop.station_code, to_stop.station_code, dep_date)
             if key in memo:
                 return memo[key]
             async with self._semaphore:
@@ -108,22 +121,28 @@ class SmartRoutingEngine:
                 try:
                     t_query = TrainQuery(
                         train_number=query.train_no,
-                        source=from_code,
-                        destination=to_code,
-                        journey_date=query.journey_date,
+                        source=from_stop.station_code,
+                        destination=to_stop.station_code,
+                        journey_date=dep_date,
                         travel_class=query.travel_class,
                         quota=query.quota,
                     )
                     obs, fare = await self._train_client.fetch_with_fare(t_query)
                 except Exception as exc:
-                    _LOGGER.warning("Segment query error %s->%s: %s", from_code, to_code, exc)
+                    _LOGGER.warning(
+                        "Segment query error %s->%s on %s: %s",
+                        from_stop.station_code,
+                        to_stop.station_code,
+                        dep_date,
+                        exc,
+                    )
                     obs = AvailabilityObservation.failed(ProviderFailure.UPSTREAM)
                     fare = None
                 memo[key] = (obs, fare)
                 return obs, fare
 
         # Stage 1: Direct availability query
-        direct_obs, direct_fare = await query_segment(query.origin, query.destination)
+        direct_obs, direct_fare = await query_segment(origin_stop, dest_stop)
         direct_snapshot = direct_obs.snapshot if direct_obs else None
 
         solutions: list[SmartRouteSolution] = []
@@ -186,6 +205,7 @@ class SmartRoutingEngine:
                             leg1=u_leg1,
                             query=query,
                             schedule=schedule,
+                            origin_stop=origin_stop,
                             dest_stop=dest_stop,
                             direct_fare=direct_fare,
                             query_segment=query_segment,
@@ -217,6 +237,7 @@ class SmartRoutingEngine:
                                 leg1=u_leg1,
                                 query=query,
                                 schedule=schedule,
+                                origin_stop=origin_stop,
                                 dest_stop=dest_stop,
                                 direct_fare=direct_fare,
                                 query_segment=query_segment,
@@ -280,7 +301,7 @@ class SmartRoutingEngine:
         confirmed_prefixes_leg1: dict[str, tuple[ScheduleStop, SubLeg]],
     ) -> SmartRouteSolution | None:
         """Evaluate 2-leg split O -> s and s -> D with short-circuit pruning."""
-        obs1, fare1 = await query_segment(query.origin, candidate.station_code)
+        obs1, fare1 = await query_segment(origin_stop, candidate)
         if not obs1 or not obs1.snapshot:
             return None
 
@@ -293,6 +314,7 @@ class SmartRoutingEngine:
             to_stop=candidate,
             obs=obs1,
             fare=fare1,
+            origin_stop=origin_stop,
         )
 
         if status1 is AvailabilityStatus.AVAILABLE:
@@ -307,7 +329,7 @@ class SmartRoutingEngine:
         if status1 in bad_statuses:
             return None
 
-        obs2, fare2 = await query_segment(candidate.station_code, query.destination)
+        obs2, fare2 = await query_segment(candidate, dest_stop)
         if not obs2 or not obs2.snapshot:
             return None
 
@@ -323,6 +345,7 @@ class SmartRoutingEngine:
             to_stop=dest_stop,
             obs=obs2,
             fare=fare2,
+            origin_stop=origin_stop,
         )
 
         is_confirmed = (
@@ -350,6 +373,8 @@ class SmartRoutingEngine:
             fare_surcharge_pct=surcharge_pct,
         )
 
+        booking_strat = calculate_booking_strategy((leg1, leg2), query.journey_date)
+
         return SmartRouteSolution(
             solution_id=f"sol-2leg-{candidate.station_code}-{uuid4().hex[:6]}",
             tier=SolutionTier.TIER_1_SAME_TRAIN_SPLIT,
@@ -363,6 +388,7 @@ class SmartRoutingEngine:
             is_rac=is_rac,
             recommendation_score=score,
             split_stations=(candidate.station_code,),
+            booking_strategy=booking_strat,
         )
 
     async def _evaluate_3leg_candidate(
@@ -373,18 +399,19 @@ class SmartRoutingEngine:
         leg1: SubLeg,
         query: SmartRouteQuery,
         schedule: TrainSchedule,
+        origin_stop: ScheduleStop,
         dest_stop: ScheduleStop,
         direct_fare: int | None,
         query_segment: SegmentQuerier,
     ) -> SmartRouteSolution | None:
         """Evaluate 3-leg split: (O -> u confirmed) -> (u -> v) -> (v -> D)."""
-        obs2, fare2 = await query_segment(cand_u.station_code, cand_v.station_code)
+        obs2, fare2 = await query_segment(cand_u, cand_v)
         if not obs2 or not obs2.snapshot:
             return None
         if obs2.snapshot.status is not AvailabilityStatus.AVAILABLE:
             return None
 
-        obs3, fare3 = await query_segment(cand_v.station_code, query.destination)
+        obs3, fare3 = await query_segment(cand_v, dest_stop)
         if not obs3 or not obs3.snapshot:
             return None
 
@@ -405,6 +432,7 @@ class SmartRoutingEngine:
             to_stop=cand_v,
             obs=obs2,
             fare=fare2,
+            origin_stop=origin_stop,
         )
         leg3 = self._build_subleg(
             leg_num=3,
@@ -414,6 +442,7 @@ class SmartRoutingEngine:
             to_stop=dest_stop,
             obs=obs3,
             fare=fare3,
+            origin_stop=origin_stop,
         )
 
         is_confirmed = status3 is AvailabilityStatus.AVAILABLE
@@ -440,8 +469,9 @@ class SmartRoutingEngine:
             fare_surcharge_pct=surcharge_pct,
         )
 
-        origin_stop = schedule.get_stop(query.origin)
-        duration_min = _calculate_duration_minutes(origin_stop, dest_stop) if origin_stop else 0
+        duration_min = _calculate_duration_minutes(origin_stop, dest_stop)
+
+        booking_strat = calculate_booking_strategy((leg1, leg2, leg3), query.journey_date)
 
         return SmartRouteSolution(
             solution_id=f"sol-3leg-{cand_u.station_code}-{cand_v.station_code}-{uuid4().hex[:6]}",
@@ -456,6 +486,7 @@ class SmartRoutingEngine:
             is_rac=is_rac,
             recommendation_score=score,
             split_stations=(cand_u.station_code, cand_v.station_code),
+            booking_strategy=booking_strat,
         )
 
     async def _evaluate_4leg_candidate(
@@ -467,12 +498,13 @@ class SmartRoutingEngine:
         leg1: SubLeg,
         query: SmartRouteQuery,
         schedule: TrainSchedule,
+        origin_stop: ScheduleStop,
         dest_stop: ScheduleStop,
         direct_fare: int | None,
         query_segment: SegmentQuerier,
     ) -> SmartRouteSolution | None:
         """Evaluate 4-leg split: (O -> u confirmed) -> (u -> v) -> (v -> w) -> (w -> D)."""
-        obs2, fare2 = await query_segment(cand_u.station_code, cand_v.station_code)
+        obs2, fare2 = await query_segment(cand_u, cand_v)
         if (
             not obs2
             or not obs2.snapshot
@@ -480,7 +512,7 @@ class SmartRoutingEngine:
         ):
             return None
 
-        obs3, fare3 = await query_segment(cand_v.station_code, cand_w.station_code)
+        obs3, fare3 = await query_segment(cand_v, cand_w)
         if (
             not obs3
             or not obs3.snapshot
@@ -488,7 +520,7 @@ class SmartRoutingEngine:
         ):
             return None
 
-        obs4, fare4 = await query_segment(cand_w.station_code, query.destination)
+        obs4, fare4 = await query_segment(cand_w, dest_stop)
         if not obs4 or not obs4.snapshot:
             return None
 
@@ -509,6 +541,7 @@ class SmartRoutingEngine:
             to_stop=cand_v,
             obs=obs2,
             fare=fare2,
+            origin_stop=origin_stop,
         )
         leg3 = self._build_subleg(
             leg_num=3,
@@ -518,6 +551,7 @@ class SmartRoutingEngine:
             to_stop=cand_w,
             obs=obs3,
             fare=fare3,
+            origin_stop=origin_stop,
         )
         leg4 = self._build_subleg(
             leg_num=4,
@@ -527,6 +561,7 @@ class SmartRoutingEngine:
             to_stop=dest_stop,
             obs=obs4,
             fare=fare4,
+            origin_stop=origin_stop,
         )
 
         is_confirmed = status4 is AvailabilityStatus.AVAILABLE
@@ -550,8 +585,9 @@ class SmartRoutingEngine:
             fare_surcharge_pct=surcharge_pct,
         )
 
-        origin_stop = schedule.get_stop(query.origin)
-        duration_min = _calculate_duration_minutes(origin_stop, dest_stop) if origin_stop else 0
+        duration_min = _calculate_duration_minutes(origin_stop, dest_stop)
+
+        booking_strat = calculate_booking_strategy((leg1, leg2, leg3, leg4), query.journey_date)
 
         return SmartRouteSolution(
             solution_id=(
@@ -569,6 +605,7 @@ class SmartRoutingEngine:
             is_rac=is_rac,
             recommendation_score=score,
             split_stations=(cand_u.station_code, cand_v.station_code, cand_w.station_code),
+            booking_strategy=booking_strat,
         )
 
     async def _evaluate_origin_extension(
@@ -584,7 +621,7 @@ class SmartRoutingEngine:
     ) -> SmartRouteSolution | None:
         """Evaluate Tier 2 Origin Extension."""
         train_origin_stop = schedule.stops[0]
-        ext_obs, ext_fare = await query_segment(train_origin_stop.station_code, query.destination)
+        ext_obs, ext_fare = await query_segment(train_origin_stop, dest_stop)
         if not ext_obs or not ext_obs.snapshot:
             return None
 
@@ -641,7 +678,10 @@ class SmartRoutingEngine:
             to_stop=dest_stop,
             obs=ext_obs,
             fare=ext_fare,
+            origin_stop=origin_stop,
         )
+
+        booking_strat = calculate_booking_strategy((ext_leg,), query.journey_date)
 
         return SmartRouteSolution(
             solution_id=f"sol-orig-ext-{train_origin_stop.station_code}-{uuid4().hex[:6]}",
@@ -656,6 +696,7 @@ class SmartRoutingEngine:
             is_rac=is_rac,
             recommendation_score=score,
             split_stations=(),
+            booking_strategy=booking_strat,
         )
 
     def _build_subleg(
@@ -668,6 +709,7 @@ class SmartRoutingEngine:
         to_stop: ScheduleStop,
         obs: AvailabilityObservation,
         fare: int | None,
+        origin_stop: ScheduleStop,
     ) -> SubLeg:
         """Construct a strongly-typed SubLeg from schedule stops and observation."""
         snapshot = obs.snapshot
@@ -677,6 +719,7 @@ class SmartRoutingEngine:
 
         duration_min = _calculate_duration_minutes(from_stop, to_stop)
         distance_km = max(0, to_stop.distance_km - from_stop.distance_km)
+        leg_date = _calculate_leg_journey_date(query.journey_date, origin_stop, from_stop)
 
         return SubLeg(
             leg_number=leg_num,
@@ -694,6 +737,7 @@ class SmartRoutingEngine:
             arrival_time=to_stop.arrival_time,
             duration_minutes=duration_min,
             distance_km=distance_km,
+            journey_date=leg_date,
         )
 
     def _empty_result(

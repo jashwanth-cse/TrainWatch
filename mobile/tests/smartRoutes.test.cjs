@@ -65,6 +65,8 @@ function loadSmartRouteService(mockFetch, mockStorage = new Map()) {
     Math: globalThis.Math,
     JSON: globalThis.JSON,
     Error: globalThis.Error,
+    Array: globalThis.Array,
+    Object: globalThis.Object,
   });
 
   return { exports, mockStorage };
@@ -660,4 +662,272 @@ test('AvailabilityDetailModal in multileg mode shows direct seats notice when st
     tree
   );
   assert.ok(directSeatsNotice, 'Direct Seats Available notice must be rendered in multileg mode when AVL');
+});
+
+test('fetchSmartRoutes handles multi-day journey_date and booking_strategy correctly', async () => {
+  const mockResponseData = {
+    train_no: '12662',
+    train_name: 'Pothigai Express',
+    origin: 'RJPM',
+    destination: 'MS',
+    journey_date: '2026-11-20',
+    travel_class: 'SL',
+    journey_duration_hours: 10.5,
+    journey_distance_km: 630,
+    max_leg_horizon: 2,
+    direct_status: 'WL 17',
+    direct_fare: 360,
+    solutions: [
+      {
+        solution_id: 'sol_intelligent_trick',
+        tier: 'TIER_1_SAME_TRAIN_SPLIT',
+        legs: [
+          {
+            leg_number: 1,
+            train_no: '12662',
+            train_name: 'Pothigai Express',
+            from_station: 'RJPM',
+            to_station: 'MDU',
+            journey_date: '2026-11-20',
+            travel_class: 'SL',
+            quota: 'GN',
+            status: 'AVAILABLE',
+            raw_status: 'AVAILABLE 1',
+            position: 1,
+            fare: 140,
+            departure_time: '20:00',
+            arrival_time: '21:30',
+            duration_minutes: 90,
+            distance_km: 75,
+          },
+          {
+            leg_number: 2,
+            train_no: '12662',
+            train_name: 'Pothigai Express',
+            from_station: 'MDU',
+            to_station: 'MS',
+            journey_date: '2026-11-21',
+            travel_class: 'SL',
+            quota: 'GN',
+            status: 'AVAILABLE',
+            raw_status: 'AVAILABLE 7',
+            position: 7,
+            fare: 255,
+            departure_time: '21:40',
+            arrival_time: '06:50',
+            duration_minutes: 550,
+            distance_km: 555,
+          },
+        ],
+        split_stations: ['MDU'],
+        total_fare: 395,
+        fare_difference: 35,
+        recommendation_score: 95.0,
+        layover_duration_minutes: 10,
+        is_same_train: true,
+        overall_status: 'AVAILABLE',
+        booking_strategy: {
+          recommended_order: [2, 1],
+          same_coach_probability: 'HIGH',
+          strategy_reason: 'Leg 2 (MDU to MS) has 7 seats remaining, while Leg 1 (RJPM to MDU) has only 1 seat remaining.',
+          steps: [
+            {
+              step_number: 1,
+              leg_number: 2,
+              from_station: 'MDU',
+              to_station: 'MS',
+              journey_date: '2026-11-21',
+              raw_status: 'AVAILABLE 7',
+              action_instructions: 'Book Leg 2 first: MDU to MS on 2026-11-21.',
+              preferred_coach_tip: 'Once confirmed, note your assigned coach number from this ticket.',
+              departure_time: '21:40',
+            },
+            {
+              step_number: 2,
+              leg_number: 1,
+              from_station: 'RJPM',
+              to_station: 'MDU',
+              journey_date: '2026-11-20',
+              raw_status: 'AVAILABLE 1',
+              action_instructions: 'Next, immediately book Leg 1: RJPM to MDU on 2026-11-20.',
+              preferred_coach_tip: 'Crucial: Enter the coach number obtained in Step 1 as your Preferred Coach Number.',
+              departure_time: '20:00',
+            },
+          ],
+          insider_tips: ['Always book online via IRCTC website or RailConnect app.'],
+        },
+      },
+    ],
+    timestamp: new Date().toISOString(),
+  };
+
+  const { exports } = loadSmartRouteService(async () => ({
+    ok: true,
+    status: 200,
+    headers: new Map([['content-type', 'application/json']]),
+    json: async () => ({
+      success: true,
+      data: mockResponseData,
+    }),
+  }));
+
+  const res = await exports.fetchSmartRoutes({
+    trainNo: '12662',
+    origin: 'RJPM',
+    destination: 'MS',
+    journeyDate: '2026-11-20',
+    travelClass: 'SL',
+    quota: 'GN',
+  });
+
+  assert.equal(res.data.solutions.length, 1);
+  const sol = res.data.solutions[0];
+  assert.equal(sol.legs[0].journey_date, '2026-11-20');
+  assert.equal(sol.legs[1].journey_date, '2026-11-21');
+  assert.ok(sol.booking_strategy);
+  assert.deepEqual(sol.booking_strategy.recommended_order, [2, 1]);
+  assert.equal(sol.booking_strategy.same_coach_probability, 'HIGH');
+  assert.equal(sol.booking_strategy.steps.length, 2);
+  assert.equal(sol.booking_strategy.steps[0].journey_date, '2026-11-21');
+
+  // Verify cached retrieval
+  const cached = await exports.fetchSmartRoutes({
+    trainNo: '12662',
+    origin: 'RJPM',
+    destination: 'MS',
+    journeyDate: '2026-11-20',
+    travelClass: 'SL',
+    quota: 'GN',
+  });
+  assert.equal(cached.isFromCache, true);
+  assert.deepEqual(cached.data.solutions[0].booking_strategy.recommended_order, [2, 1]);
+});
+
+test('ensureBookingStrategy synthesizes intelligent strategy when omitted from response', () => {
+  const { exports } = loadSmartRouteService(async () => {});
+
+  // Test case 1: Leg 1 has 1 seat, Leg 2 has 7 seats -> book Leg 2 first
+  const solutionA = {
+    solution_id: 'sol_test_1',
+    tier: 'CONFIRMED_SPLIT',
+    legs: [
+      {
+        leg_number: 1,
+        from_station: 'RJPM',
+        to_station: 'MDU',
+        raw_status: 'AVAILABLE 1',
+        position: 1,
+        journey_date: '2026-11-20',
+        departure_time: '20:00',
+      },
+      {
+        leg_number: 2,
+        from_station: 'MDU',
+        to_station: 'MAS',
+        raw_status: 'AVAILABLE 7',
+        position: 7,
+        journey_date: '2026-11-21',
+        departure_time: '21:40',
+      },
+    ],
+  };
+
+  const strategyA = exports.ensureBookingStrategy(solutionA, '2026-11-20');
+  assert.ok(strategyA);
+  assert.deepEqual(Array.from(strategyA.recommended_order), [2, 1]);
+  assert.equal(strategyA.same_coach_probability, 'HIGH');
+  assert.equal(strategyA.steps.length, 2);
+  assert.equal(strategyA.steps[0].leg_number, 2);
+  assert.equal(strategyA.steps[1].leg_number, 1);
+  assert.match(strategyA.steps[1].action_instructions, /enter the Coach ID from Step 1/i);
+
+  // Test case 2: Both legs have 1 seat -> BEST_EFFORT nearby coach
+  const solutionB = {
+    solution_id: 'sol_test_2',
+    tier: 'CONFIRMED_SPLIT',
+    legs: [
+      {
+        leg_number: 1,
+        from_station: 'RJPM',
+        to_station: 'MDU',
+        raw_status: 'AVAILABLE 1',
+        position: 1,
+        journey_date: '2026-11-20',
+      },
+      {
+        leg_number: 2,
+        from_station: 'MDU',
+        to_station: 'MAS',
+        raw_status: 'AVAILABLE 1',
+        position: 1,
+        journey_date: '2026-11-21',
+      },
+    ],
+  };
+
+  const strategyB = exports.ensureBookingStrategy(solutionB, '2026-11-20');
+  assert.ok(strategyB);
+  assert.deepEqual(Array.from(strategyB.recommended_order), [1, 2]);
+  assert.equal(strategyB.same_coach_probability, 'BEST_EFFORT');
+
+  // Test case 3: Multi-leg (> 2 legs)
+  const solutionC = {
+    solution_id: 'sol_test_3',
+    tier: 'CONFIRMED_SPLIT',
+    legs: [
+      { leg_number: 1, from_station: 'A', to_station: 'B', raw_status: 'AVAILABLE 2', position: 2, distance_km: 100 },
+      { leg_number: 2, from_station: 'B', to_station: 'C', raw_status: 'AVAILABLE 10', position: 10, distance_km: 200 },
+      { leg_number: 3, from_station: 'C', to_station: 'D', raw_status: 'AVAILABLE 4', position: 4, distance_km: 150 },
+    ],
+  };
+
+  const strategyC = exports.ensureBookingStrategy(solutionC, '2026-11-20');
+  assert.ok(strategyC);
+  assert.deepEqual(Array.from(strategyC.recommended_order), [2, 3, 1]);
+  assert.equal(strategyC.steps[0].leg_number, 2);
+});
+
+test('fetchSmartRoutes automatically synthesizes booking strategy if server returns bare solutions', async () => {
+  const mockResponseBare = {
+    train_no: '12662',
+    train_name: 'Pothigai Express',
+    origin: 'RJPM',
+    destination: 'MS',
+    journey_date: '2026-11-20',
+    travel_class: 'SL',
+    solutions: [
+      {
+        solution_id: 'sol_bare_1',
+        tier: 'CONFIRMED_SPLIT',
+        legs: [
+          { leg_number: 1, from_station: 'RJPM', to_station: 'MDU', raw_status: 'AVAILABLE 1', position: 1, journey_date: '2026-11-20' },
+          { leg_number: 2, from_station: 'MDU', to_station: 'MS', raw_status: 'AVAILABLE 5', position: 5, journey_date: '2026-11-21' },
+        ],
+      },
+    ],
+  };
+
+  const { exports } = loadSmartRouteService(async () => ({
+    ok: true,
+    status: 200,
+    headers: new Map([['content-type', 'application/json']]),
+    json: async () => ({
+      success: true,
+      data: mockResponseBare,
+    }),
+  }));
+
+  const res = await exports.fetchSmartRoutes({
+    trainNo: '12662',
+    origin: 'RJPM',
+    destination: 'MS',
+    journeyDate: '2026-11-20',
+    travelClass: 'SL',
+  });
+
+  assert.equal(res.data.solutions.length, 1);
+  const sol = res.data.solutions[0];
+  assert.ok(sol.booking_strategy);
+  assert.deepEqual(Array.from(sol.booking_strategy.recommended_order), [2, 1]);
+  assert.equal(sol.booking_strategy.same_coach_probability, 'HIGH');
 });

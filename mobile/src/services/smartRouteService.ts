@@ -40,6 +40,7 @@ export interface SubLeg {
   train_name: string;
   from_station: string;
   to_station: string;
+  journey_date?: string;
   travel_class: string;
   quota: string;
   status: string;
@@ -50,6 +51,29 @@ export interface SubLeg {
   arrival_time: string | null;
   duration_minutes: number;
   distance_km: number;
+}
+
+export interface BookingOrderStep {
+  step_number: number;
+  leg_number: number;
+  from_station: string;
+  to_station: string;
+  journey_date: string;
+  departure_time: string | null;
+  raw_status: string;
+  available_seats: number | null;
+  action_title: string;
+  action_instructions: string;
+  preferred_coach_tip: string | null;
+}
+
+export interface BookingStrategy {
+  headline: string;
+  recommended_order: number[];
+  strategy_reason: string;
+  same_coach_probability: string; // HIGH, MODERATE, BEST_EFFORT
+  steps: BookingOrderStep[];
+  insider_tips: string[];
 }
 
 export interface SmartRouteSolution {
@@ -65,6 +89,7 @@ export interface SmartRouteSolution {
   is_rac: boolean;
   recommendation_score: number;
   split_stations: string[];
+  booking_strategy?: BookingStrategy | null;
 }
 
 export interface SmartRoutesResultData {
@@ -134,6 +159,206 @@ export function buildSmartRouteCacheKey(params: {
 }
 
 /**
+ * Extract numeric available seats from a SubLeg's raw status or position.
+ */
+export function extractNumericSeats(leg: SubLeg): number {
+  if (typeof leg.position === 'number' && leg.position > 0) {
+    return leg.position;
+  }
+  const match = (leg.raw_status || '').match(/\d+/);
+  return match ? parseInt(match[0], 10) : 0;
+}
+
+/**
+ * Format date string to DD-MMM-YYYY for user instructions.
+ */
+export function formatDatePretty(dateStr?: string): string {
+  if (!dateStr) return 'Scheduled Date';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  } catch {
+    return dateStr;
+  }
+}
+
+/**
+ * Intelligent client-side booking strategy fallback calculator.
+ * Ensures booking strategy is always available even if backend response or cached data omitted it.
+ */
+export function ensureBookingStrategy(
+  solution: SmartRouteSolution,
+  originDate?: string
+): BookingStrategy {
+  if (solution.booking_strategy) {
+    return solution.booking_strategy;
+  }
+
+  const legs = solution.legs || [];
+  if (legs.length === 0) {
+    const fallbackStrategy: BookingStrategy = {
+      headline: 'Direct confirmed booking',
+      recommended_order: [1],
+      strategy_reason: 'This route has a single leg. Book normally on IRCTC.',
+      same_coach_probability: 'HIGH',
+      steps: [],
+      insider_tips: [
+        'Book during standard IRCTC hours (00:20 to 23:45 IST) to prevent payment timeouts.',
+        'Add passenger profiles into your IRCTC Master List to autofill details in seconds.',
+      ],
+    };
+    solution.booking_strategy = fallbackStrategy;
+    return fallbackStrategy;
+  }
+
+  let order: number[];
+  let headline: string;
+  let reason: string;
+  let probability: string;
+  const steps: BookingOrderStep[] = [];
+
+  if (legs.length === 2) {
+    const [firstLeg, secondLeg] = legs;
+    const seats1 = extractNumericSeats(firstLeg);
+    const seats2 = extractNumericSeats(secondLeg);
+
+    let primaryLeg: SubLeg;
+    let dependentLeg: SubLeg;
+
+    if (seats2 > seats1) {
+      order = [secondLeg.leg_number, firstLeg.leg_number];
+      primaryLeg = secondLeg;
+      dependentLeg = firstLeg;
+      headline = `Book Leg ${secondLeg.leg_number} (${secondLeg.from_station} to ${secondLeg.to_station}) first for coach matching`;
+      reason = `Leg ${secondLeg.leg_number} has more open seats (${seats2} available) than Leg ${firstLeg.leg_number} (${seats1} available). Securing your booking on Leg ${secondLeg.leg_number} first locks in your confirmed coach ID (e.g., S3 or B2). You can then enter that coach ID as your 'Preferred Coach' when booking Leg ${firstLeg.leg_number}.`;
+      probability = seats2 >= 4 && seats1 >= 1 ? 'HIGH' : 'MODERATE';
+    } else if (seats1 > seats2) {
+      order = [firstLeg.leg_number, secondLeg.leg_number];
+      primaryLeg = firstLeg;
+      dependentLeg = secondLeg;
+      headline = `Book Leg ${firstLeg.leg_number} (${firstLeg.from_station} to ${firstLeg.to_station}) first for coach matching`;
+      reason = `Leg ${firstLeg.leg_number} has more open seats (${seats1} available) than Leg ${secondLeg.leg_number} (${seats2} available). Securing your booking on Leg ${firstLeg.leg_number} first locks in your confirmed coach ID. You can then enter that coach ID as your 'Preferred Coach' when booking Leg ${secondLeg.leg_number}.`;
+      probability = seats1 >= 4 && seats2 >= 1 ? 'HIGH' : 'MODERATE';
+    } else {
+      order = [firstLeg.leg_number, secondLeg.leg_number];
+      primaryLeg = firstLeg;
+      dependentLeg = secondLeg;
+      if (seats1 <= 1) {
+        headline = `Book Leg ${firstLeg.leg_number} first, then select nearby coach preference for Leg ${secondLeg.leg_number}`;
+        reason = `Both legs have scarce inventory (1 seat each). Book Leg ${firstLeg.leg_number} immediately to confirm, then enter its coach ID when booking Leg ${secondLeg.leg_number}. If that coach is full, IRCTC PRS will allocate the nearest available coach.`;
+        probability = 'BEST_EFFORT';
+      } else {
+        headline = `Book Leg ${firstLeg.leg_number} first, then match coach in Leg ${secondLeg.leg_number}`;
+        reason = `Both legs have balanced availability (${seats1} seats each). Book Leg ${firstLeg.leg_number} to receive your coach number, then set that coach as preferred when booking Leg ${secondLeg.leg_number}.`;
+        probability = seats1 >= 5 ? 'HIGH' : 'MODERATE';
+      }
+    }
+
+    const datePrimary = primaryLeg.journey_date || originDate || '';
+    const dateDependent = dependentLeg.journey_date || originDate || '';
+
+    steps.push({
+      step_number: 1,
+      leg_number: primaryLeg.leg_number,
+      from_station: primaryLeg.from_station,
+      to_station: primaryLeg.to_station,
+      journey_date: datePrimary,
+      departure_time: primaryLeg.departure_time,
+      raw_status: primaryLeg.raw_status,
+      available_seats: extractNumericSeats(primaryLeg),
+      action_title: `Step 1: Book Leg ${primaryLeg.leg_number} (${primaryLeg.from_station} -> ${primaryLeg.to_station})`,
+      action_instructions: `Book on IRCTC for journey date ${formatDatePretty(datePrimary)} (Dep: ${primaryLeg.departure_time || 'Scheduled'}). Complete payment and note assigned Coach ID (e.g. S4, B2, M1) from your confirmation screen.`,
+      preferred_coach_tip: 'Do not set preferred coach for this first ticket. Let IRCTC assign the primary coach.',
+    });
+
+    steps.push({
+      step_number: 2,
+      leg_number: dependentLeg.leg_number,
+      from_station: dependentLeg.from_station,
+      to_station: dependentLeg.to_station,
+      journey_date: dateDependent,
+      departure_time: dependentLeg.departure_time,
+      raw_status: dependentLeg.raw_status,
+      available_seats: extractNumericSeats(dependentLeg),
+      action_title: `Step 2: Book Leg ${dependentLeg.leg_number} (${dependentLeg.from_station} -> ${dependentLeg.to_station})`,
+      action_instructions: `Immediately book on IRCTC for journey date ${formatDatePretty(dateDependent)} (Dep: ${dependentLeg.departure_time || 'Scheduled'}). On the Passenger Details page, expand 'Other Preferences' and enter the Coach ID from Step 1.`,
+      preferred_coach_tip: 'Entering the Coach ID from Step 1 instructs IRCTC to seat you in the same coach. If the exact coach is full, IRCTC will allocate the closest adjacent coach.',
+    });
+  } else {
+    // Multi-leg (> 2 legs)
+    const sortedLegs = [...legs].sort((a, b) => {
+      const seatsA = extractNumericSeats(a);
+      const seatsB = extractNumericSeats(b);
+      if (seatsB !== seatsA) return seatsB - seatsA;
+      return (b.distance_km || 0) - (a.distance_km || 0);
+    });
+
+    order = sortedLegs.map((l) => l.leg_number);
+    const first = sortedLegs[0];
+    headline = `Book Leg ${first.leg_number} (${first.from_station} to ${first.to_station}) first as anchor coach`;
+    reason = `Leg ${first.leg_number} has the highest seat buffer (${extractNumericSeats(first)} seats). Booking it first establishes your anchor coach ID for the remaining connecting legs.`;
+    probability = 'MODERATE';
+
+    sortedLegs.forEach((leg, idx) => {
+      const ldate = leg.journey_date || originDate || '';
+      if (idx === 0) {
+        steps.push({
+          step_number: 1,
+          leg_number: leg.leg_number,
+          from_station: leg.from_station,
+          to_station: leg.to_station,
+          journey_date: ldate,
+          departure_time: leg.departure_time,
+          raw_status: leg.raw_status,
+          available_seats: extractNumericSeats(leg),
+          action_title: `Step 1: Book Leg ${leg.leg_number} (Anchor Leg)`,
+          action_instructions: `Book on IRCTC for journey date ${formatDatePretty(ldate)} (${leg.from_station} -> ${leg.to_station}). Note down the allotted Coach ID.`,
+          preferred_coach_tip: 'Let IRCTC assign primary coach for this anchor ticket.',
+        });
+      } else {
+        steps.push({
+          step_number: idx + 1,
+          leg_number: leg.leg_number,
+          from_station: leg.from_station,
+          to_station: leg.to_station,
+          journey_date: ldate,
+          departure_time: leg.departure_time,
+          raw_status: leg.raw_status,
+          available_seats: extractNumericSeats(leg),
+          action_title: `Step ${idx + 1}: Book Leg ${leg.leg_number} with Coach Preference`,
+          action_instructions: `Book on IRCTC for journey date ${formatDatePretty(ldate)} (${leg.from_station} -> ${leg.to_station}). Enter Coach ID from Step 1.`,
+          preferred_coach_tip: 'Set Preferred Coach ID to match your anchor ticket.',
+        });
+      }
+    });
+  }
+
+  const insiderTips = [
+    'Book during standard IRCTC hours (00:20 to 23:45 IST) to prevent payment timeouts.',
+    'Add all passenger profiles into your IRCTC Master List to autofill details in seconds.',
+    "On IRCTC passenger details page, expand 'Other Preferences' and enter the coach number in 'Preferred Coach ID'.",
+    'If exact coach is full, IRCTC automatically places you in the nearest adjacent coach.',
+  ];
+
+  const strategy: BookingStrategy = {
+    headline,
+    recommended_order: order,
+    strategy_reason: reason,
+    same_coach_probability: probability,
+    steps,
+    insider_tips: insiderTips,
+  };
+
+  solution.booking_strategy = strategy;
+  return strategy;
+}
+
+/**
  * Fetch smart route solutions with a strict 5-minute client-side cache.
  * Protects railway servers against repeated duplicate calls within the 5-minute window.
  */
@@ -164,6 +389,13 @@ export async function fetchSmartRoutes(
 
   // 3. Evaluate cache freshness
   if (cached && now < cached.expiresAt) {
+    if (cached.data && cached.data.solutions) {
+      for (const sol of cached.data.solutions) {
+        if (!sol.booking_strategy) {
+          sol.booking_strategy = ensureBookingStrategy(sol, cached.data.journey_date);
+        }
+      }
+    }
     const remaining = Math.max(0, Math.ceil((cached.expiresAt - now) / 1000));
 
     // If user attempted a force refresh but the 5-minute window has NOT yet elapsed:
@@ -253,7 +485,16 @@ export async function fetchSmartRoutes(
     inFlightRequests.delete(cacheKey);
   }
 
-  // 5. Save to 5-minute cache
+  // 5. Ensure booking strategy is populated on all solutions
+  if (data && data.solutions) {
+    for (const sol of data.solutions) {
+      if (!sol.booking_strategy) {
+        sol.booking_strategy = ensureBookingStrategy(sol, data.journey_date);
+      }
+    }
+  }
+
+  // 6. Save to 5-minute cache
   const cachedAt = Date.now();
   const expiresAt = cachedAt + SMART_ROUTE_CACHE_TTL_MS;
   const newEntry: CacheEntry = { data, cachedAt, expiresAt };

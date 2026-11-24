@@ -19,6 +19,7 @@ import {
 } from '../services/smartRouteService';
 import { getStationName } from '../services/stationService';
 import { NostalgicTrainLoader } from '../components/NostalgicTrainLoader';
+import { BookingTrickModal } from '../components/BookingTrickModal';
 import {
   ArrowLeft,
   RotateCcw,
@@ -32,6 +33,7 @@ import {
   TrainFront,
   ChevronDown,
   ChevronUp,
+  Zap,
 } from 'lucide-react-native';
 
 interface OptionTheme {
@@ -122,6 +124,15 @@ export const SmartRoutesScreen: React.FC = () => {
   const [remainingSec, setRemainingSec] = useState<number>(0);
   const [toastNotice, setToastNotice] = useState<string | null>(null);
   const [expandedOptionIds, setExpandedOptionIds] = useState<Record<string, boolean>>({});
+  const [trickModalState, setTrickModalState] = useState<{
+    visible: boolean;
+    solution: SmartRouteSolution | null;
+    optionNumber: number;
+  }>({
+    visible: false,
+    solution: null,
+    optionNumber: 1,
+  });
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const toggleOptionExpansion = useCallback((solKey: string) => {
@@ -506,13 +517,33 @@ export const SmartRoutesScreen: React.FC = () => {
                   <Text style={styles.bookingGuideTitle}>How to book on IRCTC:</Text>
                   {bestSolution.legs.map((leg: SubLeg, idx: number) => (
                     <Text key={idx} style={styles.bookingGuideStep}>
-                      {idx + 1}. Book Ticket {idx + 1}: {leg.from_station} ({getStationName(leg.from_station)}) to {leg.to_station} ({getStationName(leg.to_station)}) on Train {leg.train_no} ({leg.travel_class})
+                      {idx + 1}. Book Ticket {idx + 1}: {leg.from_station} ({getStationName(leg.from_station)}) to {leg.to_station} ({getStationName(leg.to_station)}) on {leg.journey_date || isoDate} • Train {leg.train_no} ({leg.travel_class})
                     </Text>
                   ))}
                   <Text style={styles.bookingGuideNote}>
                     You remain on Train {params.trainNo} throughout the entire journey.
                   </Text>
                 </View>
+
+                {/* Show Booking Trick Button */}
+                {bestSolution.legs && bestSolution.legs.length > 1 && (
+                  <TouchableOpacity
+                    style={styles.showTrickBtn}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      setTrickModalState({
+                        visible: true,
+                        solution: bestSolution,
+                        optionNumber: 1,
+                      })
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel="Show same coach booking trick for Option 1"
+                  >
+                    <Zap size={14} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                    <Text style={styles.showTrickBtnText}>Show Same-Coach Booking Trick</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           ) : (
@@ -611,6 +642,31 @@ export const SmartRoutesScreen: React.FC = () => {
                           Shift at {sol.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')} • {sol.legs.length} confirmed legs
                         </Text>
                       </View>
+
+                      {/* Quick Booking Trick trigger on collapsed card */}
+                      {sol.legs && sol.legs.length > 1 && !isExpanded && (
+                        <TouchableOpacity
+                          style={[
+                            styles.altQuickTrickBtn,
+                            { borderColor: theme.borderColor, backgroundColor: theme.badgeBg },
+                          ]}
+                          activeOpacity={0.7}
+                          onPress={() =>
+                            setTrickModalState({
+                              visible: true,
+                              solution: sol,
+                              optionNumber: optionNum,
+                            })
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={`Show same coach booking trick for Option ${optionNum}`}
+                        >
+                          <Zap size={12} color={theme.accent} strokeWidth={2.4} style={{ marginRight: 5 }} />
+                          <Text style={[styles.altQuickTrickText, { color: theme.accent }]}>
+                            Show Same-Coach Booking Trick
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </TouchableOpacity>
 
                     {/* Detailed Leg Breakdown (when expanded) */}
@@ -716,13 +772,33 @@ export const SmartRoutesScreen: React.FC = () => {
                           <Text style={styles.bookingGuideTitle}>How to book on IRCTC:</Text>
                           {sol.legs.map((leg: SubLeg, legIdx: number) => (
                             <Text key={legIdx} style={styles.bookingGuideStep}>
-                              {legIdx + 1}. Book Ticket {legIdx + 1}: {leg.from_station} ({getStationName(leg.from_station)}) to {leg.to_station} ({getStationName(leg.to_station)}) on Train {leg.train_no} ({leg.travel_class})
+                              {legIdx + 1}. Book Ticket {legIdx + 1}: {leg.from_station} ({getStationName(leg.from_station)}) to {leg.to_station} ({getStationName(leg.to_station)}) on {leg.journey_date || isoDate} • Train {leg.train_no} ({leg.travel_class})
                             </Text>
                           ))}
                           <Text style={[styles.bookingGuideNote, { color: theme.primary }]}>
                             You remain on Train {params.trainNo} throughout the entire journey.
                           </Text>
                         </View>
+
+                        {/* Show Booking Trick Button for Alternative Option */}
+                        {sol.legs && sol.legs.length > 1 && (
+                          <TouchableOpacity
+                            style={[styles.showTrickBtnAlt, { backgroundColor: theme.primary }]}
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              setTrickModalState({
+                                visible: true,
+                                solution: sol,
+                                optionNumber: optionNum,
+                              })
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel={`Show same coach booking trick for Option ${optionNum}`}
+                          >
+                            <Zap size={14} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 6 }} />
+                            <Text style={styles.showTrickBtnText}>Show Same-Coach Booking Trick</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     )}
                   </View>
@@ -740,6 +816,16 @@ export const SmartRoutesScreen: React.FC = () => {
           </View>
         </ScrollView>
       )}
+
+      {/* Intelligent Same-Coach Booking Trick Bottom Sheet Modal */}
+      <BookingTrickModal
+        visible={trickModalState.visible}
+        onClose={() => setTrickModalState((prev) => ({ ...prev, visible: false }))}
+        solution={trickModalState.solution}
+        optionNumber={trickModalState.optionNumber}
+        trainNo={params.trainNo || ''}
+        trainName={params.trainName}
+      />
     </LinearGradient>
   );
 };
@@ -1403,5 +1489,51 @@ const styles = StyleSheet.create({
   cacheNoticeText: {
     fontSize: 11,
     color: '#64748B',
+  },
+  showTrickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: radius.md,
+    marginTop: 12,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  showTrickBtnAlt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: radius.md,
+    marginTop: 12,
+  },
+  showTrickBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  altQuickTrickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+  },
+  altQuickTrickText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: -0.2,
   },
 });
