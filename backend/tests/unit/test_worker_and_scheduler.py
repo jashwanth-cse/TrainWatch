@@ -214,7 +214,7 @@ def _sample_watch(
             train_number="12661",
             source="MS",
             destination="TEN",
-            journey_date=journey_date or date(2026, 11, 15),
+            journey_date=journey_date or date(2026, 12, 15),
             travel_class="3A",
             quota="GN",
         ),
@@ -534,7 +534,11 @@ async def test_worker_expires_past_journey_watch() -> None:
     outbox = InMemoryNotificationOutbox()
     provider = FakeAvailabilityProvider()
 
-    watch = _sample_watch(watch_id="w1", journey_date=date(2026, 11, 15))
+    watch = _sample_watch(
+        watch_id="w1",
+        journey_date=date(2026, 11, 15),
+        created_at=now - timedelta(days=2),
+    )
     await watch_repo.save(watch)
 
     job = JobRecord(

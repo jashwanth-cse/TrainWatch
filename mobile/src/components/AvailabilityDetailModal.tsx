@@ -17,6 +17,7 @@ import {
   TravelClassInfo,
   fetchLiveAvailability,
 } from '../services/trainService';
+import { getStationName } from '../services/stationService';
 import { watchService, WatchCondition } from '../services/watchService';
 import { requestNotificationPermissionsAndRegisterDevice } from '../services/notificationService';
 import {
@@ -29,9 +30,9 @@ import {
   X,
   AlertCircle,
   TrendingUp,
-  Check,
   Wifi,
   WifiOff,
+  Route,
 } from 'lucide-react-native';
 import { parseAvailabilityStatus } from '../utils/availabilityHelper';
 import { sanitizeError } from '../utils/errorUtils';
@@ -47,6 +48,19 @@ export function extractAvailableSeats(raw: string | null | undefined): number | 
   return null;
 }
 
+export const SMART_SPLIT_ELIGIBLE_CLASSES = [
+  'SL',
+  '3A',
+  '3AC',
+  '2A',
+  '2AC',
+  '1A',
+  '1AC',
+  '3E',
+  'CC',
+  '2S',
+];
+
 interface AvailabilityDetailModalProps {
   visible: boolean;
   train: TrainItem | null;
@@ -54,10 +68,12 @@ interface AvailabilityDetailModalProps {
   journeyDate: string;
   displayDate: string;
   quota: string;
+  searchMode?: 'track' | 'multileg';
   isAlreadyTracked?: boolean;
   onClose: () => void;
   onSetAlert?: (train: TrainItem, travelClass: TravelClassInfo) => void;
   onViewAlerts?: () => void;
+  onOpenSmartSplit?: (train: TrainItem, travelClass: TravelClassInfo) => void;
 }
 
 export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = ({
@@ -67,10 +83,12 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   journeyDate,
   displayDate,
   quota,
+  searchMode = 'track',
   isAlreadyTracked = false,
   onClose,
   onSetAlert,
   onViewAlerts,
+  onOpenSmartSplit,
 }) => {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -91,14 +109,14 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   useEffect(() => {
     if (selectedClass) {
       const seats = extractAvailableSeats(selectedClass.availability);
-      if (seats && seats > 0) {
-        const defaultVal = Math.min(25, Math.max(1, Math.floor(seats / 2)));
+      const defaultVal = seats && seats > 0
+        ? Math.min(25, Math.max(1, Math.floor(seats / 2)))
+        : 25;
+      queueMicrotask(() => {
         setAvlThreshold(String(defaultVal));
-      } else {
-        setAvlThreshold('25');
-      }
-      setThresholdError(null);
-      setAlertError(null);
+        setThresholdError(null);
+        setAlertError(null);
+      });
     }
   }, [selectedClass]);
 
@@ -107,6 +125,12 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   const currentStatus = liveAvailability || selectedClass.availability;
   const parsedStatus = parseAvailabilityStatus(currentStatus);
   const availableSeatsCap = extractAvailableSeats(currentStatus);
+
+  const normalizedClass = (selectedClass.travel_class || '').trim().toUpperCase();
+  const isClassEligibleForSplit = SMART_SPLIT_ELIGIBLE_CLASSES.includes(normalizedClass);
+  const isStatusEligibleForSplit =
+    parsedStatus.badgeLabel === 'RAC' || parsedStatus.badgeLabel === 'WAITLIST';
+  const shouldShowSmartSplit = isClassEligibleForSplit && isStatusEligibleForSplit;
 
   const badge = {
     bg: parsedStatus.bgColor,
@@ -259,12 +283,19 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
       visible={visible}
       animationType="slide"
       transparent
+      statusBarTranslucent
       onRequestClose={handleModalClose}
     >
       <View style={styles.overlay}>
-        <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={handleModalClose} />
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={handleModalClose}
+          accessibilityRole="button"
+          accessibilityLabel="Close availability modal backdrop"
+        />
 
-        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+        <View style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 24) }]}>
           {/* Top Drag Indicator */}
           <View style={styles.dragHandle} />
 
@@ -308,6 +339,9 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               <View style={styles.routeRow}>
                 <View style={styles.timeBlock}>
                   <Text style={styles.stationCode}>{train.from.code}</Text>
+                  <Text style={styles.stationFullName} numberOfLines={1}>
+                    {train.from.name || getStationName(train.from.code)}
+                  </Text>
                   <Text style={styles.timeValue}>{train.departure_time}</Text>
                 </View>
 
@@ -322,6 +356,9 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
 
                 <View style={[styles.timeBlock, { alignItems: 'flex-end' }]}>
                   <Text style={styles.stationCode}>{train.to.code}</Text>
+                  <Text style={[styles.stationFullName, { textAlign: 'right' }]} numberOfLines={1}>
+                    {train.to.name || getStationName(train.to.code)}
+                  </Text>
                   <Text style={styles.timeValue}>{train.arrival_time}</Text>
                 </View>
               </View>
@@ -376,8 +413,101 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
               </TouchableOpacity>
             </View>
 
-            {/* Alert Configuration Option */}
-            <View style={styles.alertOptionBox}>
+            {/* Smart Split Option - Strictly for eligible classes (SL, 3A, 2A) and statuses (RAC, WL) */}
+            {shouldShowSmartSplit && (
+              <TouchableOpacity
+                style={styles.smartSplitCard}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Smart Split: get a seat by changing seat mid journey"
+                onPress={() => {
+                  handleModalClose();
+                  if (onOpenSmartSplit) {
+                    onOpenSmartSplit(train, selectedClass);
+                  } else {
+                    router.push({
+                      pathname: '/smart-routes',
+                      params: {
+                        trainNo: train.train_number,
+                        trainName: train.train_name,
+                        source: train.from.code,
+                        sourceName: train.from.name || getStationName(train.from.code),
+                        destination: train.to.code,
+                        destinationName: train.to.name || getStationName(train.to.code),
+                        date: journeyDate,
+                        displayDate,
+                        travelClass: selectedClass.travel_class,
+                        quota,
+                        directStatus: currentStatus,
+                        directFare: selectedClass.fare > 0 ? String(selectedClass.fare) : '',
+                      },
+                    });
+                  }
+                }}
+              >
+                <View style={styles.smartSplitHeaderRow}>
+                  <View style={styles.smartSplitIconCircle}>
+                    <Route size={18} color="#2563EB" strokeWidth={2.4} />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 10 }}>
+                    <View style={styles.smartSplitTitleRow}>
+                      <Text style={styles.smartSplitTitle}>Smart Split</Text>
+                      <View style={styles.smartSplitBadge}>
+                        <Text style={styles.smartSplitBadgeText}>CONFIRM BERTH</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.smartSplitCaption}>
+                      get a seat by changing seat mid journey
+                    </Text>
+                  </View>
+                  <ArrowRight size={18} color="#2563EB" strokeWidth={2.2} />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* In Multi-leg mode, if Split is not shown, provide clear feedback */}
+            {searchMode === 'multileg' && parsedStatus.badgeLabel === 'AVAILABLE' && (
+              <View style={styles.multiLegNoticeCard}>
+                <CheckCircle2 size={18} color="#15803D" strokeWidth={2.2} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.multiLegNoticeTitle}>Direct Seats Available</Text>
+                  <Text style={styles.multiLegNoticeDesc}>
+                    Direct berths are currently available for booking. Multi-leg split is not required.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {searchMode === 'multileg' && !isClassEligibleForSplit && (
+              <View style={styles.multiLegNoticeCard}>
+                <AlertCircle size={18} color="#B45309" strokeWidth={2.2} style={{ marginRight: 10 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.multiLegNoticeTitle}>Class Not Eligible</Text>
+                  <Text style={styles.multiLegNoticeDesc}>
+                    Smart Split is available for SL, 3AC, 2AC, 1AC, 3E, CC, and 2S classes.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {searchMode === 'multileg' &&
+              isClassEligibleForSplit &&
+              !isStatusEligibleForSplit &&
+              parsedStatus.badgeLabel !== 'AVAILABLE' && (
+                <View style={styles.multiLegNoticeCard}>
+                  <AlertCircle size={18} color="#B45309" strokeWidth={2.2} style={{ marginRight: 10 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.multiLegNoticeTitle}>Split Not Available</Text>
+                    <Text style={styles.multiLegNoticeDesc}>
+                      Smart Split is only available for RAC or Waitlist berths.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+            {/* Alert Configuration Option - Strictly hidden in multileg mode */}
+            {searchMode !== 'multileg' && (
+              <View style={styles.alertOptionBox}>
               <View style={styles.alertHeader}>
                 <View style={styles.alertIconCircle}>
                   <Bell size={17} color={colors.primary} strokeWidth={2.4} />
@@ -652,6 +782,7 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
                 </View>
               )}
             </View>
+            )}
           </ScrollView>
         </View>
       </View>
@@ -663,18 +794,26 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
   },
   sheet: {
-    backgroundColor: colors.cardBackground,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
     paddingTop: spacing.sm,
     paddingHorizontal: spacing.lg,
-    maxHeight: '92%',
+    maxHeight: '90%',
+    width: '100%',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 24,
   },
   scrollContent: {
     paddingBottom: spacing.lg,
@@ -759,6 +898,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: colors.textPrimary,
+  },
+  stationFullName: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: 1,
+    marginBottom: 2,
+    maxWidth: 120,
   },
   timeValue: {
     fontSize: 12,
@@ -871,6 +1018,81 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: colors.primary,
+  },
+  smartSplitCard: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1.5,
+    borderColor: '#93C5FD',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  smartSplitHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  smartSplitIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#DBEAFE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smartSplitTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  smartSplitTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E3A8A',
+    letterSpacing: -0.3,
+  },
+  smartSplitBadge: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    marginLeft: 8,
+  },
+  smartSplitBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  smartSplitCaption: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#3B82F6',
+    marginTop: 2,
+  },
+  multiLegNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    marginBottom: spacing.md,
+  },
+  multiLegNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  multiLegNoticeDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
   },
   alertOptionBox: {
     backgroundColor: colors.surfaceSubtle,

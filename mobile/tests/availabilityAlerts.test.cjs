@@ -75,6 +75,10 @@ function loadAvailabilityDetailModal() {
     '../services/networkService': {
       openNetworkSettings: async () => {},
     },
+    '../services/stationService': {
+      getStationName: (code) => String(code || ''),
+      formatStationName: (s) => String(s || ''),
+    },
     '../utils/availabilityHelper': {
       parseAvailabilityStatus: () => ({
         badgeLabel: 'AVAILABLE',

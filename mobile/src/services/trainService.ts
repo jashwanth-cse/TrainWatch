@@ -1,3 +1,5 @@
+import { sanitizeError } from '../utils/errorUtils';
+
 export interface StationSimple {
   code: string;
   name: string;
@@ -38,8 +40,6 @@ export interface TrainSearchResults {
   fallback_reason?: string;
   latency_ms?: number;
 }
-
-import { sanitizeError } from '../utils/errorUtils';
 
 export interface SearchTrainsParams {
   source: string;

@@ -28,6 +28,7 @@ const AppNavigator: React.FC = () => {
       <Stack.Screen name="home" />
       <Stack.Screen name="results" />
       <Stack.Screen name="alerts" />
+      <Stack.Screen name="smart-routes" />
     </Stack>
   );
 };

@@ -10,6 +10,7 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
     monkeypatch.delenv("TRAIN_API_BASE_URL", raising=False)
+    monkeypatch.delenv("TRAIN_SCHEDULE_CDN_BASE_URL", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
     monkeypatch.delenv("GCP_PROJECT", raising=False)
     monkeypatch.delenv("FIRESTORE_DATABASE_ID", raising=False)
@@ -18,6 +19,7 @@ def test_settings_use_safe_local_defaults(monkeypatch: pytest.MonkeyPatch) -> No
         app_env="local",
         log_level="INFO",
         train_api_base_url="https://example.invalid",
+        train_schedule_cdn_base_url="https://trains.jashh.me",
         project_id="",
         firestore_database_id="(default)",
     )
@@ -28,6 +30,7 @@ def test_settings_normalize_supported_values(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("APP_ENV", "TEST")
     monkeypatch.setenv("LOG_LEVEL", "warning")
     monkeypatch.setenv("TRAIN_API_BASE_URL", "https://trains.example.test/")
+    monkeypatch.setenv("TRAIN_SCHEDULE_CDN_BASE_URL", "https://cdn.example.test/")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "trainwatch-test")
     monkeypatch.setenv("FIRESTORE_DATABASE_ID", "custom-db")
 
@@ -35,6 +38,7 @@ def test_settings_normalize_supported_values(monkeypatch: pytest.MonkeyPatch) ->
         app_env="test",
         log_level="WARNING",
         train_api_base_url="https://trains.example.test",
+        train_schedule_cdn_base_url="https://cdn.example.test",
         project_id="trainwatch-test",
         firestore_database_id="custom-db",
     )
@@ -55,6 +59,7 @@ def test_settings_falls_back_to_gcp_project(monkeypatch: pytest.MonkeyPatch) -> 
         ("APP_ENV", "unknown", "APP_ENV must be one of"),
         ("LOG_LEVEL", "verbose", "LOG_LEVEL must be one of"),
         ("TRAIN_API_BASE_URL", "not-a-url", "TRAIN_API_BASE_URL must be an HTTP"),
+        ("TRAIN_SCHEDULE_CDN_BASE_URL", "not-a-url", "TRAIN_SCHEDULE_CDN_BASE_URL must be an HTTP"),
     ],
 )
 def test_settings_reject_unknown_values(
