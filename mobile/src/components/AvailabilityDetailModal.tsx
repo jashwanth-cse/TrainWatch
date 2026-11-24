@@ -48,7 +48,18 @@ export function extractAvailableSeats(raw: string | null | undefined): number | 
   return null;
 }
 
-export const SMART_SPLIT_ELIGIBLE_CLASSES = ['SL', '3A', '3AC', '2A', '2AC'];
+export const SMART_SPLIT_ELIGIBLE_CLASSES = [
+  'SL',
+  '3A',
+  '3AC',
+  '2A',
+  '2AC',
+  '1A',
+  '1AC',
+  '3E',
+  'CC',
+  '2S',
+];
 
 interface AvailabilityDetailModalProps {
   visible: boolean;
@@ -466,7 +477,7 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
                 <View style={{ flex: 1 }}>
                   <Text style={styles.multiLegNoticeTitle}>Class Not Eligible</Text>
                   <Text style={styles.multiLegNoticeDesc}>
-                    Smart Split is only available for Sleeper (SL), 3AC, and 2AC classes.
+                    Smart Split is available for SL, 3AC, 2AC, 1AC, 3E, CC, and 2S classes.
                   </Text>
                 </View>
               </View>

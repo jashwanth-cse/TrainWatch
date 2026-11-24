@@ -45,6 +45,7 @@ function renderSearchScreen(name, { storage = {}, params = {}, resultType = 'dir
       Animated: { Value: class { interpolate() { return 0; } }, View: 'Animated.View',
         timing: animation, spring: animation, sequence: animation },
       Alert: { alert() {} },
+      PanResponder: { create: () => ({ panHandlers: {} }) },
     },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 20, bottom: 20 }) },
     'expo-router': {

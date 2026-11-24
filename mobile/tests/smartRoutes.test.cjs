@@ -287,14 +287,20 @@ test('HomeScreen dual-mode navigation toggles between Track Seat and Multi leg',
   assert.ok(home.find((node) => node.type === 'Text' && String(node.props.children).includes('Get a confirm ticket')));
   assert.ok(home.find((node) => node.type === 'Text' && String(node.props.children).includes('on shift')));
 
-  // Class picker allows only SL, 3A, 2A, All Classes in multi-leg mode
+  // Class picker allows expanded classes in multi-leg mode
   const classModal = home.find((node) => node.type === 'ClassPickerModal');
   assert.ok(classModal);
-  assert.deepEqual(JSON.stringify(classModal.props.allowedClasses), JSON.stringify(['All Classes', 'SL', '3A', '2A']));
+  assert.deepEqual(
+    JSON.stringify(classModal.props.allowedClasses),
+    JSON.stringify(['All Classes', 'SL', '3A', '2A', '1A', '3E', 'CC', '2S'])
+  );
 
-  // Quota is locked to General and unselectable
+  // Quota is locked to General and unselectable, without Fixed badge
   assert.ok(home.find((node) => node.props?.accessibilityLabel === 'General quota locked'));
-  assert.ok(home.find((node) => node.type === 'Text' && String(node.props.children).includes('Fixed')));
+  assert.ok(
+    !home.find((node) => node.type === 'Text' && String(node.props.children).includes('Fixed')),
+    'Fixed label must not be rendered near General quota in multi-leg mode'
+  );
 
   // Search Trains sends mode: multileg and quota: GN
   home.find((node) => node.props.accessibilityLabel === 'Search trains').props.onPress();
@@ -469,7 +475,7 @@ test('AvailabilityDetailModal does NOT render Smart Split option when seats are 
   assert.equal(smartSplitBtn, null, 'Smart Split must NOT be rendered when seats are AVAILABLE');
 });
 
-test('AvailabilityDetailModal does NOT render Smart Split option for 1AC (1A) even if waitlisted', async () => {
+test('AvailabilityDetailModal renders Smart Split option for 1AC (1A) when waitlisted', async () => {
   const { exports } = loadModalComponent();
   const mockClass = {
     travel_class: '1A',
@@ -494,7 +500,7 @@ test('AvailabilityDetailModal does NOT render Smart Split option for 1AC (1A) ev
     (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
     tree
   );
-  assert.equal(smartSplitBtn, null, 'Smart Split must NOT be rendered for 1A class');
+  assert.ok(smartSplitBtn, 'Smart Split must be rendered for 1A class when waitlisted');
 });
 
 test('AvailabilityDetailModal does NOT render Smart Split option for REGRET or NOT AVAILABLE', async () => {
@@ -525,22 +531,19 @@ test('AvailabilityDetailModal does NOT render Smart Split option for REGRET or N
   assert.equal(smartSplitBtn, null, 'Smart Split must NOT be rendered for REGRET status');
 });
 
-test('AvailabilityDetailModal DOES render Smart Split for SL, 3A, and 2A when RAC or WAITLIST', async () => {
+test('AvailabilityDetailModal DOES render Smart Split for all expanded classes (SL, 3A, 2A, 1A, 3E, CC, 2S) when RAC or WAITLIST', async () => {
   const { exports } = loadModalComponent();
-  const eligiblePairs = [
-    { cls: 'SL', status: 'WL 10' },
-    { cls: '3A', status: 'RAC 4' },
-    { cls: '2A', status: 'GNWL 2' },
-  ];
+  const allSupportedClasses = ['SL', '3A', '2A', '1A', '3E', 'CC', '2S'];
 
-  for (const pair of eligiblePairs) {
-    const tree = exports.AvailabilityDetailModal({
+  for (const cls of allSupportedClasses) {
+    // 1. Waitlist condition -> Must show Smart Split
+    const treeWl = exports.AvailabilityDetailModal({
       visible: true,
       train: defaultTestTrain,
       selectedClass: {
-        travel_class: pair.cls,
-        fare: 500,
-        availability: pair.status,
+        travel_class: cls,
+        fare: 650,
+        availability: 'WL 12',
         prediction: 0,
         bookable: true,
         availability_source: 'live',
@@ -551,11 +554,35 @@ test('AvailabilityDetailModal DOES render Smart Split for SL, 3A, and 2A when RA
       onClose: () => {},
     });
 
-    const smartSplitBtn = findNode(
+    const smartSplitBtnWl = findNode(
       (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
-      tree
+      treeWl
     );
-    assert.ok(smartSplitBtn, `Smart Split must be rendered for ${pair.cls} with ${pair.status}`);
+    assert.ok(smartSplitBtnWl, `Smart Split must be rendered for ${cls} when WL`);
+
+    // 2. Available condition -> Must NOT show Smart Split
+    const treeAvl = exports.AvailabilityDetailModal({
+      visible: true,
+      train: defaultTestTrain,
+      selectedClass: {
+        travel_class: cls,
+        fare: 650,
+        availability: 'AVAILABLE 30',
+        prediction: 0,
+        bookable: true,
+        availability_source: 'live',
+      },
+      journeyDate: '2026-11-20',
+      displayDate: '20 Nov',
+      quota: 'GN',
+      onClose: () => {},
+    });
+
+    const smartSplitBtnAvl = findNode(
+      (n) => n.props?.accessibilityLabel === 'Smart Split: get a seat by changing seat mid journey',
+      treeAvl
+    );
+    assert.equal(smartSplitBtnAvl, null, `Smart Split must NOT be rendered for ${cls} when AVAILABLE`);
   }
 });
 
