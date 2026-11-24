@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Git pre-push hook: invokes TrainWatch automated verification and auto-fixer
+# Cross-platform: works seamlessly on Windows Git Bash, macOS, and Linux
+
+exec python scripts/pre_push.py

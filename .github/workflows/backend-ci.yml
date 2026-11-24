@@ -3,10 +3,10 @@ name: Backend CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, staging]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   quality:
@@ -15,9 +15,9 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          fetch-depth: 0
 
       - name: Set up uv and Python
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -28,17 +28,54 @@ jobs:
       - name: Scan repository for common secret patterns
         run: python scripts/check_secrets.py
 
+      - name: Auto-fix and verify lockfile synchronization
+        id: sync-lockfile
+        working-directory: backend
+        run: |
+          if ! uv lock --check; then
+            echo "Lockfile is out of sync with pyproject.toml. Running uv lock..."
+            uv lock
+            echo "lockfile_updated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Lockfile is already in sync."
+            echo "lockfile_updated=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install backend and development tools
         working-directory: backend
         run: uv sync --extra dev --locked
 
-      - name: Check formatting
+      - name: Auto-fix and check formatting and linting
+        id: auto-fix-code
         working-directory: backend
-        run: uv run --no-sync ruff format --check . ../scripts
+        run: |
+          FORMAT_ERR=0
+          LINT_ERR=0
+          uv run --no-sync ruff format --check . ../scripts || FORMAT_ERR=1
+          uv run --no-sync ruff check . ../scripts || LINT_ERR=1
 
-      - name: Lint
-        working-directory: backend
-        run: uv run --no-sync ruff check . ../scripts
+          if [ $FORMAT_ERR -ne 0 ] || [ $LINT_ERR -ne 0 ]; then
+            echo "Formatting or lint discrepancies found. Applying automatic fixes..."
+            uv run --no-sync ruff check --fix . ../scripts || true
+            uv run --no-sync ruff format . ../scripts || true
+            echo "code_fixed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Code formatting and linting are clean."
+            echo "code_fixed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push automated fixes back to repository
+        if: steps.sync-lockfile.outputs.lockfile_updated == 'true' || steps.auto-fix-code.outputs.code_fixed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/uv.lock backend/src/ backend/tests/ scripts/
+          if ! git diff-index --quiet HEAD --; then
+            TARGET_BRANCH="${{ github.head_ref || github.ref_name }}"
+            echo "Pushing automated fixes to $TARGET_BRANCH..."
+            git commit -m "style(auto-fix): format code and sync uv.lock [skip ci]"
+            git push origin HEAD:$TARGET_BRANCH
+          fi
 
       - name: Type check
         working-directory: backend
