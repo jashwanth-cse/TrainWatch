@@ -42,10 +42,11 @@ import {
 import {
   addNetworkListener,
   openNetworkSettings,
-  getCachedNetworkStatus,
 } from '../services/networkService';
 import { colors } from '../theme/tokens';
 import { watchService } from '../services/watchService';
+
+const MULTILEG_CLASSES = ['All Classes', 'SL', '3A', '2A', '1A', '3E', 'CC', '2S'];
 
 export const HomeScreen: React.FC = () => {
   const router = useRouter();
@@ -72,8 +73,6 @@ export const HomeScreen: React.FC = () => {
   const [quotaCode, setQuotaCode] = useState<string>('GN');
   const [isOnline, setIsOnline] = useState(true);
   const [activeTab, setActiveTab] = useState<'track' | 'multileg'>('track');
-
-  const MULTILEG_CLASSES = ['All Classes', 'SL', '3A', '2A', '1A', '3E', 'CC', '2S'];
 
   // Precise side-to-side swipe responder for switching between Track Seat and Multi leg
   const panResponder = useMemo(

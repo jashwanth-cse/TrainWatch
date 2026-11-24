@@ -5,13 +5,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { colors, radius, spacing } from '../theme/tokens';
+import { radius } from '../theme/tokens';
 import {
   fetchSmartRoutes,
   SmartRoutesResultData,

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -86,14 +86,13 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
 }) => {
   const insets = useSafeAreaInsets();
 
-  const initialDate = useMemo(() => parseApiDate(selectedApiDate), [selectedApiDate]);
-  const [currentMonthDate, setCurrentMonthDate] = useState<Date>(initialDate);
+  const [prevSelectedApiDate, setPrevSelectedApiDate] = useState(selectedApiDate);
+  const [currentMonthDate, setCurrentMonthDate] = useState<Date>(() => parseApiDate(selectedApiDate));
 
-  useEffect(() => {
-    if (visible) {
-      setCurrentMonthDate(parseApiDate(selectedApiDate));
-    }
-  }, [visible, selectedApiDate]);
+  if (selectedApiDate !== prevSelectedApiDate) {
+    setPrevSelectedApiDate(selectedApiDate);
+    setCurrentMonthDate(parseApiDate(selectedApiDate));
+  }
 
   // Base dates without time component
   const now = new Date();
@@ -104,19 +103,13 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
   const year = currentMonthDate.getFullYear();
   const month = currentMonthDate.getMonth();
 
-  const canGoPrev = useMemo(() => {
-    return (
-      year > today.getFullYear() ||
-      (year === today.getFullYear() && month > today.getMonth())
-    );
-  }, [year, month, today]);
+  const canGoPrev =
+    year > today.getFullYear() ||
+    (year === today.getFullYear() && month > today.getMonth());
 
-  const canGoNext = useMemo(() => {
-    return (
-      year < maxDate.getFullYear() ||
-      (year === maxDate.getFullYear() && month < maxDate.getMonth())
-    );
-  }, [year, month, maxDate]);
+  const canGoNext =
+    year < maxDate.getFullYear() ||
+    (year === maxDate.getFullYear() && month < maxDate.getMonth());
 
   const handlePrevMonth = () => {
     if (!canGoPrev) return;
@@ -155,7 +148,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
     const firstDayOfWeek = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    const cells: Array<{ day: number | null; date: Date | null }> = [];
+    const cells: { day: number | null; date: Date | null }[] = [];
 
     // Leading blanks for proper weekday alignment
     for (let i = 0; i < firstDayOfWeek; i++) {
@@ -170,7 +163,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
     return cells;
   }, [year, month]);
 
-  const todayItem: DateItem = useMemo(() => ({
+  const todayItem: DateItem = {
     dateObj: today,
     apiFormat: formatDateToApi(today),
     displayFormat: formatDateForDisplay(today),
@@ -179,9 +172,9 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
     monthName: MONTHS_SHORT[today.getMonth()],
     isToday: true,
     isTomorrow: false,
-  }), [today]);
+  };
 
-  const tomorrowItem: DateItem = useMemo(() => ({
+  const tomorrowItem: DateItem = {
     dateObj: tomorrow,
     apiFormat: formatDateToApi(tomorrow),
     displayFormat: formatDateForDisplay(tomorrow),
@@ -190,7 +183,7 @@ export const DatePickerModal: React.FC<DatePickerModalProps> = ({
     monthName: MONTHS_SHORT[tomorrow.getMonth()],
     isToday: false,
     isTomorrow: true,
-  }), [tomorrow]);
+  };
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
