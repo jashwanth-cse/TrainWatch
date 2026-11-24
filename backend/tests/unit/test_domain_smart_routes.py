@@ -251,3 +251,207 @@ def test_calculate_recommendation_score() -> None:
     )
     # Base 20 - 10 = 10.0
     assert score_wl == 10.0
+
+
+def test_calculate_booking_strategy_scarce_vs_plentiful() -> None:
+    """When Leg 2 has AVL 7 and Leg 1 has AVL 1, Leg 2 must be booked first."""
+    from trainwatch.domain.smart_routes import calculate_booking_strategy
+
+    today = date(2026, 12, 1)
+    leg1 = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="RJPM",
+        to_station="MDU",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 1",
+        position=1,
+        fare=140,
+        departure_time="19:55",
+        arrival_time="21:15",
+        duration_minutes=80,
+        distance_km=89,
+        journey_date=today,
+    )
+    leg2 = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="MDU",
+        to_station="MS",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 7",
+        position=7,
+        fare=280,
+        departure_time="21:20",
+        arrival_time="06:40",
+        duration_minutes=560,
+        distance_km=495,
+        journey_date=today,
+    )
+
+    strat = calculate_booking_strategy((leg1, leg2), today)
+    assert strat.recommended_order == (2, 1)
+    assert "Book Leg 2" in strat.headline
+    assert "Leg 2 has more open seats (7 available)" in strat.strategy_reason
+    assert strat.same_coach_probability == "HIGH"
+    assert len(strat.steps) == 2
+    assert strat.steps[0].leg_number == 2
+    assert strat.steps[1].leg_number == 1
+
+    # Inverted case: Leg 1 has 7 seats, Leg 2 has 1 seat -> Leg 1 first
+    strat_inv = calculate_booking_strategy((leg2, leg1), today)
+    assert strat_inv.recommended_order == (2, 1)
+
+
+def test_calculate_booking_strategy_scarce_both() -> None:
+    """When both legs have AVL 1, flag BEST_EFFORT and nearby coach preference."""
+    from trainwatch.domain.smart_routes import calculate_booking_strategy
+
+    today = date(2026, 12, 1)
+    leg1 = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="RJPM",
+        to_station="MDU",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 1",
+        position=1,
+        fare=140,
+        departure_time="19:55",
+        arrival_time="21:15",
+        duration_minutes=80,
+        distance_km=89,
+        journey_date=today,
+    )
+    leg2 = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="MDU",
+        to_station="MS",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 1",
+        position=1,
+        fare=280,
+        departure_time="21:20",
+        arrival_time="06:40",
+        duration_minutes=560,
+        distance_km=495,
+        journey_date=today,
+    )
+
+    strat = calculate_booking_strategy((leg1, leg2), today)
+    assert strat.recommended_order == (1, 2)
+    assert strat.same_coach_probability == "BEST_EFFORT"
+    assert "nearby coach preference" in strat.headline.lower()
+
+
+def test_calculate_booking_strategy_single_leg_and_3leg() -> None:
+    """Verify single-leg direct guidance and 3-leg multi-seat buffer sorting."""
+    from trainwatch.domain.smart_routes import calculate_booking_strategy
+
+    today = date(2026, 12, 1)
+    leg1 = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="RJPM",
+        to_station="MS",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 10",
+        position=10,
+        fare=420,
+        journey_date=today,
+    )
+    strat1 = calculate_booking_strategy((leg1,), today)
+    assert strat1.recommended_order == (1,)
+    assert len(strat1.steps) == 1
+
+    leg_a = SubLeg(
+        leg_number=1,
+        train_no="12622",
+        train_name="TN Exp",
+        from_station="NDLS",
+        to_station="BPL",
+        travel_class="3A",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 2",
+        position=2,
+        distance_km=702,
+        journey_date=today,
+    )
+    leg_b = SubLeg(
+        leg_number=2,
+        train_no="12622",
+        train_name="TN Exp",
+        from_station="BPL",
+        to_station="BZA",
+        travel_class="3A",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 12",
+        position=12,
+        distance_km=1049,
+        journey_date=today,
+    )
+    leg_c = SubLeg(
+        leg_number=3,
+        train_no="12622",
+        train_name="TN Exp",
+        from_station="BZA",
+        to_station="MAS",
+        travel_class="3A",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 5",
+        position=5,
+        distance_km=431,
+        journey_date=today,
+    )
+    strat3 = calculate_booking_strategy((leg_a, leg_b, leg_c), today)
+    assert strat3.recommended_order[0] == 2  # leg 2 had 12 seats, so it is anchor leg
+
+    # Coverage for _extract_numeric_seats fallback branches
+    from trainwatch.domain.smart_routes import _extract_numeric_seats
+
+    subleg_avl_nodigit = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="RJPM",
+        to_station="MDU",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE",
+        position=None,
+    )
+    assert _extract_numeric_seats(subleg_avl_nodigit) == 1
+
+    subleg_wl_nodigit = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="RJPM",
+        to_station="MDU",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.WAITLIST,
+        raw_status="WAITLIST",
+        position=None,
+    )
+    assert _extract_numeric_seats(subleg_wl_nodigit) == 0
