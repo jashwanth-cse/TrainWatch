@@ -40,6 +40,7 @@ export interface SubLeg {
   train_name: string;
   from_station: string;
   to_station: string;
+  journey_date?: string;
   travel_class: string;
   quota: string;
   status: string;
@@ -50,6 +51,29 @@ export interface SubLeg {
   arrival_time: string | null;
   duration_minutes: number;
   distance_km: number;
+}
+
+export interface BookingOrderStep {
+  step_number: number;
+  leg_number: number;
+  from_station: string;
+  to_station: string;
+  journey_date: string;
+  departure_time: string | null;
+  raw_status: string;
+  available_seats: number | null;
+  action_title: string;
+  action_instructions: string;
+  preferred_coach_tip: string | null;
+}
+
+export interface BookingStrategy {
+  headline: string;
+  recommended_order: number[];
+  strategy_reason: string;
+  same_coach_probability: string; // HIGH, MODERATE, BEST_EFFORT
+  steps: BookingOrderStep[];
+  insider_tips: string[];
 }
 
 export interface SmartRouteSolution {
@@ -65,6 +89,7 @@ export interface SmartRouteSolution {
   is_rac: boolean;
   recommendation_score: number;
   split_stations: string[];
+  booking_strategy?: BookingStrategy | null;
 }
 
 export interface SmartRoutesResultData {

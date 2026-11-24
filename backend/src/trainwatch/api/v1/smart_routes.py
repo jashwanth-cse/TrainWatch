@@ -55,6 +55,7 @@ class SubLegPayload(BaseModel):
     train_name: str
     from_station: str
     to_station: str
+    journey_date: str
     travel_class: str
     quota: str
     status: str
@@ -65,6 +66,33 @@ class SubLegPayload(BaseModel):
     arrival_time: str | None = None
     duration_minutes: int = 0
     distance_km: int = 0
+
+
+class BookingOrderStepPayload(BaseModel):
+    """Step in the intelligent booking order sequence."""
+
+    step_number: int
+    leg_number: int
+    from_station: str
+    to_station: str
+    journey_date: str
+    departure_time: str | None = None
+    raw_status: str
+    available_seats: int | None = None
+    action_title: str
+    action_instructions: str
+    preferred_coach_tip: str | None = None
+
+
+class BookingStrategyPayload(BaseModel):
+    """Intelligent booking strategy payload."""
+
+    headline: str
+    recommended_order: list[int]
+    strategy_reason: str
+    same_coach_probability: str
+    steps: list[BookingOrderStepPayload]
+    insider_tips: list[str]
 
 
 class SmartRouteSolutionPayload(BaseModel):
@@ -82,6 +110,7 @@ class SmartRouteSolutionPayload(BaseModel):
     is_rac: bool
     recommendation_score: float
     split_stations: list[str]
+    booking_strategy: BookingStrategyPayload | None = None
 
 
 class SmartRoutesDataPayload(BaseModel):
@@ -179,6 +208,9 @@ async def find_smart_routes(
                     train_name=leg.train_name,
                     from_station=leg.from_station,
                     to_station=leg.to_station,
+                    journey_date=leg.journey_date.isoformat()
+                    if leg.journey_date
+                    else str(result.journey_date),
                     travel_class=leg.travel_class,
                     quota=leg.quota,
                     status=leg.status.value,
@@ -201,6 +233,31 @@ async def find_smart_routes(
             is_rac=sol.is_rac,
             recommendation_score=sol.recommendation_score,
             split_stations=list(sol.split_stations),
+            booking_strategy=BookingStrategyPayload(
+                headline=sol.booking_strategy.headline,
+                recommended_order=list(sol.booking_strategy.recommended_order),
+                strategy_reason=sol.booking_strategy.strategy_reason,
+                same_coach_probability=sol.booking_strategy.same_coach_probability,
+                steps=[
+                    BookingOrderStepPayload(
+                        step_number=step.step_number,
+                        leg_number=step.leg_number,
+                        from_station=step.from_station,
+                        to_station=step.to_station,
+                        journey_date=step.journey_date.isoformat(),
+                        departure_time=step.departure_time,
+                        raw_status=step.raw_status,
+                        available_seats=step.available_seats,
+                        action_title=step.action_title,
+                        action_instructions=step.action_instructions,
+                        preferred_coach_tip=step.preferred_coach_tip,
+                    )
+                    for step in sol.booking_strategy.steps
+                ],
+                insider_tips=list(sol.booking_strategy.insider_tips),
+            )
+            if sol.booking_strategy
+            else None,
         )
         for sol in result.solutions
     ]

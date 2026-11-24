@@ -650,9 +650,12 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
         distance_km=100,
     )
 
+    def _code(x: object) -> str:
+        return getattr(x, "station_code", str(x))
+
     # 1. _evaluate_2leg_candidate: obs2 is None / failed (line 312)
-    async def query_seg_none(src: str, dst: str) -> tuple[AvailabilityObservation, int | None]:
-        if src == "S1" and dst == "S2":
+    async def query_seg_none(src: object, dst: object) -> tuple[AvailabilityObservation, int | None]:
+        if _code(src) == "S1" and _code(dst) == "S2":
             return _avail(AvailabilityStatus.AVAILABLE, "AVL 10"), 100
         return AvailabilityObservation.failed(ProviderFailure.OTHER), None
 
@@ -670,8 +673,8 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
     assert sol_2leg is None
 
     # 2. _evaluate_3leg_candidate: obs3 is None (line 389)
-    async def query_seg_3leg_none(src: str, dst: str) -> tuple[AvailabilityObservation, int | None]:
-        if src == "S2" and dst == "S3":
+    async def query_seg_3leg_none(src: object, dst: object) -> tuple[AvailabilityObservation, int | None]:
+        if _code(src) == "S2" and _code(dst) == "S3":
             return _avail(AvailabilityStatus.AVAILABLE, "AVL 10"), 100
         return AvailabilityObservation.failed(ProviderFailure.OTHER), None
 
@@ -681,6 +684,7 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
         leg1=dummy_leg1,
         query=query,
         schedule=sched,
+        origin_stop=stops[0],
         dest_stop=stops[4],
         direct_fare=500,
         query_segment=query_seg_3leg_none,
@@ -689,11 +693,11 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
 
     # 3. _evaluate_4leg_candidate: obs3 not AVL (line 489)
     async def query_seg_4leg_obs3_wl(
-        src: str, dst: str
+        src: object, dst: object
     ) -> tuple[AvailabilityObservation, int | None]:
-        if src == "S2" and dst == "S3":
+        if _code(src) == "S2" and _code(dst) == "S3":
             return _avail(AvailabilityStatus.AVAILABLE, "AVL 10"), 100
-        if src == "S3" and dst == "S4":
+        if _code(src) == "S3" and _code(dst) == "S4":
             return _avail(AvailabilityStatus.WAITLIST, "WL 1", 1), 100
         return AvailabilityObservation.failed(ProviderFailure.OTHER), None
 
@@ -704,6 +708,7 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
         leg1=dummy_leg1,
         query=query,
         schedule=sched,
+        origin_stop=stops[0],
         dest_stop=stops[4],
         direct_fare=500,
         query_segment=query_seg_4leg_obs3_wl,
@@ -712,9 +717,9 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
 
     # 4. _evaluate_4leg_candidate: obs4 is None (line 493)
     async def query_seg_4leg_obs4_none(
-        src: str, dst: str
+        src: object, dst: object
     ) -> tuple[AvailabilityObservation, int | None]:
-        if src in {"S2", "S3"} and dst in {"S3", "S4"}:
+        if _code(src) in {"S2", "S3"} and _code(dst) in {"S3", "S4"}:
             return _avail(AvailabilityStatus.AVAILABLE, "AVL 10"), 100
         return AvailabilityObservation.failed(ProviderFailure.OTHER), None
 
@@ -725,6 +730,7 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
         leg1=dummy_leg1,
         query=query,
         schedule=sched,
+        origin_stop=stops[0],
         dest_stop=stops[4],
         direct_fare=500,
         query_segment=query_seg_4leg_obs4_none,
@@ -733,9 +739,9 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
 
     # 5. _evaluate_4leg_candidate: obs4 is bad status (line 502)
     async def query_seg_4leg_obs4_bad(
-        src: str, dst: str
+        src: object, dst: object
     ) -> tuple[AvailabilityObservation, int | None]:
-        if src in {"S2", "S3"} and dst in {"S3", "S4"}:
+        if _code(src) in {"S2", "S3"} and _code(dst) in {"S3", "S4"}:
             return _avail(AvailabilityStatus.AVAILABLE, "AVL 10"), 100
         return _avail(AvailabilityStatus.WAITLIST, "WL 2", 2), 100
 
@@ -746,6 +752,7 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
         leg1=dummy_leg1,
         query=query,
         schedule=sched,
+        origin_stop=stops[0],
         dest_stop=stops[4],
         direct_fare=500,
         query_segment=query_seg_4leg_obs4_bad,
@@ -753,7 +760,7 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
     assert sol_4leg_3 is None
 
     # 6. _evaluate_origin_extension: direct_snapshot is None (line 617->629)
-    async def query_seg_ext(src: str, dst: str) -> tuple[AvailabilityObservation, int | None]:
+    async def query_seg_ext(src: object, dst: object) -> tuple[AvailabilityObservation, int | None]:
         return _avail(AvailabilityStatus.AVAILABLE, "AVL 10"), 520
 
     sol_ext = await engine._evaluate_origin_extension(
@@ -767,3 +774,88 @@ async def test_engine_candidate_evaluators_defensive_branches() -> None:
     )
     assert sol_ext is not None
     assert sol_ext.tier == SolutionTier.TIER_2_ORIGIN_EXTENSION
+
+
+@pytest.mark.anyio
+async def test_multi_day_midnight_date_offsets_and_subleg_dates() -> None:
+    """Verify that multi-day journeys calculate and query exact calendar dates across midnight rollovers."""
+    from datetime import timedelta
+
+    stops = [
+        _stop(1, "DIBRUGARH", "DBRG", "19:25", "19:25", 0, 1, 0),
+        _stop(2, "GUWAHATI", "GHY", "08:45", "09:00", 15, 2, 558),
+        _stop(3, "VISAKHAPATNAM", "VSKP", "19:40", "20:00", 20, 3, 2060),
+        _stop(4, "VIJAYAWADA JN", "BZA", "01:50", "02:00", 10, 4, 2410),
+        _stop(5, "KANYAKUMARI", "CAPE", "22:00", "22:00", 0, 4, 4154),
+    ]
+    sched = _make_mock_schedule(train_no="15906", train_name="Vivek Express", stops=stops, total_duration_minutes=4475)
+
+    captured_queries: list[tuple[str, str, date]] = []
+    mock_train_client = AsyncMock(spec=DreamDestinyClient)
+
+    async def mock_fetch(q: TrainQuery) -> tuple[AvailabilityObservation, int | None]:
+        captured_queries.append((q.source, q.destination, q.journey_date))
+        if q.source == "DBRG" and q.destination == "CAPE":
+            return _avail(AvailabilityStatus.WAITLIST, "WL 50", 50), 1050
+        return _avail(AvailabilityStatus.AVAILABLE, "AVL 15", 15), 450
+
+    mock_train_client.fetch_with_fare.side_effect = mock_fetch
+
+    mock_sched_client = AsyncMock(spec=CdnScheduleClient)
+    mock_sched_client.get_schedule.return_value = sched
+
+    engine = SmartRoutingEngine(schedule_client=mock_sched_client, train_client=mock_train_client)
+
+    journey_origin_date = date(2026, 12, 5)  # Saturday
+    query = SmartRouteQuery(
+        train_no="15906",
+        origin="DBRG",
+        destination="CAPE",
+        journey_date=journey_origin_date,
+        travel_class="SL",
+        quota="GN",
+    )
+
+    result = await engine.search(query)
+    assert len(result.solutions) > 0
+
+    # Verify that VSKP (Day 3) is queried with Saturday + 2 days = Monday (2026-12-07)
+    vskp_to_cape_queries = [
+        jdate for (src, dst, jdate) in captured_queries if src == "VSKP" and dst == "CAPE"
+    ]
+    assert len(vskp_to_cape_queries) > 0
+    assert vskp_to_cape_queries[0] == journey_origin_date + timedelta(days=2)
+    assert vskp_to_cape_queries[0] == date(2026, 12, 7)
+
+    # Verify BZA (Day 4) is queried with Saturday + 3 days = Tuesday (2026-12-08)
+    bza_to_cape_queries = [
+        jdate for (src, dst, jdate) in captured_queries if src == "BZA" and dst == "CAPE"
+    ]
+    assert len(bza_to_cape_queries) > 0
+    assert bza_to_cape_queries[0] == journey_origin_date + timedelta(days=3)
+    assert bza_to_cape_queries[0] == date(2026, 12, 8)
+
+    # Check solution legs have accurate journey_date
+    for sol in result.solutions:
+        for leg in sol.legs:
+            assert leg.journey_date is not None
+            assert isinstance(leg.journey_date, date)
+            assert sol.booking_strategy is not None
+
+    # Test Tier 2 origin extension date: passenger boards at GHY on Day 2 (Sunday 2026-12-06)
+    captured_queries.clear()
+    query_from_day2 = SmartRouteQuery(
+        train_no="15906",
+        origin="GHY",
+        destination="CAPE",
+        journey_date=date(2026, 12, 6),  # Sunday (Day 2 of train run)
+        travel_class="SL",
+        quota="GN",
+    )
+    result_day2 = await engine.search(query_from_day2)
+    # Origin extension should query DBRG (Day 1) on Sunday - 1 day = Saturday (2026-12-05)
+    dbrg_to_cape_queries = [
+        jdate for (src, dst, jdate) in captured_queries if src == "DBRG" and dst == "CAPE"
+    ]
+    assert len(dbrg_to_cape_queries) > 0
+    assert dbrg_to_cape_queries[0] == date(2026, 12, 5)
