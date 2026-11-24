@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "trainwatch"
-version = "0.0.1"
-description = "Credential-free Phase 0 backend baseline for TrainWatch"
+version = "2.0.0"
+description = "TrainWatch backend and smart multi-leg split routing engine"
 readme = { text = "TrainWatch backend package. See the repository README for setup and safety boundaries.", content-type = "text/markdown" }
 requires-python = ">=3.13,<3.15"
 dependencies = [

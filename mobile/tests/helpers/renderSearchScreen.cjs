@@ -45,6 +45,7 @@ function renderSearchScreen(name, { storage = {}, params = {}, resultType = 'dir
       Animated: { Value: class { interpolate() { return 0; } }, View: 'Animated.View',
         timing: animation, spring: animation, sequence: animation },
       Alert: { alert() {} },
+      PanResponder: { create: () => ({ panHandlers: {} }) },
     },
     'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 20, bottom: 20 }) },
     'expo-router': {
@@ -62,6 +63,9 @@ function renderSearchScreen(name, { storage = {}, params = {}, resultType = 'dir
       getLastSearch: async () => storage.last ?? null,
       saveLastSearch: async (value) => { storage.last = structuredClone(value); },
       addRecentStation: async () => {},
+      getStationName: (code) => String(code || ''),
+      formatStationName: (str) => String(str || ''),
+      getStationByCode: (code) => ({ code: String(code || ''), name: String(code || ''), state: '' }),
     },
     '../components/DatePickerModal': { DatePickerModal: 'DatePickerModal',
       formatDateToApi: () => '01-11-2026', formatDateForDisplay: () => '1 Nov' },

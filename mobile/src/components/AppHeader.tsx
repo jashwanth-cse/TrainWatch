@@ -6,6 +6,7 @@ import { spacing } from '../theme/tokens';
 interface AppHeaderProps {
   variant?: 'light' | 'dark';
   includeTopInset?: boolean;
+  compact?: boolean;
 }
 
 /**
@@ -13,14 +14,14 @@ interface AppHeaderProps {
  * Displays the complete TrainWatch brand logo (circular emblem + wordmark together from android-icon-foreground.png)
  * smoothly blending into the blue atmosphere with medium spacing.
  */
-export const AppHeader: React.FC<AppHeaderProps> = ({ includeTopInset = false }) => {
+export const AppHeader: React.FC<AppHeaderProps> = ({ includeTopInset = false, compact = false }) => {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={[styles.container, includeTopInset && { paddingTop: Math.max(insets.top, 8) }]}>
       <Image
         source={require('../../assets/android-icon-foreground.png')}
-        style={styles.brandLogo}
+        style={[styles.brandLogo, compact && styles.brandLogoCompact]}
         resizeMode="contain"
         accessibilityRole="image"
         accessibilityLabel="TrainWatch"
@@ -39,5 +40,9 @@ const styles = StyleSheet.create({
   brandLogo: {
     width: 205,
     height: 205,
+  },
+  brandLogoCompact: {
+    width: 175,
+    height: 175,
   },
 });

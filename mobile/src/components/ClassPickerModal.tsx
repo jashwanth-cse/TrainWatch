@@ -24,6 +24,7 @@ export const CLASS_OPTIONS: ClassOption[] = [
 interface ClassPickerModalProps {
   visible: boolean;
   selectedClass: string;
+  allowedClasses?: string[];
   onSelect: (option: ClassOption) => void;
   onClose: () => void;
 }
@@ -31,10 +32,14 @@ interface ClassPickerModalProps {
 export const ClassPickerModal: React.FC<ClassPickerModalProps> = ({
   visible,
   selectedClass,
+  allowedClasses,
   onSelect,
   onClose,
 }) => {
   const insets = useSafeAreaInsets();
+  const options = allowedClasses && allowedClasses.length > 0
+    ? CLASS_OPTIONS.filter((item) => allowedClasses.includes(item.code))
+    : CLASS_OPTIONS;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -50,7 +55,7 @@ export const ClassPickerModal: React.FC<ClassPickerModalProps> = ({
           </View>
 
           <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-            {CLASS_OPTIONS.map((item) => {
+            {options.map((item) => {
               const isSelected =
                 item.code === selectedClass ||
                 (item.code === 'All Classes' && (selectedClass === 'All Classes' || !selectedClass));

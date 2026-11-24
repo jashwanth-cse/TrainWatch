@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Animated,
   Alert,
+  PanResponder,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -36,14 +37,16 @@ import {
   Armchair,
   ArrowRight,
   Bell,
+  Route,
 } from 'lucide-react-native';
 import {
   addNetworkListener,
   openNetworkSettings,
-  getCachedNetworkStatus,
 } from '../services/networkService';
 import { colors } from '../theme/tokens';
 import { watchService } from '../services/watchService';
+
+const MULTILEG_CLASSES = ['All Classes', 'SL', '3A', '2A', '1A', '3E', 'CC', '2S'];
 
 export const HomeScreen: React.FC = () => {
   const router = useRouter();
@@ -69,6 +72,33 @@ export const HomeScreen: React.FC = () => {
   const [quota, setQuota] = useState<string>('General');
   const [quotaCode, setQuotaCode] = useState<string>('GN');
   const [isOnline, setIsOnline] = useState(true);
+  const [activeTab, setActiveTab] = useState<'track' | 'multileg'>('track');
+
+  // Precise side-to-side swipe responder for switching between Track Seat and Multi leg
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) => {
+          return (
+            Math.abs(gestureState.dx) > 30 &&
+            Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5
+          );
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dx < -40) {
+            // Swipe Left -> switch to Multi leg
+            setActiveTab('multileg');
+            if (travelClass !== 'All Classes' && !MULTILEG_CLASSES.includes(travelClass)) {
+              setTravelClass('All Classes');
+            }
+          } else if (gestureState.dx > 40) {
+            // Swipe Right -> switch to Track Seat
+            setActiveTab('track');
+          }
+        },
+      }),
+    [travelClass]
+  );
 
   // Network reachability listener
   useEffect(() => {
@@ -176,12 +206,15 @@ export const HomeScreen: React.FC = () => {
   };
 
   const proceedToResults = () => {
+    const searchQuota = activeTab === 'multileg' ? 'General' : quota;
+    const searchQuotaCode = activeTab === 'multileg' ? 'GN' : quotaCode;
+
     void saveLastSearch({
       source,
       destination,
       travelClass,
-      quota,
-      quotaCode,
+      quota: searchQuota,
+      quotaCode: searchQuotaCode,
     });
 
     router.push({
@@ -193,8 +226,9 @@ export const HomeScreen: React.FC = () => {
         destinationName: destination.name,
         date: apiDate,
         displayDate,
-        quota: quotaCode,
+        quota: searchQuotaCode,
         travelClass,
+        mode: activeTab,
       },
     });
   };
@@ -251,161 +285,238 @@ export const HomeScreen: React.FC = () => {
           styles.mainLayout,
           {
             paddingTop: Math.max(insets.top, 10),
-            paddingBottom: Math.max(insets.bottom, 16),
+            paddingBottom: Math.max(insets.bottom, 0),
           },
         ]}
       >
-        {/* Top-Left Notification Bell Icon */}
-        <TouchableOpacity
-          style={[styles.bellBtn, { top: Math.max(insets.top, 14) }]}
-          onPress={() => router.push('/alerts')}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="My Seat Alerts"
-        >
-          <Bell size={20} color="#FFFFFF" strokeWidth={2.4} />
-          {hasActiveAlerts && <View style={styles.bellBadgeDot} />}
-        </TouchableOpacity>
+        <View style={styles.contentBody} {...panResponder.panHandlers}>
+          {/* Top-Left Notification Bell Icon */}
+          <TouchableOpacity
+            style={[styles.bellBtn, { top: Math.max(insets.top, 14) }]}
+            onPress={() => router.push('/alerts')}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="My Seat Alerts"
+          >
+            <Bell size={20} color="#FFFFFF" strokeWidth={2.4} />
+            {hasActiveAlerts && <View style={styles.bellBadgeDot} />}
+          </TouchableOpacity>
 
-        {/* Top Header & Tagline */}
-        <View style={styles.topSection}>
-          <AppHeader variant="light" />
+          {/* Top Header & Tagline */}
+          <View style={styles.topSection}>
+            <AppHeader variant="light" compact={true} />
 
-          <View style={styles.captionContainer}>
-            <Text style={styles.captionMain}>Track your seats</Text>
-            <View style={styles.onTheGoRow}>
-              <View style={styles.onTheGoBadge}>
-                <Text style={styles.onTheGoText}>on-the-go</Text>
+            <View style={styles.captionContainer}>
+              <Text style={styles.captionMain}>
+                {activeTab === 'multileg' ? 'Get a confirm ticket' : 'Track your seats'}
+              </Text>
+              <View style={styles.onTheGoRow}>
+                <View style={styles.onTheGoBadge}>
+                  <Text style={styles.onTheGoText}>
+                    {activeTab === 'multileg' ? 'on shift' : 'on-the-go'}
+                  </Text>
+                </View>
               </View>
             </View>
+          </View>
+
+          {/* Fixed Non-Scrolling Body smoothly smurged into the white lower half */}
+          <View style={styles.formSection}>
+            {/* FROM Section */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.7}
+              style={styles.stationBlock}
+              onPress={() => {
+                setSearchTarget('source');
+                setSearchModalVisible(true);
+              }}
+            >
+              <Text style={styles.stationLabel}>FROM</Text>
+              <View style={styles.stationRow}>
+                <Text style={styles.stationName} numberOfLines={1}>
+                  {source.name}
+                </Text>
+                <Text style={styles.stationCode}>{source.code}</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Divider with Swap Floating Action Circle */}
+            <View style={styles.dividerWrapper}>
+              <View style={styles.dividerLine} />
+              <Animated.View style={[styles.swapContainer, { transform: [{ rotate: rotateInterpolation }] }]}>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Swap departure and destination stations"
+                  activeOpacity={0.85}
+                  style={styles.swapCircle}
+                  onPress={handleSwap}
+                >
+                  <ArrowUpDown size={20} color="#FFFFFF" strokeWidth={2.2} />
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+
+            {/* TO Section */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              activeOpacity={0.7}
+              style={styles.stationBlock}
+              onPress={() => {
+                setSearchTarget('destination');
+                setSearchModalVisible(true);
+              }}
+            >
+              <Text style={styles.stationLabel}>TO</Text>
+              <View style={styles.stationRow}>
+                <Text style={styles.stationName} numberOfLines={1}>
+                  {destination.name}
+                </Text>
+                <Text style={styles.stationCode}>{destination.code}</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Journey Date Box */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Select journey date"
+              activeOpacity={0.8}
+              style={styles.datePill}
+              onPress={() => setDateModalVisible(true)}
+            >
+              <View style={styles.dateTextGroup}>
+                <Text style={styles.dateLabel}>Journey Date</Text>
+                <Text style={styles.dateValue}>{displayDate}</Text>
+              </View>
+              <CalendarDays size={22} color="#0F172A" strokeWidth={2} />
+            </TouchableOpacity>
+
+            {/* Two Boxes Side-by-Side: [All Classes ▾] [General] */}
+            <View style={styles.twoBoxesRow}>
+              {/* Box 1: Classes */}
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Select travel class"
+                activeOpacity={0.8}
+                style={styles.filterBox}
+                onPress={() => setClassModalVisible(true)}
+              >
+                <View style={styles.filterContent}>
+                  <Armchair size={18} color="#0F172A" strokeWidth={2.2} style={styles.filterIconStyle} />
+                  <Text style={styles.filterText} numberOfLines={1}>
+                    {travelClass}
+                  </Text>
+                </View>
+                <ChevronDown size={17} color="#475569" strokeWidth={2.2} />
+              </TouchableOpacity>
+
+              {/* Box 2: Quota */}
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={activeTab === 'multileg' ? 'General quota locked' : 'Select quota'}
+                activeOpacity={activeTab === 'multileg' ? 1 : 0.8}
+                style={[styles.filterBox, activeTab === 'multileg' && styles.filterBoxLocked]}
+                onPress={() => {
+                  if (activeTab === 'track') {
+                    setQuotaModalVisible(true);
+                  }
+                }}
+              >
+                <View style={styles.filterContent}>
+                  <TrainFront size={18} color="#0F172A" strokeWidth={2.2} style={styles.filterIconStyle} />
+                  <Text style={styles.filterText} numberOfLines={1}>
+                    {activeTab === 'multileg' ? 'General' : quota}
+                  </Text>
+                </View>
+                {activeTab === 'track' && (
+                  <ChevronDown size={17} color="#475569" strokeWidth={2.2} />
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Search Trains CTA Button */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Search trains"
+              activeOpacity={0.88}
+              style={styles.searchButton}
+              onPress={handleSearchTrains}
+            >
+              <LinearGradient
+                colors={['#3B82F6', '#2563EB']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.searchGradient}
+              >
+                <Text style={styles.searchButtonText}>Search Trains</Text>
+                <ArrowRight size={22} color="#FFFFFF" strokeWidth={2.4} />
+              </LinearGradient>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Fixed Non-Scrolling Body smoothly smurged into the white lower half */}
-        <View style={styles.formSection}>
-          {/* FROM Section */}
+        {/* WhatsApp-Style Docked Bottom Navigation: [Track Seat] [Multi leg] */}
+        <View
+          style={[
+            styles.whatsappBottomNav,
+            { paddingBottom: Math.max(insets.bottom, 10) },
+          ]}
+        >
           <TouchableOpacity
-            accessibilityRole="button"
-            activeOpacity={0.7}
-            style={styles.stationBlock}
+            accessibilityRole="tab"
+            accessibilityLabel="Track Seat tab"
+            activeOpacity={0.85}
+            style={[
+              styles.whatsappNavTab,
+              activeTab === 'track' && styles.whatsappNavTabActive,
+            ]}
+            onPress={() => setActiveTab('track')}
+          >
+            <TrainFront
+              size={20}
+              color={activeTab === 'track' ? '#2563EB' : '#64748B'}
+              strokeWidth={activeTab === 'track' ? 2.5 : 2}
+            />
+            <Text
+              style={[
+                styles.whatsappNavText,
+                activeTab === 'track' && styles.whatsappNavTextActive,
+              ]}
+            >
+              Track Seat
+            </Text>
+            {activeTab === 'track' && <View style={styles.whatsappActiveIndicator} />}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            accessibilityRole="tab"
+            accessibilityLabel="Multi leg tab"
+            activeOpacity={0.85}
+            style={[
+              styles.whatsappNavTab,
+              activeTab === 'multileg' && styles.whatsappNavTabActive,
+            ]}
             onPress={() => {
-              setSearchTarget('source');
-              setSearchModalVisible(true);
+              setActiveTab('multileg');
+              if (travelClass !== 'All Classes' && !MULTILEG_CLASSES.includes(travelClass)) {
+                setTravelClass('All Classes');
+              }
             }}
           >
-            <Text style={styles.stationLabel}>FROM</Text>
-            <View style={styles.stationRow}>
-              <Text style={styles.stationName} numberOfLines={1}>
-                {source.name}
-              </Text>
-              <Text style={styles.stationCode}>{source.code}</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Divider with Swap Floating Action Circle */}
-          <View style={styles.dividerWrapper}>
-            <View style={styles.dividerLine} />
-            <Animated.View style={[styles.swapContainer, { transform: [{ rotate: rotateInterpolation }] }]}>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Swap departure and destination stations"
-                activeOpacity={0.85}
-                style={styles.swapCircle}
-                onPress={handleSwap}
-              >
-                <ArrowUpDown size={20} color="#FFFFFF" strokeWidth={2.2} />
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-
-          {/* TO Section */}
-          <TouchableOpacity
-            accessibilityRole="button"
-            activeOpacity={0.7}
-            style={styles.stationBlock}
-            onPress={() => {
-              setSearchTarget('destination');
-              setSearchModalVisible(true);
-            }}
-          >
-            <Text style={styles.stationLabel}>TO</Text>
-            <View style={styles.stationRow}>
-              <Text style={styles.stationName} numberOfLines={1}>
-                {destination.name}
-              </Text>
-              <Text style={styles.stationCode}>{destination.code}</Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Journey Date Box */}
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Select journey date"
-            activeOpacity={0.8}
-            style={styles.datePill}
-            onPress={() => setDateModalVisible(true)}
-          >
-            <View style={styles.dateTextGroup}>
-              <Text style={styles.dateLabel}>Journey Date</Text>
-              <Text style={styles.dateValue}>{displayDate}</Text>
-            </View>
-            <CalendarDays size={22} color="#0F172A" strokeWidth={2} />
-          </TouchableOpacity>
-
-          {/* Two Boxes Side-by-Side: [All Classes ▾] [General ▾] */}
-          <View style={styles.twoBoxesRow}>
-            {/* Box 1: Classes */}
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Select travel class"
-              activeOpacity={0.8}
-              style={styles.filterBox}
-              onPress={() => setClassModalVisible(true)}
+            <Route
+              size={20}
+              color={activeTab === 'multileg' ? '#2563EB' : '#64748B'}
+              strokeWidth={activeTab === 'multileg' ? 2.5 : 2}
+            />
+            <Text
+              style={[
+                styles.whatsappNavText,
+                activeTab === 'multileg' && styles.whatsappNavTextActive,
+              ]}
             >
-              <View style={styles.filterContent}>
-                <Armchair size={19} color="#0F172A" strokeWidth={2.2} style={styles.filterIconStyle} />
-                <Text style={styles.filterText} numberOfLines={1}>
-                  {travelClass}
-                </Text>
-              </View>
-              <ChevronDown size={18} color="#475569" strokeWidth={2.2} />
-            </TouchableOpacity>
-
-            {/* Box 2: Quota */}
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Select quota"
-              activeOpacity={0.8}
-              style={styles.filterBox}
-              onPress={() => setQuotaModalVisible(true)}
-            >
-              <View style={styles.filterContent}>
-                <TrainFront size={19} color="#0F172A" strokeWidth={2.2} style={styles.filterIconStyle} />
-                <Text style={styles.filterText} numberOfLines={1}>
-                  {quota}
-                </Text>
-              </View>
-              <ChevronDown size={18} color="#475569" strokeWidth={2.2} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Search Trains CTA Button */}
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Search trains"
-            activeOpacity={0.88}
-            style={styles.searchButton}
-            onPress={handleSearchTrains}
-          >
-            <LinearGradient
-              colors={['#3B82F6', '#2563EB']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.searchGradient}
-            >
-              <Text style={styles.searchButtonText}>Search Trains</Text>
-              <ArrowRight size={22} color="#FFFFFF" strokeWidth={2.4} />
-            </LinearGradient>
+              Multi leg
+            </Text>
+            {activeTab === 'multileg' && <View style={styles.whatsappActiveIndicator} />}
           </TouchableOpacity>
         </View>
       </View>
@@ -430,6 +541,7 @@ export const HomeScreen: React.FC = () => {
       <ClassPickerModal
         visible={classModalVisible}
         selectedClass={travelClass}
+        allowedClasses={activeTab === 'multileg' ? MULTILEG_CLASSES : undefined}
         onSelect={handleClassSelected}
         onClose={() => setClassModalVisible(false)}
       />
@@ -450,6 +562,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   mainLayout: {
+    flex: 1,
+  },
+  contentBody: {
     flex: 1,
     paddingHorizontal: 20,
   },
@@ -507,10 +622,10 @@ const styles = StyleSheet.create({
   captionContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -38,
+    marginTop: -32,
   },
   captionMain: {
-    fontSize: 27,
+    fontSize: 23,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: -0.6,
@@ -523,14 +638,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
   onTheGoBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.42)',
     borderWidth: 1.2,
     borderColor: 'rgba(255, 255, 255, 0.75)',
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 3,
     borderRadius: 20,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
@@ -539,25 +654,25 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   onTheGoText: {
-    fontSize: 19,
+    fontSize: 16,
     fontWeight: '800',
     color: '#0A1E4A', // Dark navy blue as requested
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   formSection: {
     backgroundColor: 'transparent',
-    marginTop: 14,
+    marginTop: 6,
   },
   stationBlock: {
-    paddingVertical: 8,
+    paddingVertical: 5,
   },
   stationLabel: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.8,
     color: '#64748B',
     textTransform: 'uppercase',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   stationRow: {
     flexDirection: 'row',
@@ -565,15 +680,15 @@ const styles = StyleSheet.create({
     alignItems: 'baseline',
   },
   stationName: {
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '800',
-    letterSpacing: -0.8,
+    letterSpacing: -0.6,
     color: '#0F172A',
     flex: 1,
-    marginRight: 12,
+    marginRight: 10,
   },
   stationCode: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: '#0F172A',
     letterSpacing: 0.5,
@@ -581,8 +696,8 @@ const styles = StyleSheet.create({
   dividerWrapper: {
     position: 'relative',
     justifyContent: 'center',
-    height: 42,
-    marginVertical: 4,
+    height: 34,
+    marginVertical: 2,
   },
   dividerLine: {
     height: 1,
@@ -597,17 +712,17 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   swapCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#3B82F6',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#3B82F6',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 5,
+    shadowRadius: 4,
+    elevation: 4,
   },
   datePill: {
     flexDirection: 'row',
@@ -615,10 +730,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.2,
     borderColor: '#E2E8F0',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    marginTop: 18,
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginTop: 10,
     backgroundColor: '#FFFFFF',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
@@ -630,21 +745,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   dateLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#94A3B8',
     fontWeight: '500',
     marginBottom: 2,
   },
   dateValue: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#0F172A',
   },
   twoBoxesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 12,
-    marginTop: 14,
+    gap: 10,
+    marginTop: 10,
   },
   filterBox: {
     flex: 1,
@@ -653,9 +768,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1.2,
     borderColor: '#E2E8F0',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     backgroundColor: '#FFFFFF',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
@@ -663,41 +778,138 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 1,
   },
+  filterBoxLocked: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#CBD5E1',
+  },
+  fixedBadge: {
+    backgroundColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  fixedBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#475569',
+  },
   filterContent: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
   filterIconStyle: {
-    marginRight: 8,
+    marginRight: 6,
   },
   filterText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     color: '#0F172A',
     flex: 1,
   },
   searchButton: {
-    marginTop: 26,
-    borderRadius: 30,
+    marginTop: 14,
+    borderRadius: 26,
     overflow: 'hidden',
     shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
   searchGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
-    paddingHorizontal: 22,
+    paddingVertical: 13,
+    paddingHorizontal: 20,
   },
   searchButtonText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
     letterSpacing: 0.2,
+  },
+  whatsappBottomNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingTop: 8,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  whatsappNavTab: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    position: 'relative',
+  },
+  whatsappNavTabActive: {},
+  whatsappNavText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 3,
+  },
+  whatsappNavTextActive: {
+    color: '#2563EB',
+    fontWeight: '800',
+  },
+  whatsappActiveIndicator: {
+    position: 'absolute',
+    top: -8,
+    width: 48,
+    height: 3,
+    backgroundColor: '#2563EB',
+    borderRadius: 2,
+  },
+  bottomNavContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    marginTop: 14,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  navTabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: 18,
+    marginHorizontal: 3,
+    backgroundColor: 'transparent',
+  },
+  navTabButtonActive: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+  },
+  navTabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+    marginLeft: 6,
+  },
+  navTabTextActive: {
+    color: '#2563EB',
+    fontWeight: '800',
   },
 });

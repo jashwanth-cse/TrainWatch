@@ -45,7 +45,6 @@ export const AlertsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [watches, setWatches] = useState<WatchRecord[]>([]);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   // Live status checks per watch_id
   const [checkingLiveIds, setCheckingLiveIds] = useState<Record<string, boolean>>({});
@@ -61,25 +60,32 @@ export const AlertsScreen: React.FC = () => {
   const loadAlerts = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
-    } else {
-      setLoading(true);
     }
-    setActionError(null);
     try {
       const data = await watchService.listWatches();
       setWatches(data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unable to load alerts';
-      setActionError(msg);
+    } catch {
+      // silent fallback
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadAlerts();
-  }, [loadAlerts]);
+    let isMounted = true;
+    watchService
+      .listWatches()
+      .then((data) => {
+        if (isMounted) setWatches(data);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleToggleStatus = async (watch: WatchRecord) => {
     const newStatus = watch.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
@@ -423,7 +429,7 @@ export const AlertsScreen: React.FC = () => {
           </View>
           <Text style={styles.emptyTitle}>No alerts configured</Text>
           <Text style={styles.emptySubtitle}>
-            Search for trains and tap "Track This Seat" to receive automatic push notifications when berths confirm or drop below your threshold.
+            Search for trains and tap &quot;Track This Seat&quot; to receive automatic push notifications when berths confirm or drop below your threshold.
           </Text>
           <TouchableOpacity
             style={styles.searchTrainsBtn}
