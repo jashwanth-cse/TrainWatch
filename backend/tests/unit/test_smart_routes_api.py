@@ -100,6 +100,11 @@ def _mock_result() -> SmartRouteResult:
         execution_time_ms=125.4,
         stations_evaluated_count=4,
         queries_executed_count=3,
+        station_names=(
+            ("RJPM", "RAJAPALAYAM"),
+            ("MDU", "MADURAI JN"),
+            ("MS", "CHENNAI EGMORE"),
+        ),
     )
 
 
@@ -140,6 +145,7 @@ async def test_find_smart_routes_success(test_app: tuple[FastAPI, AsyncMock]) ->
         assert data["destination"] == "MS"
         assert data["max_leg_horizon"] == 2
         assert data["direct_status"] == "WL 10"
+        assert data["station_names"]["RJPM"] == "RAJAPALAYAM"
         assert len(data["solutions"]) == 1
 
         sol = data["solutions"][0]

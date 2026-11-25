@@ -970,3 +970,7 @@ async def test_overnight_origin_midnight_halt_and_preboarding_selection() -> Non
     assert "Boarding Point as RJPM" in best.presentation.card_headline
     assert best.booking_strategy is not None
     assert "RJPM" in best.booking_strategy.headline
+    stn_map = dict(result.station_names)
+    assert stn_map["TSI"] == "TENKASI JN"
+    assert stn_map["RJPM"] == "RAJAPALAYAM"
+    assert stn_map["MS"] == "CHENNAI EGMORE"

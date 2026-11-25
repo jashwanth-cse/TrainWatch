@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { sanitizeError } from '../utils/errorUtils';
+import { registerStationNames } from './stationService';
 
 export function normalizeDateToIso(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
@@ -123,6 +124,7 @@ export interface SmartRoutesResultData {
   execution_time_ms: number;
   stations_evaluated_count: number;
   queries_executed_count: number;
+  station_names?: Record<string, string>;
 }
 
 export interface FetchSmartRoutesParams {
@@ -684,6 +686,9 @@ export async function fetchSmartRoutes(
 
   // 3. Evaluate cache freshness
   if (cached && now < cached.expiresAt) {
+    if (cached.data?.station_names) {
+      registerStationNames(cached.data.station_names);
+    }
     if (cached.data && cached.data.solutions) {
       for (const sol of cached.data.solutions) {
         if (!sol.booking_strategy) {
@@ -780,7 +785,10 @@ export async function fetchSmartRoutes(
     inFlightRequests.delete(cacheKey);
   }
 
-  // 5. Ensure booking strategy is populated on all solutions
+  // 5. Ensure booking strategy is populated on all solutions & register dynamic station names
+  if (data?.station_names) {
+    registerStationNames(data.station_names);
+  }
   if (data && data.solutions) {
     for (const sol of data.solutions) {
       if (!sol.booking_strategy) {

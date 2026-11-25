@@ -148,6 +148,7 @@ class SmartRoutesDataPayload(BaseModel):
     execution_time_ms: float
     stations_evaluated_count: int
     queries_executed_count: int
+    station_names: dict[str, str] = Field(default_factory=dict)
 
 
 class SmartRoutesResponse(BaseModel):
@@ -313,5 +314,6 @@ async def find_smart_routes(
             execution_time_ms=result.execution_time_ms,
             stations_evaluated_count=result.stations_evaluated_count,
             queries_executed_count=result.queries_executed_count,
+            station_names={code: name for code, name in result.station_names},
         ),
     )

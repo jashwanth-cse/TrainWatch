@@ -18,6 +18,7 @@ import {
   getRecentStations,
   addRecentStation,
 } from '../services/stationService';
+import { searchStationsOnline } from '../services/trainService';
 import { Search, X, TrainFront, ChevronRight, History } from 'lucide-react-native';
 
 interface StationSearchModalProps {
@@ -38,6 +39,10 @@ export const StationSearchModal: React.FC<StationSearchModalProps> = ({
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [recentStations, setRecentStations] = useState<Station[]>([]);
+  const [onlineState, setOnlineState] = useState<{ query: string; items: Station[] }>({
+    query: '',
+    items: [],
+  });
 
   useEffect(() => {
     if (visible) {
@@ -53,16 +58,54 @@ export const StationSearchModal: React.FC<StationSearchModalProps> = ({
     }
   }, [visible]);
 
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!visible || trimmed.length < 2) {
+      return;
+    }
+
+    const local = searchStations(trimmed, 10);
+    const upper = trimmed.toUpperCase();
+    const hasExactOrPrefix = local.some(
+      (s) => s.code.toUpperCase() === upper || s.name.toUpperCase().startsWith(upper)
+    );
+    if (hasExactOrPrefix && local.length >= 3) {
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void searchStationsOnline(trimmed).then((fetched) => {
+        if (!cancelled) {
+          setOnlineState({ query: upper, items: fetched });
+        }
+      });
+    }, 280);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, visible]);
+
   const stations = useMemo(() => {
     const list = searchStations(query, 40);
-    if (!query.trim() && recentStations.length > 0) {
+    const trimmed = query.trim();
+    if (!trimmed && recentStations.length > 0) {
       // Prioritize recently searched stations at the top of default list
       const recentCodes = new Set(recentStations.map((r) => r.code));
       const remaining = list.filter((s) => !recentCodes.has(s.code));
       return [...recentStations, ...remaining];
     }
+    const upper = trimmed.toUpperCase();
+    const onlineMatches = onlineState.query === upper ? onlineState.items : [];
+    if (trimmed.length >= 2 && onlineMatches.length > 0) {
+      const seen = new Set(list.map((s) => s.code.toUpperCase()));
+      const extra = onlineMatches.filter((s) => !seen.has(s.code.toUpperCase()));
+      return [...list, ...extra].slice(0, 40);
+    }
     return list;
-  }, [query, recentStations]);
+  }, [query, recentStations, onlineState]);
 
   const handleSelect = (station: Station) => {
     void addRecentStation(station);
