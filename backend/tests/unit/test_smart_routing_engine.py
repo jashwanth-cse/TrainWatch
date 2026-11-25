@@ -495,12 +495,12 @@ async def test_engine_origin_extension_guardrails() -> None:
     ext3 = [s for s in res3.solutions if s.tier == SolutionTier.TIER_2_ORIGIN_EXTENSION]
     assert len(ext3) == 0
 
-    # 4. Surcharge > 20% in 3AC -> origin extension skipped
+    # 4. Surcharge > 20% in 3AC and SL (>20% while <=100 abs) -> origin extension skipped
     async def mock_fetch_3a_surcharge(q: TrainQuery) -> tuple[AvailabilityObservation, int | None]:
         if q.source == "RJPM" and q.destination == "MS":
             return _avail(AvailabilityStatus.WAITLIST, "WL 5", 5), 1000
         if q.source == "SCT" and q.destination == "MS":
-            return _avail(AvailabilityStatus.AVAILABLE, "AVAILABLE 2"), 1300  # 30% surcharge
+            return _avail(AvailabilityStatus.AVAILABLE, "AVAILABLE 2"), 1300  # 30% / >250 cap
         return _avail(AvailabilityStatus.WAITLIST, "WL 2", 2), 500
 
     mock_train_client.fetch_with_fare.side_effect = mock_fetch_3a_surcharge
@@ -516,6 +516,31 @@ async def test_engine_origin_extension_guardrails() -> None:
     )
     ext4 = [s for s in res4.solutions if s.tier == SolutionTier.TIER_2_ORIGIN_EXTENSION]
     assert len(ext4) == 0
+
+    async def mock_fetch_pct_surcharge(
+        q: TrainQuery,
+    ) -> tuple[AvailabilityObservation, int | None]:
+        if q.source == "RJPM" and q.destination == "MS":
+            return _avail(AvailabilityStatus.WAITLIST, "WL 5", 5), 200
+        if q.source == "SCT" and q.destination == "MS":
+            return _avail(AvailabilityStatus.AVAILABLE, "AVAILABLE 4"), 260  # +60 <= 100, 30% > 20%
+        return _avail(AvailabilityStatus.WAITLIST, "WL 2", 2), 150
+
+    mock_train_client.fetch_with_fare.side_effect = mock_fetch_pct_surcharge
+    engine_pct = SmartRoutingEngine(
+        schedule_client=mock_sched_client, train_client=mock_train_client
+    )
+    res_pct = await engine_pct.search(
+        SmartRouteQuery(
+            train_no="12662",
+            origin="RJPM",
+            destination="MS",
+            journey_date=date(2026, 12, 16),
+            travel_class="SL",
+        )
+    )
+    ext_pct = [s for s in res_pct.solutions if s.tier == SolutionTier.TIER_2_ORIGIN_EXTENSION]
+    assert len(ext_pct) == 0
 
     # 5. Extension query failure -> returns None
     async def mock_fetch_fail(q: TrainQuery) -> tuple[AvailabilityObservation, int | None]:
@@ -801,7 +826,7 @@ async def test_multi_day_midnight_date_offsets_and_subleg_dates() -> None:
 
     async def mock_fetch(q: TrainQuery) -> tuple[AvailabilityObservation, int | None]:
         captured_queries.append((q.source, q.destination, q.journey_date))
-        if q.source == "DBRG" and q.destination == "CAPE":
+        if q.source in {"DBRG", "GHY"} and q.destination == "CAPE":
             return _avail(AvailabilityStatus.WAITLIST, "WL 50", 50), 1050
         return _avail(AvailabilityStatus.AVAILABLE, "AVL 15", 15), 450
 
@@ -865,3 +890,83 @@ async def test_multi_day_midnight_date_offsets_and_subleg_dates() -> None:
     ]
     assert len(dbrg_to_cape_queries) > 0
     assert dbrg_to_cape_queries[0] == date(2026, 12, 5)
+
+
+@pytest.mark.anyio
+async def test_overnight_origin_midnight_halt_and_preboarding_selection() -> None:
+    """Verify midnight date rollover, upstream TSI+SCT evaluation, and short-route tier 2."""
+    from trainwatch.services.smart_routing_engine import ScheduleTimeline, _parse_hhmm_minutes
+
+    assert _parse_hhmm_minutes("23:30") == 1410
+    assert _parse_hhmm_minutes("bad") is None
+    assert _parse_hhmm_minutes("xx:yy") is None
+    assert _parse_hhmm_minutes("25:99") is None
+
+    # Empty pre-stops returns empty tuple
+    assert SmartRoutingEngine._select_preboarding_candidates(()) == ()
+
+    # Overnight train: starts 23:30 (Day 1 SCT), halts across midnight at TSI (arr 23:55, dep 00:05
+    # marked still day=1 by naive feed), reaches RJPM 06:30 (day=2), ends at MS (day=2).
+    stops = [
+        _stop(1, "SENGOTTAI", "SCT", "23:30", "23:30", 0, 1, 0),
+        _stop(2, "TENKASI JN", "TSI", "23:55", "00:05", 10, 1, 10),
+        _stop(3, "RAJAPALAYAM", "RJPM", "06:28", "06:30", 2, 2, 75),
+        _stop(4, "CHENNAI EGMORE", "MS", "14:00", "14:00", 0, 2, 670),
+    ]
+    timeline = ScheduleTimeline(tuple(stops))
+    # TSI departs at 00:05 after 23:55 arrival -> effective departure day rolls to Day 2
+    assert timeline.effective_departure_day(stops[1]) == 2
+    assert timeline.effective_departure_day(stops[0]) == 1
+
+    # Also test arrival clock rollover with un-incremented raw day
+    roll_stops = [
+        _stop(1, "SRC", "SRC", "23:45", "23:45", 0, 1, 0),
+        _stop(2, "MID", "MID", "00:15", "00:20", 5, 1, 30),
+    ]
+    roll_timeline = ScheduleTimeline(tuple(roll_stops))
+    assert roll_timeline.effective_departure_day(roll_stops[1]) == 2
+
+    sched = _make_mock_schedule(stops=stops, total_duration_minutes=870)
+    mock_sched_client = AsyncMock(spec=CdnScheduleClient)
+    mock_sched_client.get_schedule.return_value = sched
+    mock_train_client = AsyncMock(spec=DreamDestinyClient)
+
+    captured_dates: dict[str, date] = {}
+
+    async def mock_fetch(q: TrainQuery) -> tuple[AvailabilityObservation, int | None]:
+        captured_dates[q.source] = q.journey_date
+        if q.source == "RJPM" and q.destination == "MS":
+            return _avail(AvailabilityStatus.WAITLIST, "WL 18", 18), 380
+        if q.source == "SCT" and q.destination == "MS":
+            return _avail(AvailabilityStatus.AVAILABLE, "AVAILABLE 15", 15), 420
+        if q.source == "TSI" and q.destination == "MS":
+            return _avail(AvailabilityStatus.AVAILABLE, "AVAILABLE 12", 12), 405
+        return _avail(AvailabilityStatus.WAITLIST, "WL 5", 5), 350
+
+    mock_train_client.fetch_with_fare.side_effect = mock_fetch
+
+    engine = SmartRoutingEngine(schedule_client=mock_sched_client, train_client=mock_train_client)
+    # Note: RJPM -> MS has 0 intermediate stops (ranked_candidates == ())!
+    # Previously early return bypassed Tier 2 Origin Extension completely.
+    query = SmartRouteQuery(
+        train_no="12662",
+        origin="RJPM",
+        destination="MS",
+        journey_date=date(2026, 12, 16),  # Day 2 06:30 AM departure at RJPM
+        travel_class="SL",
+    )
+    result = await engine.search(query)
+
+    # SCT starts on Night of 2026-12-15 (day_offset = -1)
+    assert captured_dates["SCT"] == date(2026, 12, 15)
+    assert len(result.solutions) == 1
+    best = result.solutions[0]
+    assert best.tier == SolutionTier.TIER_2_ORIGIN_EXTENSION
+    assert best.boarding_station == "RJPM"
+    # Cheaper confirmed TSI (405 vs SCT 420) wins
+    assert best.legs[0].from_station == "TSI"
+    assert best.total_fare == 405
+    assert best.presentation is not None
+    assert "Boarding Point as RJPM" in best.presentation.card_headline
+    assert best.booking_strategy is not None
+    assert "RJPM" in best.booking_strategy.headline

@@ -1046,3 +1046,101 @@ test('fetchSmartRoutes automatically synthesizes booking strategy if server retu
   assert.deepEqual(Array.from(sol.booking_strategy.recommended_order), [2, 1]);
   assert.equal(sol.booking_strategy.same_coach_probability, 'HIGH');
 });
+
+test('ensureBookingStrategy and resolveSolutionPresentation handle Tier 2 Origin Extension dynamically', () => {
+  const { exports } = loadSmartRouteService(async () => {});
+
+  // 1. Server-driven presentation is preserved verbatim when present
+  const serverSolution = {
+    solution_id: 'sol_orig_ext_1',
+    tier: 'TIER_2_ORIGIN_EXTENSION',
+    boarding_station: 'RJPM',
+    is_confirmed: true,
+    is_rac: false,
+    fare_surcharge: 30,
+    split_stations: [],
+    legs: [
+      {
+        leg_number: 1,
+        train_no: '12662',
+        from_station: 'SCT',
+        to_station: 'MS',
+        journey_date: '2026-12-15',
+        travel_class: 'SL',
+        status: 'AVAILABLE',
+        raw_status: 'AVAILABLE 20',
+        position: 20,
+      },
+    ],
+    presentation: {
+      badge_text: 'CONFIRMED',
+      strategy_label: 'Origin Quota',
+      comparison_sublabel: 'No seat shift',
+      confirmed_tag: 'Single Ticket',
+      card_headline: 'Custom server headline for SCT -> MS',
+      alt_summary: 'Board at RJPM',
+      guide_steps: ['Step A', 'Step B'],
+      guide_note: 'Custom server note',
+      action_button_label: 'Show Boarding Point Trick',
+      modal_title: 'Origin Boarding Trick',
+      modal_tagline: 'ORIGIN QUOTA OPTIMIZATION',
+    },
+  };
+
+  const resolvedServer = exports.resolveSolutionPresentation(serverSolution, '2026-12-16');
+  assert.equal(resolvedServer.card_headline, 'Custom server headline for SCT -> MS');
+  assert.deepEqual(Array.from(resolvedServer.guide_steps), ['Step A', 'Step B']);
+
+  // 2. Fallback synthesis when presentation omitted on legacy Origin Extension payload
+  const legacyExtSolution = {
+    solution_id: 'sol_orig_ext_legacy',
+    tier: 'TIER_2_ORIGIN_EXTENSION',
+    boarding_station: 'RJPM',
+    is_confirmed: true,
+    is_rac: false,
+    fare_surcharge: 35,
+    split_stations: [],
+    legs: [
+      {
+        leg_number: 1,
+        train_no: '12662',
+        from_station: 'TSI',
+        to_station: 'MS',
+        journey_date: '2026-12-15',
+        travel_class: 'SL',
+        status: 'AVAILABLE',
+        raw_status: 'AVAILABLE 12',
+        position: 12,
+      },
+    ],
+  };
+
+  const stratLegacy = exports.ensureBookingStrategy(legacyExtSolution, '2026-12-16');
+  assert.match(stratLegacy.headline, /set Boarding Station to RJPM/);
+  assert.match(stratLegacy.steps[0].action_instructions, /RJPM/);
+
+  const presLegacy = exports.resolveSolutionPresentation(legacyExtSolution, '2026-12-16');
+  assert.equal(presLegacy.strategy_label, 'Origin Quota');
+  assert.match(presLegacy.card_headline, /select Boarding Point as RJPM/);
+  assert.match(presLegacy.guide_note, /RJPM/);
+  assert.equal(presLegacy.action_button_label, 'Show Boarding Point Trick');
+
+  // 3. Fallback synthesis when presentation omitted on Tier 1 split
+  const legacySplitSolution = {
+    solution_id: 'sol_split_legacy',
+    tier: 'TIER_1_SAME_TRAIN_SPLIT',
+    boarding_station: null,
+    is_confirmed: false,
+    is_rac: true,
+    fare_surcharge: 20,
+    split_stations: ['MDU'],
+    legs: [
+      { leg_number: 1, train_no: '12662', from_station: 'RJPM', to_station: 'MDU', travel_class: 'SL', raw_status: 'RAC 5', status: 'RAC' },
+      { leg_number: 2, train_no: '12662', from_station: 'MDU', to_station: 'MS', travel_class: 'SL', raw_status: 'AVAILABLE 4', status: 'AVAILABLE' },
+    ],
+  };
+  const presSplit = exports.resolveSolutionPresentation(legacySplitSolution, '2026-12-16');
+  assert.equal(presSplit.badge_text, 'RAC 5');
+  assert.equal(presSplit.confirmed_tag, 'RAC Combination');
+  assert.match(presSplit.card_headline, /shift your seat at MDU/);
+});
