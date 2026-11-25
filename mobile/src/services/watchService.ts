@@ -22,6 +22,8 @@ export interface CreateWatchInput {
   journeyDate: string; // Accepts DD-MM-YYYY or YYYY-MM-DD
   travelClass: string;
   quota?: string;
+  departureTime?: string | null;
+  initialAvlCount?: number | null;
   condition?: WatchCondition;
 }
 
@@ -35,6 +37,7 @@ export interface WatchRecord {
     journey_date: string;
     travel_class: string;
     quota: string;
+    departure_time?: string | null;
     watch_key: string;
   };
   condition: {
@@ -43,6 +46,10 @@ export interface WatchRecord {
     maximum_position?: number | null;
   };
   status: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED';
+  is_active: boolean;
+  departure_at?: string | null;
+  last_avl_count?: number | null;
+  expired_reason?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -69,9 +76,11 @@ export function getTrainWatchApiBaseUrl(): string {
 }
 
 function normalizeWatchRecord(raw: any): WatchRecord {
+  const status = (raw?.status ? String(raw.status).toUpperCase() : 'ACTIVE') as WatchRecord['status'];
   return {
     ...raw,
-    status: (raw?.status ? String(raw.status).toUpperCase() : 'ACTIVE') as WatchRecord['status'],
+    status,
+    is_active: typeof raw?.is_active === 'boolean' ? raw.is_active : status === 'ACTIVE',
   };
 }
 
@@ -113,15 +122,21 @@ class WatchService {
     const headers = await this.getAuthHeader();
     const isoDate = normalizeDateToIso(input.journeyDate);
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       train_number: input.trainNumber.trim(),
       source: input.source.trim().toUpperCase(),
       destination: input.destination.trim().toUpperCase(),
       journey_date: isoDate,
       travel_class: input.travelClass.trim().toUpperCase(),
       quota: (input.quota || 'GN').trim().toUpperCase(),
-      condition: input.condition || { kind: 'becomes_available' },
+      condition: input.condition || { kind: 'seats_below', maximum_position: 10 },
     };
+    if (input.departureTime && /^\d{1,2}:\d{2}$/.test(input.departureTime.trim())) {
+      payload.departure_time = input.departureTime.trim();
+    }
+    if (typeof input.initialAvlCount === 'number' && Number.isFinite(input.initialAvlCount)) {
+      payload.initial_avl_count = Math.max(0, Math.floor(input.initialAvlCount));
+    }
 
     const response = await this.safeFetch(`${baseUrl}/api/v1/watches`, {
       method: 'POST',

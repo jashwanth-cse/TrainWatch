@@ -35,7 +35,6 @@ import {
   ArrowRight,
   Edit2,
   X,
-  TrendingUp,
 } from 'lucide-react-native';
 
 export const AlertsScreen: React.FC = () => {
@@ -50,10 +49,9 @@ export const AlertsScreen: React.FC = () => {
   const [checkingLiveIds, setCheckingLiveIds] = useState<Record<string, boolean>>({});
   const [liveResults, setLiveResults] = useState<Record<string, string>>({});
 
-  // Edit condition modal state
+  // Edit condition modal state (AVL threshold only)
   const [editingWatch, setEditingWatch] = useState<WatchRecord | null>(null);
-  const [editThreshold, setEditThreshold] = useState<string>('25');
-  const [editConditionKind, setEditConditionKind] = useState<string>('seats_below');
+  const [editThreshold, setEditThreshold] = useState<string>('10');
   const [updatingCondition, setUpdatingCondition] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -157,8 +155,7 @@ export const AlertsScreen: React.FC = () => {
 
   const openEditModal = (watch: WatchRecord) => {
     setEditingWatch(watch);
-    setEditConditionKind(watch.condition.kind);
-    setEditThreshold(String(watch.condition.maximum_position || 25));
+    setEditThreshold(String(watch.condition.maximum_position || 10));
     setEditError(null);
   };
 
@@ -171,26 +168,15 @@ export const AlertsScreen: React.FC = () => {
     if (!editingWatch) return;
     setEditError(null);
 
-    let condition: WatchCondition;
-    if (editConditionKind === 'seats_below') {
-      const num = parseInt(editThreshold, 10);
-      if (isNaN(num) || num <= 0) {
-        setEditError('Enter a threshold number greater than 0');
-        return;
-      }
-      condition = {
-        kind: 'seats_below',
-        maximum_position: num,
-      };
-    } else if (editConditionKind === 'rapid_rac_increase') {
-      condition = { kind: 'rapid_rac_increase' };
-    } else if (editConditionKind === 'becomes_available') {
-      condition = { kind: 'becomes_available' };
-    } else if (editConditionKind === 'improves_rac') {
-      condition = { kind: 'improves', target_status: 'RAC' };
-    } else {
-      condition = { kind: 'improves' };
+    const num = parseInt(editThreshold, 10);
+    if (isNaN(num) || num <= 0) {
+      setEditError('Enter a threshold number greater than 0');
+      return;
     }
+    const condition: WatchCondition = {
+      kind: 'seats_below',
+      maximum_position: num,
+    };
 
     setUpdatingCondition(true);
     try {
@@ -211,44 +197,58 @@ export const AlertsScreen: React.FC = () => {
   };
 
   const formatConditionDescription = (condition: WatchRecord['condition']) => {
-    switch (condition.kind) {
-      case 'seats_below':
-        return `Alert when available seats drop below ${condition.maximum_position || 25}`;
-      case 'rapid_rac_increase':
-        return 'Alert when RAC queue increases rapidly (>= 5) or moves to WL';
-      case 'becomes_available':
-        return 'Alert as soon as confirmed seats become available (AVL)';
-      case 'improves':
-        if (condition.target_status === 'RAC') {
-          return 'Alert when waitlist clears into RAC status';
-        }
-        return 'Alert when waitlist position moves closer';
-      case 'reaches_threshold':
-        return `Alert when position reaches <= ${condition.maximum_position || 0}`;
-      default:
-        return 'Alert when availability status changes';
+    if (condition.kind === 'seats_below') {
+      return `Alert when AVL < ${condition.maximum_position || 10} seats, and again as seats decrease`;
     }
+    return 'Legacy alert (AVL seat alerts only)';
+  };
+
+  const getExpiredMessage = (watch: WatchRecord): string => {
+    if (watch.expired_reason === 'train_departed') {
+      return 'Train has departed. Alert automatically disabled — you can remove it.';
+    }
+    if (watch.expired_reason === 'avl_only_policy') {
+      return 'Legacy RAC/WL alert dissolved under AVL-only monitoring — you can remove it.';
+    }
+    return 'This alert is no longer active — you can remove it.';
   };
 
   const renderItem = ({ item }: { item: WatchRecord }) => {
-    const isActive = item.status === 'ACTIVE';
-    const isPaused = item.status === 'PAUSED';
+    const isExpired =
+      item.status === 'EXPIRED' ||
+      item.status === 'CANCELLED' ||
+      (item.is_active === false && item.status !== 'PAUSED');
+    const isActive = !isExpired && item.status === 'ACTIVE';
+    const isPaused = !isExpired && item.status === 'PAUSED';
     const isChecking = checkingLiveIds[item.watch_id] || false;
     const liveStatus = liveResults[item.watch_id];
+    const badgeLabel = isExpired
+      ? item.expired_reason === 'train_departed'
+        ? 'DEPARTED'
+        : 'EXPIRED'
+      : item.status;
 
     return (
-      <View style={styles.alertCard}>
+      <View style={[styles.alertCard, isExpired && styles.alertCardExpired]}>
         {/* Card Header Row */}
         <View style={styles.cardHeader}>
-          <View style={styles.trainPill}>
-            <TrainFront size={14} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 5 }} />
-            <Text style={styles.trainPillText}>{item.query.train_number}</Text>
+          <View style={[styles.trainPill, isExpired && styles.trainPillExpired]}>
+            <TrainFront
+              size={14}
+              color={isExpired ? colors.textMuted : colors.primary}
+              strokeWidth={2.4}
+              style={{ marginRight: 5 }}
+            />
+            <Text style={[styles.trainPillText, isExpired && styles.textMutedExpired]}>
+              {item.query.train_number}
+            </Text>
           </View>
           <View
             style={[
               styles.statusBadge,
               isActive && styles.statusBadgeActive,
               isPaused && styles.statusBadgePaused,
+              isExpired && styles.statusBadgeExpired,
             ]}
           >
             <View
@@ -263,9 +263,10 @@ export const AlertsScreen: React.FC = () => {
                 styles.statusText,
                 isActive && styles.statusTextActive,
                 isPaused && styles.statusTextPaused,
+                isExpired && styles.textMutedExpired,
               ]}
             >
-              {item.status}
+              {badgeLabel}
             </Text>
           </View>
         </View>
@@ -273,14 +274,18 @@ export const AlertsScreen: React.FC = () => {
         {/* Route & Details */}
         <View style={styles.cardRouteRow}>
           <View style={styles.routeCol}>
-            <Text style={styles.stationText}>{item.query.source}</Text>
+            <Text style={[styles.stationText, isExpired && styles.textMutedExpired]}>
+              {item.query.source}
+            </Text>
             <Text style={styles.stationLabel}>SOURCE</Text>
           </View>
           <View style={styles.routeArrowCol}>
             <ArrowRight size={16} color={colors.textMuted} strokeWidth={2.4} />
           </View>
           <View style={[styles.routeCol, { alignItems: 'flex-end' }]}>
-            <Text style={styles.stationText}>{item.query.destination}</Text>
+            <Text style={[styles.stationText, isExpired && styles.textMutedExpired]}>
+              {item.query.destination}
+            </Text>
             <Text style={styles.stationLabel}>DESTINATION</Text>
           </View>
         </View>
@@ -288,26 +293,45 @@ export const AlertsScreen: React.FC = () => {
         {/* Class, Quota, Date Row */}
         <View style={styles.detailsRow}>
           <View style={styles.detailItem}>
-            <Text style={styles.classQuotaBadge}>
+            <Text style={[styles.classQuotaBadge, isExpired && styles.textMutedExpired]}>
               {item.query.travel_class} • {item.query.quota || 'GN'} Quota
             </Text>
           </View>
           <View style={styles.detailItem}>
             <CalendarDays size={13} color={colors.textSecondary} strokeWidth={2.2} style={{ marginRight: 4 }} />
-            <Text style={styles.dateText}>{item.query.journey_date}</Text>
+            <Text style={[styles.dateText, isExpired && styles.textMutedExpired]}>
+              {item.query.journey_date}
+              {item.query.departure_time ? ` • ${item.query.departure_time}` : ''}
+            </Text>
           </View>
         </View>
 
-        {/* Trigger Condition Box */}
-        <View style={styles.conditionBox}>
-          <Bell size={13} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 6, marginTop: 1 }} />
-          <Text style={styles.conditionText}>
-            {formatConditionDescription(item.condition)}
-          </Text>
-        </View>
+        {/* Trigger Condition / Expired Reason Box */}
+        {isExpired ? (
+          <View style={[styles.conditionBox, styles.conditionBoxExpired]}>
+            <BellOff size={13} color={colors.textMuted} strokeWidth={2.4} style={{ marginRight: 6, marginTop: 1 }} />
+            <Text style={[styles.conditionText, styles.textMutedExpired]}>
+              {getExpiredMessage(item)}
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.conditionBox}>
+            <Bell size={13} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 6, marginTop: 1 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.conditionText}>
+                {formatConditionDescription(item.condition)}
+              </Text>
+              {typeof item.last_avl_count === 'number' ? (
+                <Text style={styles.lastAvlSubtext}>
+                  Last checked availability: AVL {item.last_avl_count}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        )}
 
         {/* Live Status Result (if checked) */}
-        {liveStatus ? (
+        {!isExpired && liveStatus ? (
           <View style={styles.liveResultBox}>
             <Text style={styles.liveResultLabel}>Live Status:</Text>
             <Text style={styles.liveResultValue}>{liveStatus}</Text>
@@ -315,62 +339,75 @@ export const AlertsScreen: React.FC = () => {
         ) : null}
 
         {/* Action Buttons Row */}
-        <View style={styles.actionsRow}>
-          {/* Check Live */}
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => handleCheckLive(item)}
-            disabled={isChecking}
-            activeOpacity={0.75}
-          >
-            {isChecking ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <>
-                <RefreshCw size={13} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 4 }} />
-                <Text style={styles.actionBtnText}>Check Live</Text>
-              </>
-            )}
-          </TouchableOpacity>
+        {isExpired ? (
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.removeExpiredBtn]}
+              onPress={() => handleDelete(item)}
+              activeOpacity={0.75}
+            >
+              <Trash2 size={13} color={colors.error} strokeWidth={2.2} style={{ marginRight: 5 }} />
+              <Text style={[styles.actionBtnText, { color: colors.error }]}>Remove Expired Alert</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.actionsRow}>
+            {/* Check Live */}
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => handleCheckLive(item)}
+              disabled={isChecking}
+              activeOpacity={0.75}
+            >
+              {isChecking ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <>
+                  <RefreshCw size={13} color={colors.primary} strokeWidth={2.4} style={{ marginRight: 4 }} />
+                  <Text style={styles.actionBtnText}>Check Live</Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-          {/* Pause / Resume */}
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => handleToggleStatus(item)}
-            activeOpacity={0.75}
-          >
-            {isActive ? (
-              <>
-                <Pause size={13} color={colors.statusRac} strokeWidth={2.4} style={{ marginRight: 4 }} />
-                <Text style={[styles.actionBtnText, { color: colors.statusRac }]}>Pause</Text>
-              </>
-            ) : (
-              <>
-                <Play size={13} color={colors.statusAvailable} strokeWidth={2.4} style={{ marginRight: 4 }} />
-                <Text style={[styles.actionBtnText, { color: colors.statusAvailable }]}>Resume</Text>
-              </>
-            )}
-          </TouchableOpacity>
+            {/* Pause / Resume */}
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => handleToggleStatus(item)}
+              activeOpacity={0.75}
+            >
+              {isActive ? (
+                <>
+                  <Pause size={13} color={colors.statusRac} strokeWidth={2.4} style={{ marginRight: 4 }} />
+                  <Text style={[styles.actionBtnText, { color: colors.statusRac }]}>Pause</Text>
+                </>
+              ) : (
+                <>
+                  <Play size={13} color={colors.statusAvailable} strokeWidth={2.4} style={{ marginRight: 4 }} />
+                  <Text style={[styles.actionBtnText, { color: colors.statusAvailable }]}>Resume</Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-          {/* Edit Condition */}
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={() => openEditModal(item)}
-            activeOpacity={0.75}
-          >
-            <Edit2 size={13} color={colors.textSecondary} strokeWidth={2.2} style={{ marginRight: 4 }} />
-            <Text style={styles.actionBtnText}>Edit</Text>
-          </TouchableOpacity>
+            {/* Edit Condition */}
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => openEditModal(item)}
+              activeOpacity={0.75}
+            >
+              <Edit2 size={13} color={colors.textSecondary} strokeWidth={2.2} style={{ marginRight: 4 }} />
+              <Text style={styles.actionBtnText}>Edit</Text>
+            </TouchableOpacity>
 
-          {/* Delete */}
-          <TouchableOpacity
-            style={[styles.actionBtn, styles.deleteBtn]}
-            onPress={() => handleDelete(item)}
-            activeOpacity={0.75}
-          >
-            <Trash2 size={13} color={colors.error} strokeWidth={2.2} />
-          </TouchableOpacity>
-        </View>
+            {/* Delete */}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.deleteBtn]}
+              onPress={() => handleDelete(item)}
+              activeOpacity={0.75}
+            >
+              <Trash2 size={13} color={colors.error} strokeWidth={2.2} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     );
   };
@@ -401,6 +438,9 @@ export const AlertsScreen: React.FC = () => {
             <Text style={styles.headerTitle}>My Seat Alerts</Text>
             <Text style={styles.headerSubtitle}>
               {watches.filter((w) => w.status === 'ACTIVE').length} Active Monitoring
+              {watches.some((w) => w.status === 'EXPIRED' || w.status === 'CANCELLED')
+                ? ` • ${watches.filter((w) => w.status === 'EXPIRED' || w.status === 'CANCELLED').length} Dissolved`
+                : ''}
             </Text>
           </View>
 
@@ -429,7 +469,7 @@ export const AlertsScreen: React.FC = () => {
           </View>
           <Text style={styles.emptyTitle}>No alerts configured</Text>
           <Text style={styles.emptySubtitle}>
-            Search for trains and tap &quot;Track This Seat&quot; to receive automatic push notifications when berths confirm or drop below your threshold.
+            Search for trains and tap &quot;Track This Seat&quot; when confirmed (AVL) berths are available to get alerted before they fill up.
           </Text>
           <TouchableOpacity
             style={styles.searchTrainsBtn}
@@ -488,102 +528,29 @@ export const AlertsScreen: React.FC = () => {
 
               {editError ? <Text style={styles.modalErrorText}>{editError}</Text> : null}
 
-              {/* Condition Options */}
+              {/* Condition Options (AVL threshold only) */}
               <View style={styles.modalOptionsContainer}>
-                {/* 1. Seats Below */}
-                <TouchableOpacity
-                  style={[
-                    styles.modalOptionCard,
-                    editConditionKind === 'seats_below' && styles.modalOptionCardSelected,
-                  ]}
-                  onPress={() => setEditConditionKind('seats_below')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.radioCircle}>
-                    {editConditionKind === 'seats_below' && <View style={styles.radioDot} />}
-                  </View>
+                <View style={[styles.modalOptionCard, styles.modalOptionCardSelected]}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.modalOptionTitle}>Available Seats Below Threshold</Text>
-                    {editConditionKind === 'seats_below' && (
-                      <View style={styles.modalInputRow}>
-                        <View style={styles.modalLockBadge}>
-                          <Text style={styles.modalLockText}>AVL &lt;</Text>
-                        </View>
-                        <TextInput
-                          style={styles.modalNumericInput}
-                          value={editThreshold}
-                          onChangeText={(v) => setEditThreshold(v.replace(/[^0-9]/g, ''))}
-                          keyboardType="number-pad"
-                          maxLength={4}
-                        />
-                        <Text style={styles.modalSeatsText}>seats</Text>
+                    <Text style={styles.modalOptionSub}>
+                      Notify when AVL drops below limit and whenever seats decrease further.
+                    </Text>
+                    <View style={styles.modalInputRow}>
+                      <View style={styles.modalLockBadge}>
+                        <Text style={styles.modalLockText}>AVL &lt;</Text>
                       </View>
-                    )}
-                  </View>
-                </TouchableOpacity>
-
-                {/* 2. Rapid RAC Increase */}
-                <TouchableOpacity
-                  style={[
-                    styles.modalOptionCard,
-                    editConditionKind === 'rapid_rac_increase' && styles.modalOptionCardSelected,
-                  ]}
-                  onPress={() => setEditConditionKind('rapid_rac_increase')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.radioCircle}>
-                    {editConditionKind === 'rapid_rac_increase' && <View style={styles.radioDot} />}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <Text style={styles.modalOptionTitle}>RAC Increases Rapidly</Text>
-                      <TrendingUp size={13} color={colors.statusRac} strokeWidth={2.4} style={{ marginLeft: 4 }} />
+                      <TextInput
+                        style={styles.modalNumericInput}
+                        value={editThreshold}
+                        onChangeText={(v) => setEditThreshold(v.replace(/[^0-9]/g, ''))}
+                        keyboardType="number-pad"
+                        maxLength={4}
+                      />
+                      <Text style={styles.modalSeatsText}>seats</Text>
                     </View>
-                    <Text style={styles.modalOptionSub}>
-                      Alerts when RAC queue grows by 5+ or slips to WL.
-                    </Text>
                   </View>
-                </TouchableOpacity>
-
-                {/* 3. Becomes Available */}
-                <TouchableOpacity
-                  style={[
-                    styles.modalOptionCard,
-                    editConditionKind === 'becomes_available' && styles.modalOptionCardSelected,
-                  ]}
-                  onPress={() => setEditConditionKind('becomes_available')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.radioCircle}>
-                    {editConditionKind === 'becomes_available' && <View style={styles.radioDot} />}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalOptionTitle}>Notify when Becomes Available (AVL)</Text>
-                    <Text style={styles.modalOptionSub}>
-                      Alert immediately as confirmed berths open up.
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* 4. Drops to RAC */}
-                <TouchableOpacity
-                  style={[
-                    styles.modalOptionCard,
-                    editConditionKind === 'improves_rac' && styles.modalOptionCardSelected,
-                  ]}
-                  onPress={() => setEditConditionKind('improves_rac')}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.radioCircle}>
-                    {editConditionKind === 'improves_rac' && <View style={styles.radioDot} />}
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.modalOptionTitle}>Notify when WL Drops to RAC</Text>
-                    <Text style={styles.modalOptionSub}>
-                      Alert as waitlist advances into RAC status.
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                </View>
               </View>
 
               {/* Action Buttons */}
@@ -731,6 +698,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
+  alertCardExpired: {
+    backgroundColor: colors.surfaceSubtle,
+    borderColor: colors.borderSubtle,
+    opacity: 0.78,
+  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -744,6 +716,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.sm,
+  },
+  trainPillExpired: {
+    backgroundColor: '#E2E8F0',
   },
   trainPillText: {
     fontSize: 13,
@@ -763,6 +738,12 @@ const styles = StyleSheet.create({
   },
   statusBadgePaused: {
     backgroundColor: colors.statusRacBg,
+  },
+  statusBadgeExpired: {
+    backgroundColor: '#E2E8F0',
+  },
+  textMutedExpired: {
+    color: colors.textMuted,
   },
   statusDot: {
     width: 6,
@@ -845,12 +826,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
+  conditionBoxExpired: {
+    backgroundColor: '#F1F5F9',
+  },
   conditionText: {
     fontSize: 12,
     fontWeight: '600',
     color: colors.textPrimary,
     flex: 1,
     lineHeight: 16,
+  },
+  lastAvlSubtext: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.primary,
+    marginTop: 3,
   },
   liveResultBox: {
     flexDirection: 'row',
@@ -900,6 +890,11 @@ const styles = StyleSheet.create({
   },
   deleteBtn: {
     flex: 0.4,
+    borderColor: colors.error + '40',
+    backgroundColor: colors.errorBg,
+  },
+  removeExpiredBtn: {
+    flex: 1,
     borderColor: colors.error + '40',
     backgroundColor: colors.errorBg,
   },

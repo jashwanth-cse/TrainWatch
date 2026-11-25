@@ -3,7 +3,7 @@
     "name": "TrainWatch",
     "slug": "trainwatch",
     "scheme": "trainwatch",
-    "version": "2.2.0",
+    "version": "2.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "splash": {
@@ -18,7 +18,7 @@
     },
     "android": {
       "package": "com.trainwatch.app",
-      "versionCode": 8,
+      "versionCode": 9,
       "googleServicesFile": "./google-services.json",
       "splash": {
         "image": "./assets/splash-icon.png",

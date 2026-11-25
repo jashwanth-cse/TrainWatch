@@ -32,6 +32,25 @@ class AlertKind(StrEnum):
     RAPID_RAC_INCREASE = "rapid_rac_increase"
 
 
+class AlertEventKind(StrEnum):
+    """Semantic classification of a triggered AVL threshold notification."""
+
+    NONE = "none"
+    THRESHOLD_CROSSED = "threshold_crossed"
+    SEATS_DECREASING = "seats_decreasing"
+    SOLD_OUT = "sold_out"
+
+
+@dataclass(frozen=True, slots=True)
+class AvlEvaluationResult:
+    """Structured outcome of evaluating one AVL threshold poll."""
+
+    should_alert: bool
+    event_kind: AlertEventKind
+    current_avl: int | None
+    previous_avl: int | None
+
+
 @dataclass(frozen=True, slots=True)
 class AlertCondition:
     """A validated transition condition, optionally with a numeric target."""
@@ -39,6 +58,11 @@ class AlertCondition:
     kind: AlertKind
     target_status: AvailabilityStatus | None = None
     maximum_position: int | None = None
+
+    @property
+    def is_avl_only(self) -> bool:
+        """Return True when this alert tracks confirmed AVL seat availability."""
+        return self.kind is AlertKind.SEATS_BELOW
 
     def __post_init__(self) -> None:
         """Require threshold fields only for meaningful, verified comparisons."""
@@ -90,6 +114,124 @@ def _meets_threshold(snapshot: AvailabilitySnapshot, condition: AlertCondition) 
     return snapshot.position <= condition.maximum_position
 
 
+class AvlThresholdEvaluator:
+    """Evaluates confirmed AVL threshold crossings and subsequent downward drops."""
+
+    @staticmethod
+    def evaluate(
+        *,
+        threshold: int,
+        previous_snapshot: AvailabilitySnapshot | None,
+        current_snapshot: AvailabilitySnapshot | None,
+        fallback_previous_avl: int | None = None,
+    ) -> AvlEvaluationResult:
+        """Compare current AVL seats against threshold and prior count."""
+        if current_snapshot is None or current_snapshot.status is AvailabilityStatus.UNKNOWN:
+            return AvlEvaluationResult(
+                should_alert=False,
+                event_kind=AlertEventKind.NONE,
+                current_avl=None,
+                previous_avl=fallback_previous_avl,
+            )
+
+        if previous_snapshot is None:
+            before_avl = fallback_previous_avl
+        elif previous_snapshot.status is AvailabilityStatus.AVAILABLE:
+            before_avl = _extract_available_seats(previous_snapshot.raw_availability)
+        else:
+            before_avl = None
+
+        if current_snapshot.status in {
+            AvailabilityStatus.RAC,
+            AvailabilityStatus.WAITLIST,
+            AvailabilityStatus.REGRET,
+        }:
+            if (
+                previous_snapshot is not None
+                and previous_snapshot.status is AvailabilityStatus.AVAILABLE
+            ):
+                return AvlEvaluationResult(
+                    should_alert=True,
+                    event_kind=AlertEventKind.SOLD_OUT,
+                    current_avl=0,
+                    previous_avl=before_avl,
+                )
+            return AvlEvaluationResult(
+                should_alert=False,
+                event_kind=AlertEventKind.NONE,
+                current_avl=None,
+                previous_avl=before_avl,
+            )
+
+        cur_avl = _extract_available_seats(current_snapshot.raw_availability)
+        if cur_avl is None or cur_avl >= threshold:
+            return AvlEvaluationResult(
+                should_alert=False,
+                event_kind=AlertEventKind.NONE,
+                current_avl=cur_avl,
+                previous_avl=before_avl,
+            )
+
+        if before_avl is None or before_avl >= threshold:
+            return AvlEvaluationResult(
+                should_alert=True,
+                event_kind=AlertEventKind.THRESHOLD_CROSSED,
+                current_avl=cur_avl,
+                previous_avl=before_avl,
+            )
+
+        if cur_avl < before_avl:
+            return AvlEvaluationResult(
+                should_alert=True,
+                event_kind=AlertEventKind.SEATS_DECREASING,
+                current_avl=cur_avl,
+                previous_avl=before_avl,
+            )
+
+        return AvlEvaluationResult(
+            should_alert=False,
+            event_kind=AlertEventKind.NONE,
+            current_avl=cur_avl,
+            previous_avl=before_avl,
+        )
+
+
+def compose_avl_alert_message(
+    *,
+    train_number: str,
+    travel_class: str,
+    journey_date: object,
+    threshold: int,
+    evaluation: AvlEvaluationResult,
+    snapshot: AvailabilitySnapshot,
+) -> tuple[str, str]:
+    """Build user-facing push notification title and body for an AVL alert."""
+    if evaluation.event_kind is AlertEventKind.SEATS_DECREASING:
+        prev_part = (
+            f" (was AVL {evaluation.previous_avl})" if evaluation.previous_avl is not None else ""
+        )
+        return (
+            f"Book Fast! Train {train_number}",
+            f"Seats filling fast on Train {train_number} ({travel_class}): "
+            f"only {evaluation.current_avl} AVL left{prev_part} for {journey_date}. "
+            "Book now before they run out!",
+        )
+    if evaluation.event_kind is AlertEventKind.SOLD_OUT:
+        raw = snapshot.raw_availability or snapshot.status.value
+        return (
+            f"Confirmed Seats Gone: Train {train_number}",
+            f"Train {train_number} ({travel_class}) on {journey_date} moved from AVL to {raw}.",
+        )
+    prev_part = (
+        f" (down from AVL {evaluation.previous_avl})" if evaluation.previous_avl is not None else ""
+    )
+    return (
+        f"Low Seat Alert: Train {train_number}",
+        f"Train {train_number} ({travel_class}) dropped to {evaluation.current_avl} AVL "
+        f"(below {threshold}){prev_part} for {journey_date}. Book before they sell out!",
+    )
+
+
 def should_alert(
     *,
     condition: AlertCondition,
@@ -115,18 +257,11 @@ def should_alert(
         return compare_availability(after, before) == 1
     if condition.kind is AlertKind.SEATS_BELOW:
         assert condition.maximum_position is not None
-        if after.status in {
-            AvailabilityStatus.RAC,
-            AvailabilityStatus.WAITLIST,
-            AvailabilityStatus.REGRET,
-        }:
-            return before.status is AvailabilityStatus.AVAILABLE
-        after_seats = _extract_available_seats(after.raw_availability)
-        if after_seats is not None and after_seats <= condition.maximum_position:
-            before_seats = _extract_available_seats(before.raw_availability)
-            if before_seats is None or before_seats > condition.maximum_position:
-                return True
-        return False
+        return AvlThresholdEvaluator.evaluate(
+            threshold=condition.maximum_position,
+            previous_snapshot=before,
+            current_snapshot=after,
+        ).should_alert
     if condition.kind is AlertKind.RAPID_RAC_INCREASE:
         if before.status is AvailabilityStatus.RAC and after.status is AvailabilityStatus.WAITLIST:
             return True

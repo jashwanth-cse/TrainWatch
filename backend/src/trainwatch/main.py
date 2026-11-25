@@ -75,16 +75,12 @@ class FirestoreWatchDispatcher:
             return 0
 
         from trainwatch.domain.alerts import (
-            AlertKind,
+            AvlThresholdEvaluator,
             _extract_available_seats,
-            _meets_threshold,
-            should_alert,
+            compose_avl_alert_message,
         )
-        from trainwatch.domain.availability import (
-            AvailabilityObservation,
-            AvailabilitySnapshot,
-            AvailabilityStatus,
-        )
+        from trainwatch.domain.availability import AvailabilitySnapshot, AvailabilityStatus
+        from trainwatch.domain.watch import IST
         from trainwatch.infrastructure.firestore.watches import _decode
         from trainwatch.ports.notifications import NotificationOutboxItem
 
@@ -96,17 +92,28 @@ class FirestoreWatchDispatcher:
             if self._availability_provider is None or self._outbox is None:
                 return 1
 
+            doc_ref = getattr(doc, "reference", None)
             try:
                 owner_id = str(data.get("ownerId") or "")
                 if not owner_id:
-                    ref = getattr(doc, "reference", None)
-                    parent_col = getattr(ref, "parent", None)
+                    parent_col = getattr(doc_ref, "parent", None)
                     parent_doc = getattr(parent_col, "parent", None)
                     owner_id = str(getattr(parent_doc, "id", "") or "unknown")
 
                 watch_id = str(getattr(doc, "id", "") or data.get("watchId", "unknown"))
                 watch = _decode(data, watch_id=watch_id, owner_id=owner_id)
-                if now.date() > watch.query.journey_date:
+                dissolved = watch.dissolve_if_due(at=now, today=now.astimezone(IST).date())
+                if dissolved is not watch:
+                    if hasattr(doc_ref, "update"):
+                        await doc_ref.update(  # type: ignore[union-attr]
+                            {
+                                "status": dissolved.status.value,
+                                "isActive": False,
+                                "expiredReason": dissolved.expired_reason,
+                                "expiredAt": now.isoformat(),
+                                "updatedAt": now,
+                            }
+                        )
                     return 1
 
                 obs = await self._availability_provider.fetch(watch.query)
@@ -116,70 +123,78 @@ class FirestoreWatchDispatcher:
                 snap = obs.snapshot
                 seats = _extract_available_seats(snap.raw_availability)
                 prev_data = data.get("lastObservation")
-                prev_obs = None
-                if prev_data and isinstance(prev_data, dict):
-                    prev_obs = AvailabilityObservation.success(
-                        AvailabilitySnapshot(
-                            status=AvailabilityStatus(str(prev_data.get("status", "UNKNOWN"))),
-                            raw_availability=str(prev_data.get("rawAvailability", "")),
-                            observed_at=now,
-                            position=prev_data.get("position"),
-                        )
+                prev_snap = None
+                if isinstance(prev_data, dict):
+                    prev_snap = AvailabilitySnapshot(
+                        status=AvailabilityStatus(str(prev_data.get("status", "UNKNOWN"))),
+                        raw_availability=str(prev_data.get("rawAvailability", "")),
+                        observed_at=now,
+                        position=prev_data.get("position"),
                     )
 
-                triggered = False
-                if prev_obs is not None:
-                    triggered = should_alert(
-                        condition=watch.condition, previous=prev_obs, current=obs
-                    )
-                elif watch.condition.kind is AlertKind.SEATS_BELOW:
-                    triggered = bool(
-                        seats is not None
-                        and watch.condition.maximum_position is not None
-                        and seats <= watch.condition.maximum_position
-                    )
-                elif watch.condition.kind is AlertKind.REACHES_THRESHOLD:
-                    triggered = _meets_threshold(snap, watch.condition)
-                elif watch.condition.kind is AlertKind.BECOMES_AVAILABLE:
-                    triggered = snap.status is AvailabilityStatus.AVAILABLE
+                assert watch.condition.maximum_position is not None
+                eval_result = AvlThresholdEvaluator.evaluate(
+                    threshold=watch.condition.maximum_position,
+                    previous_snapshot=prev_snap,
+                    current_snapshot=snap,
+                    fallback_previous_avl=watch.last_avl_count,
+                )
+                triggered = eval_result.should_alert
 
                 status_val = snap.status.value
-                pos_val = snap.position or seats or 0
+                seat_key = (
+                    eval_result.current_avl if eval_result.current_avl is not None else (seats or 0)
+                )
                 previous_marker = (
                     prev_data.get("observedAt") or data.get("lastCheckedAt") or "baseline"
                     if isinstance(prev_data, dict)
                     else "baseline"
                 )
-                idempotency_key = f"alert:{watch.watch_id}:{previous_marker}:{status_val}:{pos_val}"
+                idempotency_key = (
+                    f"alert:{watch.watch_id}:{previous_marker}:{status_val}:{seat_key}"
+                )
                 if data.get("lastAlertedKey") == idempotency_key:
                     triggered = False
 
                 if triggered:
-                    pos_label = f" #{snap.position}" if snap.position is not None else ""
-                    seat_label = f" ({snap.raw_availability})" if snap.raw_availability else ""
+                    alert_title, alert_body = compose_avl_alert_message(
+                        train_number=watch.query.train_number,
+                        travel_class=watch.query.travel_class,
+                        journey_date=watch.query.journey_date,
+                        threshold=watch.condition.maximum_position,
+                        evaluation=eval_result,
+                        snapshot=snap,
+                    )
+                    outbox_data: dict[str, str] = {
+                        "type": "alert_triggered",
+                        "watch_id": watch.watch_id,
+                        "train_number": watch.query.train_number,
+                        "journey_date": str(watch.query.journey_date),
+                        "travel_class": watch.query.travel_class,
+                        "status": status_val,
+                        "event_kind": eval_result.event_kind.value,
+                    }
                     outbox_item = NotificationOutboxItem(
                         idempotency_key=idempotency_key,
                         owner_id=watch.owner_id,
                         watch_id=watch.watch_id,
-                        title=f"Seat Alert: Train {watch.query.train_number}",
-                        body=(
-                            f"Train {watch.query.train_number} ({watch.query.travel_class}) alert! "
-                            f"Status is now {status_val}{pos_label}{seat_label} "
-                            f"on {watch.query.journey_date}."
-                        ),
+                        title=alert_title,
+                        body=alert_body,
                         created_at=now,
-                        data={
-                            "type": "alert_triggered",
-                            "watch_id": watch.watch_id,
-                            "train_number": watch.query.train_number,
-                            "journey_date": str(watch.query.journey_date),
-                            "travel_class": watch.query.travel_class,
-                            "status": status_val,
-                        },
+                        data=outbox_data,
                     )
                     await self._outbox.save_notification(outbox_item)
 
+                updated_watch = watch.record_avl_observation(
+                    current_avl=seats if snap.status is AvailabilityStatus.AVAILABLE else None,
+                    alerted=triggered,
+                    at=now,
+                )
                 update_fields: dict[str, Any] = {
+                    "isActive": updated_watch.is_active,
+                    "departureAt": updated_watch.effective_departure_at(),
+                    "lastAvlCount": updated_watch.last_avl_count,
+                    "lastAlertedAvl": updated_watch.last_alerted_avl,
                     "lastCheckedAt": now.isoformat(),
                     "lastObservation": {
                         "status": status_val,
@@ -191,7 +206,6 @@ class FirestoreWatchDispatcher:
                 if triggered:
                     update_fields["lastAlertedKey"] = idempotency_key
 
-                doc_ref = getattr(doc, "reference", None)
                 if hasattr(doc_ref, "update"):
                     await doc_ref.update(update_fields)  # type: ignore[union-attr]
             except Exception:
@@ -286,7 +300,7 @@ def create_app(
 
     application = FastAPI(
         title="TrainWatch API",
-        version="0.3.0",
+        version="2.3.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,

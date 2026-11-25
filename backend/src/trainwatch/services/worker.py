@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from trainwatch.domain.alerts import should_alert
-from trainwatch.domain.watch import WatchStatus
+from trainwatch.domain.alerts import AvlThresholdEvaluator, compose_avl_alert_message
+from trainwatch.domain.availability import AvailabilityStatus
+from trainwatch.domain.watch import IST, WatchStatus
 from trainwatch.ports.availability import AvailabilityProvider, ObservationRepository
 from trainwatch.ports.jobs import JobRepository
 from trainwatch.ports.notifications import NotificationOutbox, NotificationOutboxItem
@@ -105,10 +106,10 @@ class WorkerService:
                 status="completed_watch_inactive",
             )
 
-        today = now.date()
-        if today > watch.query.journey_date:
-            expired_watch = watch.expire_if_due(today=today, at=now)
-            await self.watch_repository.save(expired_watch)
+        today = now.astimezone(IST).date()
+        dissolved_watch = watch.dissolve_if_due(today=today, at=now)
+        if dissolved_watch is not watch:
+            await self.watch_repository.save(dissolved_watch)
             await self.job_repository.complete_job(job_id=job_id, next_due_at=None, now=now)
             return JobExecutionResult(
                 job_id=job_id,
@@ -150,37 +151,58 @@ class WorkerService:
             )
 
         previous = await self.observation_repository.get_latest_observation(watch_id=watch.watch_id)
-        alert_triggered = should_alert(
-            condition=watch.condition,
-            previous=previous,
-            current=observation,
+        assert observation.snapshot is not None
+        snap = observation.snapshot
+        assert watch.condition.maximum_position is not None
+        eval_result = AvlThresholdEvaluator.evaluate(
+            threshold=watch.condition.maximum_position,
+            previous_snapshot=previous.snapshot if previous is not None else None,
+            current_snapshot=snap,
+            fallback_previous_avl=watch.last_avl_count,
         )
+        alert_triggered = eval_result.should_alert
 
         if alert_triggered:
-            status_value = observation.snapshot.status.value
-            pos = observation.snapshot.position
-            pos_label = f" #{pos}" if pos is not None else ""
-            assert previous is not None and previous.snapshot is not None
-            transition_id = previous.snapshot.observed_at.isoformat()
-            idempotency_key = f"alert:{watch.watch_id}:{transition_id}:{status_value}:{pos or 0}"
+            status_value = snap.status.value
+            transition_id = (
+                previous.snapshot.observed_at.isoformat()
+                if previous is not None and previous.snapshot is not None
+                else "baseline"
+            )
+            title, body = compose_avl_alert_message(
+                train_number=watch.query.train_number,
+                travel_class=watch.query.travel_class,
+                journey_date=watch.query.journey_date,
+                threshold=watch.condition.maximum_position,
+                evaluation=eval_result,
+                snapshot=snap,
+            )
+            seat_key = eval_result.current_avl if eval_result.current_avl is not None else 0
+            idempotency_key = f"alert:{watch.watch_id}:{transition_id}:{status_value}:{seat_key}"
             outbox_item = NotificationOutboxItem(
                 idempotency_key=idempotency_key,
                 owner_id=watch.owner_id,
                 watch_id=watch.watch_id,
-                title=f"Seat Alert: Train {watch.query.train_number}",
-                body=(
-                    f"Seat status updated to {status_value}{pos_label} "
-                    f"on {watch.query.journey_date}"
-                ),
+                title=title,
+                body=body,
                 created_at=now,
                 data={
                     "train_number": watch.query.train_number,
                     "journey_date": str(watch.query.journey_date),
                     "travel_class": watch.query.travel_class,
                     "status": status_value,
+                    "event_kind": eval_result.event_kind.value,
                 },
             )
             await self.notification_outbox.save_notification(outbox_item)
+
+        next_avl = eval_result.current_avl if snap.status is AvailabilityStatus.AVAILABLE else None
+        updated_watch = watch.record_avl_observation(
+            current_avl=next_avl,
+            alerted=alert_triggered,
+            at=now,
+        )
+        await self.watch_repository.save(updated_watch)
 
         await self.observation_repository.save_observation(
             watch_id=watch.watch_id,
