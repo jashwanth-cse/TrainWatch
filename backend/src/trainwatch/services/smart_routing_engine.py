@@ -19,6 +19,7 @@ from trainwatch.domain.smart_routes import (
     SmartRouteQuery,
     SmartRouteResult,
     SmartRouteSolution,
+    SolutionPresentationBuilder,
     SolutionTier,
     SubLeg,
     calculate_booking_strategy,
@@ -42,6 +43,77 @@ _LOGGER = logging.getLogger(__name__)
 SegmentQuerier = Callable[
     [ScheduleStop, ScheduleStop], Awaitable[tuple[AvailabilityObservation, int | None]]
 ]
+
+
+def _parse_hhmm_minutes(time_str: str) -> int | None:
+    """Parse HH:MM string into minutes since midnight, returning None if invalid."""
+    parts = time_str.strip().split(":")
+    if len(parts) < 2:
+        return None
+    try:
+        hours = int(parts[0])
+        minutes = int(parts[1])
+    except ValueError:
+        return None
+    if 0 <= hours <= 23 and 0 <= minutes <= 59:
+        return hours * 60 + minutes
+    return None
+
+
+class ScheduleTimeline:
+    """Computes effective departure calendar days across stops including midnight crossovers."""
+
+    def __init__(self, stops: tuple[ScheduleStop, ...]) -> None:
+        self._departure_days: dict[tuple[int, str], int] = {}
+        self._build_timeline(stops)
+
+    def _build_timeline(self, stops: tuple[ScheduleStop, ...]) -> None:
+        prev_dep_day = 1
+        prev_dep_min: int | None = None
+        prev_raw_day = 1
+
+        for idx, stop in enumerate(stops):
+            arr_min = _parse_hhmm_minutes(stop.arrival_time)
+            dep_min = _parse_hhmm_minutes(stop.departure_time)
+
+            if idx == 0:
+                arr_day = max(1, stop.day)
+            else:
+                arr_day = max(stop.day, prev_dep_day)
+                if (
+                    stop.day == prev_raw_day
+                    and arr_min is not None
+                    and prev_dep_min is not None
+                    and arr_min < prev_dep_min - 60
+                ):
+                    arr_day += 1
+
+            # Midnight halt: arrival before midnight and departure after midnight -> next day
+            dep_day = arr_day
+            if idx > 0 and arr_min is not None and dep_min is not None and dep_min < arr_min:
+                dep_day = arr_day + 1
+
+            self._departure_days[(stop.stop_number, stop.station_code)] = dep_day
+            prev_dep_day = dep_day
+            prev_dep_min = dep_min
+            prev_raw_day = stop.day
+
+    def effective_departure_day(self, stop: ScheduleStop) -> int:
+        """Return the effective departure day index (1-based) for a schedule stop."""
+        return self._departure_days.get((stop.stop_number, stop.station_code), stop.day)
+
+    def leg_departure_date(
+        self,
+        *,
+        query_origin_date: date,
+        origin_stop: ScheduleStop,
+        leg_from_stop: ScheduleStop,
+    ) -> date:
+        """Compute departure calendar date for any leg relative to passenger boarding date."""
+        day_offset = self.effective_departure_day(leg_from_stop) - self.effective_departure_day(
+            origin_stop
+        )
+        return query_origin_date + timedelta(days=day_offset)
 
 
 def _calculate_leg_journey_date(
@@ -100,6 +172,7 @@ class SmartRoutingEngine:
 
         origin_stop = subroute[0]
         dest_stop = subroute[-1]
+        timeline = ScheduleTimeline(schedule.stops)
         journey_duration_min = _calculate_duration_minutes(origin_stop, dest_stop)
         journey_duration_hours = journey_duration_min / 60.0
         journey_distance_km = max(1, dest_stop.distance_km - origin_stop.distance_km)
@@ -112,7 +185,11 @@ class SmartRoutingEngine:
             from_stop: ScheduleStop, to_stop: ScheduleStop
         ) -> tuple[AvailabilityObservation, int | None]:
             nonlocal query_counter
-            dep_date = _calculate_leg_journey_date(query.journey_date, origin_stop, from_stop)
+            dep_date = timeline.leg_departure_date(
+                query_origin_date=query.journey_date,
+                origin_stop=origin_stop,
+                leg_from_stop=from_stop,
+            )
             key = (from_stop.station_code, to_stop.station_code, dep_date)
             if key in memo:
                 return memo[key]
@@ -154,86 +231,41 @@ class SmartRoutingEngine:
         )
         stations_evaluated = len(ranked_candidates)
 
-        if not ranked_candidates:
-            return self._build_result(
-                query=query,
-                schedule=schedule,
-                journey_duration_hours=journey_duration_hours,
-                journey_distance_km=journey_distance_km,
-                max_leg_horizon=max_leg_horizon,
-                direct_snapshot=direct_snapshot,
-                direct_fare=direct_fare,
-                solutions=solutions,
-                start_time=start_time,
-                stations_evaluated=0,
-                queries_executed=query_counter,
-            )
+        if ranked_candidates:
+            # Stage 2: 2-Leg Concurrent ASG-DAG Evaluation
+            confirmed_prefixes_leg1: dict[str, tuple[ScheduleStop, SubLeg]] = {}
+            stage2_tasks = [
+                self._evaluate_2leg_candidate(
+                    candidate=cand,
+                    query=query,
+                    schedule=schedule,
+                    origin_stop=origin_stop,
+                    dest_stop=dest_stop,
+                    direct_fare=direct_fare,
+                    query_segment=query_segment,
+                    confirmed_prefixes_leg1=confirmed_prefixes_leg1,
+                    timeline=timeline,
+                )
+                for cand in ranked_candidates
+            ]
+            stage2_results = await asyncio.gather(*stage2_tasks, return_exceptions=True)
+            for res in stage2_results:
+                if isinstance(res, SmartRouteSolution):
+                    solutions.append(res)
 
-        # Stage 2: 2-Leg Concurrent ASG-DAG Evaluation
-        confirmed_prefixes_leg1: dict[str, tuple[ScheduleStop, SubLeg]] = {}
-        stage2_tasks = [
-            self._evaluate_2leg_candidate(
-                candidate=cand,
-                query=query,
-                schedule=schedule,
-                origin_stop=origin_stop,
-                dest_stop=dest_stop,
-                direct_fare=direct_fare,
-                query_segment=query_segment,
-                confirmed_prefixes_leg1=confirmed_prefixes_leg1,
-            )
-            for cand in ranked_candidates
-        ]
-        stage2_results = await asyncio.gather(*stage2_tasks, return_exceptions=True)
-        for res in stage2_results:
-            if isinstance(res, SmartRouteSolution):
-                solutions.append(res)
-
-        # Stage 3: 3-Leg Expansion (if permitted and confirmed prefixes exist)
-        if max_leg_horizon >= 3 and len(confirmed_prefixes_leg1) >= 1:
-            stage3_tasks = []
-            cand_list = list(ranked_candidates)
-            for i, cand_u in enumerate(cand_list):
-                if cand_u.station_code not in confirmed_prefixes_leg1:
-                    continue  # Prefix-Reusability: only expand if Leg 1 was AVAILABLE
-                u_leg1 = confirmed_prefixes_leg1[cand_u.station_code][1]
-                for cand_v in cand_list[i + 1 :]:
-                    stage3_tasks.append(
-                        self._evaluate_3leg_candidate(
-                            cand_u=cand_u,
-                            cand_v=cand_v,
-                            leg1=u_leg1,
-                            query=query,
-                            schedule=schedule,
-                            origin_stop=origin_stop,
-                            dest_stop=dest_stop,
-                            direct_fare=direct_fare,
-                            query_segment=query_segment,
-                        )
-                    )
-            if stage3_tasks:
-                stage3_results = await asyncio.gather(*stage3_tasks, return_exceptions=True)
-                for res in stage3_results:
-                    if isinstance(res, SmartRouteSolution):
-                        solutions.append(res)
-
-        # Stage 4: 4-Leg Expansion (if permitted and 3-leg solutions still not confirmed)
-        has_any_confirmed = any(s.is_confirmed for s in solutions)
-        if max_leg_horizon >= 4 and not has_any_confirmed and len(confirmed_prefixes_leg1) >= 1:
-            cand_list = list(ranked_candidates)
-            stage4_tasks = []
-            for i, cand_u in enumerate(cand_list):
-                if cand_u.station_code not in confirmed_prefixes_leg1:
-                    continue
-                u_leg1 = confirmed_prefixes_leg1[cand_u.station_code][1]
-                for j in range(i + 1, len(cand_list)):
-                    cand_v = cand_list[j]
-                    for cand_w in cand_list[j + 1 :]:
-                        stage4_tasks.append(
-                            self._evaluate_4leg_candidate(
+            # Stage 3: 3-Leg Expansion (if permitted and confirmed prefixes exist)
+            if max_leg_horizon >= 3 and len(confirmed_prefixes_leg1) >= 1:
+                stage3_tasks = []
+                cand_list = list(ranked_candidates)
+                for i, cand_u in enumerate(cand_list):
+                    if cand_u.station_code not in confirmed_prefixes_leg1:
+                        continue  # Prefix-Reusability: only expand if Leg 1 was AVAILABLE
+                    u_leg1 = confirmed_prefixes_leg1[cand_u.station_code][1]
+                    for cand_v in cand_list[i + 1 :]:
+                        stage3_tasks.append(
+                            self._evaluate_3leg_candidate(
                                 cand_u=cand_u,
                                 cand_v=cand_v,
-                                cand_w=cand_w,
                                 leg1=u_leg1,
                                 query=query,
                                 schedule=schedule,
@@ -241,24 +273,64 @@ class SmartRoutingEngine:
                                 dest_stop=dest_stop,
                                 direct_fare=direct_fare,
                                 query_segment=query_segment,
+                                timeline=timeline,
                             )
                         )
-            if stage4_tasks:
-                stage4_results = await asyncio.gather(*stage4_tasks, return_exceptions=True)
-                for res in stage4_results:
-                    if isinstance(res, SmartRouteSolution):
-                        solutions.append(res)
+                if stage3_tasks:
+                    stage3_results = await asyncio.gather(*stage3_tasks, return_exceptions=True)
+                    for res in stage3_results:
+                        if isinstance(res, SmartRouteSolution):
+                            solutions.append(res)
 
-        # Tier 2: Same-Train Origin Extension Evaluation
-        if origin_stop.stop_number > 1:
-            ext_solution = await self._evaluate_origin_extension(
+            # Stage 4: 4-Leg Expansion (if permitted and 3-leg solutions still not confirmed)
+            has_any_confirmed = any(s.is_confirmed for s in solutions)
+            if max_leg_horizon >= 4 and not has_any_confirmed and len(confirmed_prefixes_leg1) >= 1:
+                cand_list = list(ranked_candidates)
+                stage4_tasks = []
+                for i, cand_u in enumerate(cand_list):
+                    if cand_u.station_code not in confirmed_prefixes_leg1:
+                        continue
+                    u_leg1 = confirmed_prefixes_leg1[cand_u.station_code][1]
+                    for j in range(i + 1, len(cand_list)):
+                        cand_v = cand_list[j]
+                        for cand_w in cand_list[j + 1 :]:
+                            stage4_tasks.append(
+                                self._evaluate_4leg_candidate(
+                                    cand_u=cand_u,
+                                    cand_v=cand_v,
+                                    cand_w=cand_w,
+                                    leg1=u_leg1,
+                                    query=query,
+                                    schedule=schedule,
+                                    origin_stop=origin_stop,
+                                    dest_stop=dest_stop,
+                                    direct_fare=direct_fare,
+                                    query_segment=query_segment,
+                                    timeline=timeline,
+                                )
+                            )
+                if stage4_tasks:
+                    stage4_results = await asyncio.gather(*stage4_tasks, return_exceptions=True)
+                    for res in stage4_results:
+                        if isinstance(res, SmartRouteSolution):
+                            solutions.append(res)
+
+        # Tier 2: Pre-Boarding Origin Extension Evaluation (Source & Upstream Stops)
+        origin_idx = next(
+            (i for i, s in enumerate(schedule.stops) if s.station_code == origin_stop.station_code),
+            0,
+        )
+        if origin_idx > 0:
+            ext_solution = await self._evaluate_preboarding_candidates(
                 query=query,
                 schedule=schedule,
+                origin_idx=origin_idx,
                 origin_stop=origin_stop,
                 dest_stop=dest_stop,
                 direct_fare=direct_fare,
                 direct_snapshot=direct_snapshot,
                 query_segment=query_segment,
+                timeline=timeline,
             )
             if ext_solution is not None:
                 solutions.append(ext_solution)
@@ -288,6 +360,67 @@ class SmartRoutingEngine:
             queries_executed=query_counter,
         )
 
+    def _assemble_split_solution(
+        self,
+        *,
+        solution_id: str,
+        legs: tuple[SubLeg, ...],
+        split_stations: tuple[str, ...],
+        query: SmartRouteQuery,
+        origin_stop: ScheduleStop,
+        dest_stop: ScheduleStop,
+        direct_fare: int | None,
+        is_confirmed: bool,
+        is_rac: bool,
+    ) -> SmartRouteSolution:
+        """Assemble a scored Tier 1 same-train split solution with server presentation."""
+        total_fare = (
+            sum(leg.fare for leg in legs if leg.fare is not None)
+            if all(leg.fare is not None for leg in legs)
+            else None
+        )
+        surcharge = (
+            (total_fare - direct_fare)
+            if (total_fare is not None and direct_fare is not None)
+            else 0
+        )
+        surcharge_pct = (
+            ((surcharge / direct_fare) * 100.0) if (direct_fare and direct_fare > 0) else 0.0
+        )
+        score = calculate_recommendation_score(
+            is_confirmed=is_confirmed,
+            is_rac=is_rac,
+            leg_count=len(legs),
+            fare_surcharge_pct=surcharge_pct,
+        )
+        booking_strat = calculate_booking_strategy(legs, query.journey_date)
+        presentation = SolutionPresentationBuilder.build(
+            tier=SolutionTier.TIER_1_SAME_TRAIN_SPLIT,
+            legs=legs,
+            is_confirmed=is_confirmed,
+            is_rac=is_rac,
+            split_stations=split_stations,
+            boarding_station=None,
+            boarding_date=query.journey_date,
+            fare_surcharge=max(0, surcharge),
+        )
+        return SmartRouteSolution(
+            solution_id=solution_id,
+            tier=SolutionTier.TIER_1_SAME_TRAIN_SPLIT,
+            legs=legs,
+            total_fare=total_fare,
+            fare_surcharge=max(0, surcharge),
+            fare_surcharge_pct=round(max(0.0, surcharge_pct), 1),
+            total_duration_minutes=_calculate_duration_minutes(origin_stop, dest_stop),
+            boarding_station=None,
+            is_confirmed=is_confirmed,
+            is_rac=is_rac,
+            recommendation_score=score,
+            split_stations=split_stations,
+            booking_strategy=booking_strat,
+            presentation=presentation,
+        )
+
     async def _evaluate_2leg_candidate(
         self,
         *,
@@ -299,6 +432,7 @@ class SmartRoutingEngine:
         direct_fare: int | None,
         query_segment: SegmentQuerier,
         confirmed_prefixes_leg1: dict[str, tuple[ScheduleStop, SubLeg]],
+        timeline: ScheduleTimeline | None = None,
     ) -> SmartRouteSolution | None:
         """Evaluate 2-leg split O -> s and s -> D with short-circuit pruning."""
         obs1, fare1 = await query_segment(origin_stop, candidate)
@@ -315,6 +449,7 @@ class SmartRoutingEngine:
             obs=obs1,
             fare=fare1,
             origin_stop=origin_stop,
+            timeline=timeline,
         )
 
         if status1 is AvailabilityStatus.AVAILABLE:
@@ -346,6 +481,7 @@ class SmartRoutingEngine:
             obs=obs2,
             fare=fare2,
             origin_stop=origin_stop,
+            timeline=timeline,
         )
 
         is_confirmed = (
@@ -356,39 +492,16 @@ class SmartRoutingEngine:
             and status2 in {AvailabilityStatus.AVAILABLE, AvailabilityStatus.RAC}
         )
 
-        total_fare = (fare1 + fare2) if (fare1 is not None and fare2 is not None) else None
-        surcharge = (
-            (total_fare - direct_fare)
-            if (total_fare is not None and direct_fare is not None)
-            else 0
-        )
-        surcharge_pct = (
-            ((surcharge / direct_fare) * 100.0) if (direct_fare and direct_fare > 0) else 0.0
-        )
-
-        score = calculate_recommendation_score(
-            is_confirmed=is_confirmed,
-            is_rac=is_rac,
-            leg_count=2,
-            fare_surcharge_pct=surcharge_pct,
-        )
-
-        booking_strat = calculate_booking_strategy((leg1, leg2), query.journey_date)
-
-        return SmartRouteSolution(
+        return self._assemble_split_solution(
             solution_id=f"sol-2leg-{candidate.station_code}-{uuid4().hex[:6]}",
-            tier=SolutionTier.TIER_1_SAME_TRAIN_SPLIT,
             legs=(leg1, leg2),
-            total_fare=total_fare,
-            fare_surcharge=max(0, surcharge),
-            fare_surcharge_pct=round(max(0.0, surcharge_pct), 1),
-            total_duration_minutes=_calculate_duration_minutes(origin_stop, dest_stop),
-            boarding_station=None,
+            split_stations=(candidate.station_code,),
+            query=query,
+            origin_stop=origin_stop,
+            dest_stop=dest_stop,
+            direct_fare=direct_fare,
             is_confirmed=is_confirmed,
             is_rac=is_rac,
-            recommendation_score=score,
-            split_stations=(candidate.station_code,),
-            booking_strategy=booking_strat,
         )
 
     async def _evaluate_3leg_candidate(
@@ -403,6 +516,7 @@ class SmartRoutingEngine:
         dest_stop: ScheduleStop,
         direct_fare: int | None,
         query_segment: SegmentQuerier,
+        timeline: ScheduleTimeline | None = None,
     ) -> SmartRouteSolution | None:
         """Evaluate 3-leg split: (O -> u confirmed) -> (u -> v) -> (v -> D)."""
         obs2, fare2 = await query_segment(cand_u, cand_v)
@@ -433,6 +547,7 @@ class SmartRoutingEngine:
             obs=obs2,
             fare=fare2,
             origin_stop=origin_stop,
+            timeline=timeline,
         )
         leg3 = self._build_subleg(
             leg_num=3,
@@ -443,50 +558,22 @@ class SmartRoutingEngine:
             obs=obs3,
             fare=fare3,
             origin_stop=origin_stop,
+            timeline=timeline,
         )
 
         is_confirmed = status3 is AvailabilityStatus.AVAILABLE
         is_rac = not is_confirmed and (status3 is AvailabilityStatus.RAC)
 
-        total_fare = (
-            (leg1.fare + fare2 + fare3)
-            if (leg1.fare is not None and fare2 is not None and fare3 is not None)
-            else None
-        )
-        surcharge = (
-            (total_fare - direct_fare)
-            if (total_fare is not None and direct_fare is not None)
-            else 0
-        )
-        surcharge_pct = (
-            ((surcharge / direct_fare) * 100.0) if (direct_fare and direct_fare > 0) else 0.0
-        )
-
-        score = calculate_recommendation_score(
-            is_confirmed=is_confirmed,
-            is_rac=is_rac,
-            leg_count=3,
-            fare_surcharge_pct=surcharge_pct,
-        )
-
-        duration_min = _calculate_duration_minutes(origin_stop, dest_stop)
-
-        booking_strat = calculate_booking_strategy((leg1, leg2, leg3), query.journey_date)
-
-        return SmartRouteSolution(
+        return self._assemble_split_solution(
             solution_id=f"sol-3leg-{cand_u.station_code}-{cand_v.station_code}-{uuid4().hex[:6]}",
-            tier=SolutionTier.TIER_1_SAME_TRAIN_SPLIT,
             legs=(leg1, leg2, leg3),
-            total_fare=total_fare,
-            fare_surcharge=max(0, surcharge),
-            fare_surcharge_pct=round(max(0.0, surcharge_pct), 1),
-            total_duration_minutes=duration_min,
-            boarding_station=None,
+            split_stations=(cand_u.station_code, cand_v.station_code),
+            query=query,
+            origin_stop=origin_stop,
+            dest_stop=dest_stop,
+            direct_fare=direct_fare,
             is_confirmed=is_confirmed,
             is_rac=is_rac,
-            recommendation_score=score,
-            split_stations=(cand_u.station_code, cand_v.station_code),
-            booking_strategy=booking_strat,
         )
 
     async def _evaluate_4leg_candidate(
@@ -502,6 +589,7 @@ class SmartRoutingEngine:
         dest_stop: ScheduleStop,
         direct_fare: int | None,
         query_segment: SegmentQuerier,
+        timeline: ScheduleTimeline | None = None,
     ) -> SmartRouteSolution | None:
         """Evaluate 4-leg split: (O -> u confirmed) -> (u -> v) -> (v -> w) -> (w -> D)."""
         obs2, fare2 = await query_segment(cand_u, cand_v)
@@ -542,6 +630,7 @@ class SmartRoutingEngine:
             obs=obs2,
             fare=fare2,
             origin_stop=origin_stop,
+            timeline=timeline,
         )
         leg3 = self._build_subleg(
             leg_num=3,
@@ -552,6 +641,7 @@ class SmartRoutingEngine:
             obs=obs3,
             fare=fare3,
             origin_stop=origin_stop,
+            timeline=timeline,
         )
         leg4 = self._build_subleg(
             leg_num=4,
@@ -562,51 +652,91 @@ class SmartRoutingEngine:
             obs=obs4,
             fare=fare4,
             origin_stop=origin_stop,
+            timeline=timeline,
         )
 
         is_confirmed = status4 is AvailabilityStatus.AVAILABLE
         is_rac = not is_confirmed and (status4 is AvailabilityStatus.RAC)
 
-        fares = (leg1.fare, fare2, fare3, fare4)
-        total_fare = sum(fares) if all(f is not None for f in fares) else None  # type: ignore[arg-type]
-        surcharge = (
-            (total_fare - direct_fare)
-            if (total_fare is not None and direct_fare is not None)
-            else 0
-        )
-        surcharge_pct = (
-            ((surcharge / direct_fare) * 100.0) if (direct_fare and direct_fare > 0) else 0.0
-        )
-
-        score = calculate_recommendation_score(
-            is_confirmed=is_confirmed,
-            is_rac=is_rac,
-            leg_count=4,
-            fare_surcharge_pct=surcharge_pct,
-        )
-
-        duration_min = _calculate_duration_minutes(origin_stop, dest_stop)
-
-        booking_strat = calculate_booking_strategy((leg1, leg2, leg3, leg4), query.journey_date)
-
-        return SmartRouteSolution(
+        return self._assemble_split_solution(
             solution_id=(
                 f"sol-4leg-{cand_u.station_code}-{cand_v.station_code}-"
                 f"{cand_w.station_code}-{uuid4().hex[:6]}"
             ),
-            tier=SolutionTier.TIER_1_SAME_TRAIN_SPLIT,
             legs=(leg1, leg2, leg3, leg4),
-            total_fare=total_fare,
-            fare_surcharge=max(0, surcharge),
-            fare_surcharge_pct=round(max(0.0, surcharge_pct), 1),
-            total_duration_minutes=duration_min,
-            boarding_station=None,
+            split_stations=(cand_u.station_code, cand_v.station_code, cand_w.station_code),
+            query=query,
+            origin_stop=origin_stop,
+            dest_stop=dest_stop,
+            direct_fare=direct_fare,
             is_confirmed=is_confirmed,
             is_rac=is_rac,
-            recommendation_score=score,
-            split_stations=(cand_u.station_code, cand_v.station_code, cand_w.station_code),
-            booking_strategy=booking_strat,
         )
+
+    @staticmethod
+    def _select_preboarding_candidates(
+        pre_stops: tuple[ScheduleStop, ...],
+        max_candidates: int = 3,
+    ) -> tuple[ScheduleStop, ...]:
+        """Select train origin plus up to two strategic earlier stops before boarding station."""
+        if not pre_stops:
+            return ()
+        if len(pre_stops) == 1:
+            return (pre_stops[0],)
+        upstream_hubs = StationTopologyRegistry.rank_candidate_stations(
+            pre_stops[1:], max_candidates=max_candidates - 1
+        )
+        return (pre_stops[0], *upstream_hubs)
+
+    async def _evaluate_preboarding_candidates(
+        self,
+        *,
+        query: SmartRouteQuery,
+        schedule: TrainSchedule,
+        origin_idx: int,
+        origin_stop: ScheduleStop,
+        dest_stop: ScheduleStop,
+        direct_fare: int | None,
+        direct_snapshot: AvailabilitySnapshot | None,
+        query_segment: SegmentQuerier,
+        timeline: ScheduleTimeline,
+    ) -> SmartRouteSolution | None:
+        """Concurrently scan origin and earlier hubs, returning the best valid extension."""
+        if direct_snapshot and direct_snapshot.status is AvailabilityStatus.AVAILABLE:
+            return None
+
+        candidates = self._select_preboarding_candidates(schedule.stops[:origin_idx])
+        tasks = [
+            self._evaluate_origin_extension(
+                query=query,
+                schedule=schedule,
+                origin_stop=origin_stop,
+                dest_stop=dest_stop,
+                direct_fare=direct_fare,
+                direct_snapshot=direct_snapshot,
+                query_segment=query_segment,
+                candidate_stop=cand,
+                timeline=timeline,
+            )
+            for cand in candidates
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        valid = [res for res in results if isinstance(res, SmartRouteSolution)]
+        if not valid:
+            return None
+
+        valid.sort(
+            key=lambda s: (
+                1 if s.is_confirmed else 0,
+                1 if s.is_rac else 0,
+                -(s.legs[0].position or 999) if s.is_rac else 0,
+                1 if (s.legs[0].position or 1) >= 4 else 0,
+                -(s.total_fare or 99999),
+                -s.legs[0].distance_km,
+            ),
+            reverse=True,
+        )
+        return valid[0]
 
     async def _evaluate_origin_extension(
         self,
@@ -618,9 +748,11 @@ class SmartRoutingEngine:
         direct_fare: int | None,
         direct_snapshot: AvailabilitySnapshot | None,
         query_segment: SegmentQuerier,
+        candidate_stop: ScheduleStop | None = None,
+        timeline: ScheduleTimeline | None = None,
     ) -> SmartRouteSolution | None:
-        """Evaluate Tier 2 Origin Extension."""
-        train_origin_stop = schedule.stops[0]
+        """Evaluate Tier 2 Origin Extension from train origin or an earlier station."""
+        train_origin_stop = candidate_stop or schedule.stops[0]
         ext_obs, ext_fare = await query_segment(train_origin_stop, dest_stop)
         if not ext_obs or not ext_obs.snapshot:
             return None
@@ -634,7 +766,7 @@ class SmartRoutingEngine:
         if ext_status in bad_statuses:
             return None
 
-        # Check surcharge guardrails: max <= 100 extra in SL, or <= 20% surcharge
+        # Check surcharge guardrails: class cap + 20% relative surcharge cap
         surcharge = (
             (ext_fare - direct_fare) if (ext_fare is not None and direct_fare is not None) else 0
         )
@@ -642,7 +774,8 @@ class SmartRoutingEngine:
             ((surcharge / direct_fare) * 100.0) if (direct_fare and direct_fare > 0) else 0.0
         )
 
-        if query.travel_class == "SL" and surcharge > 100:
+        max_abs_surcharge = {"SL": 100, "3A": 250, "2A": 350}.get(query.travel_class)
+        if max_abs_surcharge is not None and surcharge > max_abs_surcharge:
             return None
         if surcharge_pct > 20.0:
             return None
@@ -650,18 +783,16 @@ class SmartRoutingEngine:
         is_confirmed = ext_status is AvailabilityStatus.AVAILABLE
         is_rac = ext_status is AvailabilityStatus.RAC
 
-        # Only recommend if it improves on direct status
-        if direct_snapshot:
-            if direct_snapshot.status is AvailabilityStatus.AVAILABLE:
-                return None
-            if (
-                direct_snapshot.status is AvailabilityStatus.RAC
-                and not is_confirmed
-                and ext_obs.snapshot.position is not None
-                and direct_snapshot.position is not None
-                and ext_obs.snapshot.position >= direct_snapshot.position
-            ):
-                return None
+        # Only recommend if it improves on direct RAC status
+        if (
+            direct_snapshot
+            and direct_snapshot.status is AvailabilityStatus.RAC
+            and not is_confirmed
+            and ext_obs.snapshot.position is not None
+            and direct_snapshot.position is not None
+            and ext_obs.snapshot.position >= direct_snapshot.position
+        ):
+            return None
 
         score = calculate_recommendation_score(
             is_confirmed=is_confirmed,
@@ -679,16 +810,35 @@ class SmartRoutingEngine:
             obs=ext_obs,
             fare=ext_fare,
             origin_stop=origin_stop,
+            timeline=timeline,
         )
 
-        booking_strat = calculate_booking_strategy((ext_leg,), query.journey_date)
+        safe_surcharge = max(0, surcharge)
+        booking_strat = calculate_booking_strategy(
+            (ext_leg,),
+            query.journey_date,
+            boarding_station=query.origin,
+            boarding_departure_time=origin_stop.departure_time,
+            fare_surcharge=safe_surcharge,
+        )
+        presentation = SolutionPresentationBuilder.build(
+            tier=SolutionTier.TIER_2_ORIGIN_EXTENSION,
+            legs=(ext_leg,),
+            is_confirmed=is_confirmed,
+            is_rac=is_rac,
+            split_stations=(),
+            boarding_station=query.origin,
+            boarding_date=query.journey_date,
+            boarding_departure_time=origin_stop.departure_time,
+            fare_surcharge=safe_surcharge,
+        )
 
         return SmartRouteSolution(
             solution_id=f"sol-orig-ext-{train_origin_stop.station_code}-{uuid4().hex[:6]}",
             tier=SolutionTier.TIER_2_ORIGIN_EXTENSION,
             legs=(ext_leg,),
             total_fare=ext_fare,
-            fare_surcharge=max(0, surcharge),
+            fare_surcharge=safe_surcharge,
             fare_surcharge_pct=round(max(0.0, surcharge_pct), 1),
             total_duration_minutes=_calculate_duration_minutes(origin_stop, dest_stop),
             boarding_station=query.origin,
@@ -697,6 +847,7 @@ class SmartRoutingEngine:
             recommendation_score=score,
             split_stations=(),
             booking_strategy=booking_strat,
+            presentation=presentation,
         )
 
     def _build_subleg(
@@ -710,6 +861,7 @@ class SmartRoutingEngine:
         obs: AvailabilityObservation,
         fare: int | None,
         origin_stop: ScheduleStop,
+        timeline: ScheduleTimeline | None = None,
     ) -> SubLeg:
         """Construct a strongly-typed SubLeg from schedule stops and observation."""
         snapshot = obs.snapshot
@@ -719,7 +871,14 @@ class SmartRoutingEngine:
 
         duration_min = _calculate_duration_minutes(from_stop, to_stop)
         distance_km = max(0, to_stop.distance_km - from_stop.distance_km)
-        leg_date = _calculate_leg_journey_date(query.journey_date, origin_stop, from_stop)
+        if timeline is not None:
+            leg_date = timeline.leg_departure_date(
+                query_origin_date=query.journey_date,
+                origin_stop=origin_stop,
+                leg_from_stop=from_stop,
+            )
+        else:
+            leg_date = _calculate_leg_journey_date(query.journey_date, origin_stop, from_stop)
 
         return SubLeg(
             leg_number=leg_num,

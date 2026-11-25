@@ -95,6 +95,22 @@ class BookingStrategyPayload(BaseModel):
     insider_tips: list[str]
 
 
+class SolutionPresentationPayload(BaseModel):
+    """Server-driven presentation metadata rendered dynamically by client UI."""
+
+    badge_text: str
+    strategy_label: str
+    comparison_sublabel: str
+    confirmed_tag: str
+    card_headline: str
+    alt_summary: str
+    guide_steps: list[str]
+    guide_note: str
+    action_button_label: str | None = None
+    modal_title: str = "Same-Coach Booking Trick"
+    modal_tagline: str = "INTELLIGENT BOOKING ORDER"
+
+
 class SmartRouteSolutionPayload(BaseModel):
     """Payload representing a single smart routing solution."""
 
@@ -111,6 +127,7 @@ class SmartRouteSolutionPayload(BaseModel):
     recommendation_score: float
     split_stations: list[str]
     booking_strategy: BookingStrategyPayload | None = None
+    presentation: SolutionPresentationPayload | None = None
 
 
 class SmartRoutesDataPayload(BaseModel):
@@ -257,6 +274,21 @@ async def find_smart_routes(
                 insider_tips=list(sol.booking_strategy.insider_tips),
             )
             if sol.booking_strategy
+            else None,
+            presentation=SolutionPresentationPayload(
+                badge_text=sol.presentation.badge_text,
+                strategy_label=sol.presentation.strategy_label,
+                comparison_sublabel=sol.presentation.comparison_sublabel,
+                confirmed_tag=sol.presentation.confirmed_tag,
+                card_headline=sol.presentation.card_headline,
+                alt_summary=sol.presentation.alt_summary,
+                guide_steps=list(sol.presentation.guide_steps),
+                guide_note=sol.presentation.guide_note,
+                action_button_label=sol.presentation.action_button_label,
+                modal_title=sol.presentation.modal_title,
+                modal_tagline=sol.presentation.modal_tagline,
+            )
+            if sol.presentation
             else None,
         )
         for sol in result.solutions

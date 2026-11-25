@@ -109,6 +109,23 @@ class BookingStrategy:
 
 
 @dataclass(frozen=True, slots=True)
+class SolutionPresentation:
+    """Server-driven presentation metadata rendered dynamically by client UI."""
+
+    badge_text: str
+    strategy_label: str
+    comparison_sublabel: str
+    confirmed_tag: str
+    card_headline: str
+    alt_summary: str
+    guide_steps: tuple[str, ...]
+    guide_note: str
+    action_button_label: str | None = None
+    modal_title: str = "Same-Coach Booking Trick"
+    modal_tagline: str = "INTELLIGENT BOOKING ORDER"
+
+
+@dataclass(frozen=True, slots=True)
 class SmartRouteSolution:
     """A viable multi-leg or extended route option."""
 
@@ -125,6 +142,7 @@ class SmartRouteSolution:
     recommendation_score: float
     split_stations: tuple[str, ...]
     booking_strategy: BookingStrategy | None = None
+    presentation: SolutionPresentation | None = None
 
     def __post_init__(self) -> None:
         if not self.legs:
@@ -221,7 +239,7 @@ def calculate_recommendation_score(
 
 
 def _extract_numeric_seats(subleg: SubLeg) -> int:
-    """Extract numeric seat count from position or raw status."""
+    """Extract numeric seat count or queue position from position or raw status."""
     if subleg.position is not None and subleg.position > 0:
         return subleg.position
     match = re.search(r"\b(\d+)\b", subleg.raw_status)
@@ -230,10 +248,266 @@ def _extract_numeric_seats(subleg: SubLeg) -> int:
     return 1 if subleg.status is AvailabilityStatus.AVAILABLE else 0
 
 
-def calculate_booking_strategy(legs: tuple[SubLeg, ...], origin_date: date) -> BookingStrategy:
-    """Evaluate berth inventory across split legs and generate optimal coach-matching order."""
+def _get_confirmed_seats(subleg: SubLeg) -> int:
+    """Extract confirmed seat count if subleg is in AVAILABLE status."""
+    if subleg.status is not AvailabilityStatus.AVAILABLE:
+        return 0
+    if subleg.position is not None and subleg.position > 0:
+        return subleg.position
+    match = re.search(r"\b(\d+)\b", subleg.raw_status)
+    if match:
+        return int(match.group(1))
+    return 1
+
+
+def _get_rac_position(subleg: SubLeg) -> int:
+    """Extract RAC queue position if subleg is in RAC status."""
+    if subleg.status is not AvailabilityStatus.RAC:
+        return 999999
+    if subleg.position is not None and subleg.position > 0:
+        return subleg.position
+    match = re.search(r"\b(\d+)\b", subleg.raw_status)
+    if match:
+        return int(match.group(1))
+    return 1
+
+
+class OriginExtensionStrategyBuilder:
+    """Strategy builder for single-PNR Origin Extension with boarding point modification."""
+
+    @staticmethod
+    def build(
+        leg: SubLeg,
+        *,
+        boarding_station: str,
+        boarding_date: date,
+        boarding_departure_time: str | None = None,
+        fare_surcharge: int = 0,
+    ) -> BookingStrategy:
+        """Build step-by-step IRCTC instructions for Origin Extension booking."""
+        ticket_date = leg.journey_date or boarding_date
+        ticket_date_str = ticket_date.strftime("%d-%b-%Y")
+        board_date_str = boarding_date.strftime("%d-%b-%Y")
+        board_time_note = f" at {boarding_departure_time}" if boarding_departure_time else ""
+        surcharge_note = f" for just Rs {fare_surcharge} extra" if fare_surcharge > 0 else ""
+
+        if ticket_date < boarding_date:
+            date_shift_note = (
+                f" Note the overnight schedule: Train {leg.train_no} starts at {leg.from_station} "
+                f"on {ticket_date_str} (Dep: {leg.departure_time or 'Scheduled'}) and reaches "
+                f"{boarding_station} on {board_date_str}{board_time_note}."
+            )
+        else:
+            date_shift_note = (
+                f" Train {leg.train_no} departs {leg.from_station} on {ticket_date_str} and "
+                f"reaches {boarding_station} on the same day{board_time_note}."
+            )
+
+        headline = (
+            f"Book full ticket from {leg.from_station} to {leg.to_station} "
+            f"and set Boarding Station to {boarding_station}"
+        )
+        reason = (
+            f"Upstream quota from {leg.from_station} offers {leg.raw_status}{surcharge_note} "
+            f"on a single ticket with zero berth switching.{date_shift_note} By selecting "
+            f"{boarding_station} as your Boarding Point during IRCTC checkout, your seat remains "
+            f"reserved until you board at {boarding_station}."
+        )
+        step = BookingOrderStep(
+            step_number=1,
+            leg_number=leg.leg_number,
+            from_station=leg.from_station,
+            to_station=leg.to_station,
+            journey_date=ticket_date,
+            departure_time=leg.departure_time,
+            raw_status=leg.raw_status,
+            available_seats=_extract_numeric_seats(leg),
+            action_title=(
+                f"Book Full Ticket ({leg.from_station} -> {leg.to_station}) & Set Boarding Point"
+            ),
+            action_instructions=(
+                f"1. Search and book Train {leg.train_no} ({leg.travel_class}) from "
+                f"{leg.from_station} to {leg.to_station} on journey date {ticket_date_str}.\n"
+                f"2. On the IRCTC Passenger / Review page, change 'Boarding Station' to "
+                f"{boarding_station} ({board_date_str}{board_time_note})."
+            ),
+            preferred_coach_tip=(
+                f"CRITICAL: You MUST select {boarding_station} as your Boarding Station during "
+                "booking (or update it at least 24 hours before departure) so the TTE does not "
+                "mark you absent after departure from the origin."
+            ),
+        )
+        tips = (
+            (
+                "Changing Boarding Point forward along the same train is 100% IRCTC compliant "
+                "and carries zero extra fee."
+            ),
+            (
+                "Double-check the ticket date: book for the train start date at "
+                f"{leg.from_station} ({ticket_date_str}), then board at {boarding_station} on "
+                f"{board_date_str}."
+            ),
+            "Once set, IRCTC updates your Boarding Station on your Electronic Reservation Slip.",
+            "Single PNR booking: zero coach switching needed throughout your trip.",
+        )
+        return BookingStrategy(
+            headline=headline,
+            recommended_order=(leg.leg_number,),
+            strategy_reason=reason,
+            same_coach_probability="HIGH",
+            steps=(step,),
+            insider_tips=tips,
+        )
+
+
+class SolutionPresentationBuilder:
+    """Builds server-driven UI presentation payloads for SmartRouteSolution objects."""
+
+    @staticmethod
+    def build(
+        *,
+        tier: SolutionTier,
+        legs: tuple[SubLeg, ...],
+        is_confirmed: bool,
+        is_rac: bool,
+        split_stations: tuple[str, ...],
+        boarding_station: str | None,
+        boarding_date: date,
+        boarding_departure_time: str | None = None,
+        fare_surcharge: int = 0,
+    ) -> SolutionPresentation:
+        """Construct server-authored copy and UI instructions for any solution tier."""
+        first_leg = legs[0]
+        badge_text = (
+            "CONFIRMED" if is_confirmed else (first_leg.raw_status if is_rac else "ALTERNATIVE")
+        )
+
+        if tier is SolutionTier.TIER_2_ORIGIN_EXTENSION and boarding_station:
+            ticket_date = first_leg.journey_date or boarding_date
+            ticket_date_str = ticket_date.strftime("%d-%b-%Y")
+            board_date_str = boarding_date.strftime("%d-%b-%Y")
+            board_time = f" ({boarding_departure_time})" if boarding_departure_time else ""
+            surcharge_str = f" (+Rs {fare_surcharge})" if fare_surcharge > 0 else ""
+
+            if ticket_date < boarding_date:
+                date_note = (
+                    f"Date Notice: Train departs {first_leg.from_station} on {ticket_date_str} "
+                    f"({first_leg.departure_time or 'Night'}) and reaches {boarding_station} on "
+                    f"{board_date_str}{board_time}."
+                )
+            else:
+                date_note = (
+                    f"Book for {ticket_date_str} from {first_leg.from_station} and board at "
+                    f"{boarding_station} on {board_date_str}{board_time}."
+                )
+
+            guide_steps = (
+                (
+                    f"1. Book Full Ticket: {first_leg.from_station} to {first_leg.to_station} on "
+                    f"{ticket_date_str} - Train {first_leg.train_no} ({first_leg.travel_class}) "
+                    f"[{first_leg.raw_status}]."
+                ),
+                (
+                    f"2. Set Boarding Station to {boarding_station} on {board_date_str}"
+                    f"{board_time} during IRCTC checkout."
+                ),
+                date_note,
+            )
+            return SolutionPresentation(
+                badge_text=badge_text,
+                strategy_label="Origin Quota",
+                comparison_sublabel="No seat shift",
+                confirmed_tag="Single Ticket" if is_confirmed else "Better RAC Queue",
+                card_headline=(
+                    f"Book full ticket from {first_leg.from_station} to {first_leg.to_station}"
+                    f"{surcharge_str} and select Boarding Point as {boarding_station}. "
+                    "Zero seat shifts!"
+                ),
+                alt_summary=(
+                    f"Book {first_leg.from_station} -> {first_leg.to_station}, board at "
+                    f"{boarding_station} • {first_leg.raw_status}"
+                ),
+                guide_steps=guide_steps,
+                guide_note=(
+                    f"Important: Select Boarding Point as {boarding_station} on IRCTC so your "
+                    f"berth is held until {boarding_station}."
+                ),
+                action_button_label="Show Boarding Point Trick",
+                modal_title="Origin Boarding Trick",
+                modal_tagline="ORIGIN QUOTA OPTIMIZATION",
+            )
+
+        if tier is SolutionTier.TIER_1_SAME_TRAIN_SPLIT:
+            switches = max(0, len(legs) - 1)
+            shift_word = "shift" if switches == 1 else "shifts"
+            split_label = ", ".join(split_stations) if split_stations else "intermediate hub"
+            guide_steps_list = [
+                (
+                    f"{idx + 1}. Book Ticket {idx + 1}: {leg.from_station} to {leg.to_station} "
+                    f"on {(leg.journey_date or boarding_date).strftime('%Y-%m-%d')} - "
+                    f"Train {leg.train_no} ({leg.travel_class})."
+                )
+                for idx, leg in enumerate(legs)
+            ]
+            return SolutionPresentation(
+                badge_text=badge_text,
+                strategy_label="Smart Split",
+                comparison_sublabel=f"{switches} seat {shift_word}",
+                confirmed_tag="Guaranteed Seat" if is_confirmed else "RAC Combination",
+                card_headline=(f"Stay on the same train! Just shift your seat at {split_label}."),
+                alt_summary=f"Shift at {split_label} • {len(legs)} legs ({badge_text})",
+                guide_steps=tuple(guide_steps_list),
+                guide_note=(
+                    f"You remain on Train {first_leg.train_no} throughout the entire journey."
+                ),
+                action_button_label="Show Same-Coach Booking Trick" if len(legs) > 1 else None,
+                modal_title="Same-Coach Booking Trick",
+                modal_tagline="INTELLIGENT BOOKING ORDER",
+            )
+
+        # Tier 3 / Fallback backup
+        guide_steps_backup = tuple(
+            f"{idx + 1}. Book {leg.from_station} to {leg.to_station} on "
+            f"{(leg.journey_date or boarding_date).strftime('%Y-%m-%d')} - Train {leg.train_no}."
+            for idx, leg in enumerate(legs)
+        )
+        return SolutionPresentation(
+            badge_text=badge_text,
+            strategy_label="Transfer Route",
+            comparison_sublabel=f"{max(0, len(legs) - 1)} transfer",
+            confirmed_tag="Confirmed Transfer" if is_confirmed else "Backup Option",
+            card_headline=(
+                f"Transfer route via {', '.join(split_stations) if split_stations else 'hub'}."
+            ),
+            alt_summary=f"{len(legs)} segments ({badge_text})",
+            guide_steps=guide_steps_backup,
+            guide_note="Check transfer buffer time carefully before booking connecting trains.",
+            action_button_label="Show Booking Order" if len(legs) > 1 else None,
+            modal_title="Transfer Booking Guide",
+            modal_tagline="MULTI-TRAIN CONNECTION",
+        )
+
+
+def calculate_booking_strategy(
+    legs: tuple[SubLeg, ...],
+    origin_date: date,
+    *,
+    boarding_station: str | None = None,
+    boarding_departure_time: str | None = None,
+    fare_surcharge: int = 0,
+) -> BookingStrategy:
+    """Evaluate berth inventory across legs and generate optimal booking strategy."""
     if len(legs) <= 1:
         leg = legs[0]
+        if boarding_station:
+            return OriginExtensionStrategyBuilder.build(
+                leg,
+                boarding_station=boarding_station,
+                boarding_date=origin_date,
+                boarding_departure_time=boarding_departure_time,
+                fare_surcharge=fare_surcharge,
+            )
+
         leg_date = leg.journey_date or origin_date
         step = BookingOrderStep(
             step_number=1,
@@ -263,80 +537,188 @@ def calculate_booking_strategy(legs: tuple[SubLeg, ...], origin_date: date) -> B
             ),
         )
 
-    first_leg = legs[0]
-    second_leg = legs[1]
-    seats1 = _extract_numeric_seats(first_leg)
-    seats2 = _extract_numeric_seats(second_leg)
-
     order: tuple[int, ...]
     steps: tuple[BookingOrderStep, ...]
+    headline: str
+    reason: str
+    probability: str
+
     if len(legs) == 2:
-        if seats2 > seats1:
-            order = (second_leg.leg_number, first_leg.leg_number)
-            primary_leg = second_leg
-            dependent_leg = first_leg
+        leg1 = legs[0]
+        leg2 = legs[1]
+        is_conf1 = leg1.status is AvailabilityStatus.AVAILABLE
+        is_conf2 = leg2.status is AvailabilityStatus.AVAILABLE
+
+        # Case A: Mixed status - One leg is Confirmed (AVL), One is RAC/WL
+        if is_conf1 and not is_conf2:
+            order = (leg1.leg_number, leg2.leg_number)
+            primary_leg = leg1
+            dependent_leg = leg2
+            conf_seats = _get_confirmed_seats(leg1)
             headline = (
-                f"Book Leg {second_leg.leg_number} "
-                f"({second_leg.from_station} to {second_leg.to_station}) "
-                "first for coach matching"
+                f"Book Leg {leg1.leg_number} ({leg1.from_station} to {leg1.to_station}) "
+                "first to secure confirmed berth and anchor coach"
             )
             reason = (
-                f"Leg {second_leg.leg_number} has more open seats ({seats2} available) than "
-                f"Leg {first_leg.leg_number} ({seats1} available). "
-                f"Securing your booking on Leg {second_leg.leg_number} first locks in your "
-                "confirmed coach ID (e.g., S3 or B2). "
-                f"You can then enter that coach ID as your 'Preferred Coach' when booking "
-                f"Leg {first_leg.leg_number}."
+                f"Leg {leg1.leg_number} has {conf_seats} confirmed open berths, securing a "
+                "guaranteed sleeper berth and immediately providing your confirmed Coach ID. "
+                f"Leg {leg2.leg_number} is in {dependent_leg.status.value} ({leg2.raw_status}), "
+                "where berth allocation only occurs at chart preparation. Securing your booking "
+                f"on Leg {leg1.leg_number} first gives you the Coach ID to enter in "
+                f"'Preferred Coach' when booking Leg {leg2.leg_number}."
             )
-            probability = "HIGH" if seats2 >= 4 and seats1 >= 1 else "MODERATE"
-        elif seats1 > seats2:
-            order = (first_leg.leg_number, second_leg.leg_number)
-            primary_leg = first_leg
-            dependent_leg = second_leg
+            probability = "MODERATE"
+        elif is_conf2 and not is_conf1:
+            order = (leg2.leg_number, leg1.leg_number)
+            primary_leg = leg2
+            dependent_leg = leg1
+            conf_seats = _get_confirmed_seats(leg2)
             headline = (
-                f"Book Leg {first_leg.leg_number} "
-                f"({first_leg.from_station} to {first_leg.to_station}) "
-                "first for coach matching"
+                f"Book Leg {leg2.leg_number} ({leg2.from_station} to {leg2.to_station}) "
+                "first to secure confirmed berth and anchor coach"
             )
             reason = (
-                f"Leg {first_leg.leg_number} has more open seats ({seats1} available) than "
-                f"Leg {second_leg.leg_number} ({seats2} available). "
-                f"Securing your booking on Leg {first_leg.leg_number} first locks in your "
-                "confirmed coach ID. "
-                f"You can then enter that coach ID as your 'Preferred Coach' when booking "
-                f"Leg {second_leg.leg_number}."
+                f"Leg {leg2.leg_number} has {conf_seats} confirmed open berths, securing a "
+                "guaranteed sleeper berth and immediately providing your confirmed Coach ID. "
+                f"Leg {leg1.leg_number} is in {dependent_leg.status.value} ({leg1.raw_status}), "
+                "where berth allocation only occurs at chart preparation. Securing your booking "
+                f"on Leg {leg2.leg_number} first gives you the Coach ID to enter in "
+                f"'Preferred Coach' when booking Leg {leg1.leg_number}."
             )
-            probability = "HIGH" if seats1 >= 4 and seats2 >= 1 else "MODERATE"
-        else:
-            order = (first_leg.leg_number, second_leg.leg_number)
-            primary_leg = first_leg
-            dependent_leg = second_leg
-            if seats1 <= 1:
+            probability = "MODERATE"
+
+        # Case B: Both legs are Confirmed (AVL)
+        elif is_conf1 and is_conf2:
+            seats1 = _get_confirmed_seats(leg1)
+            seats2 = _get_confirmed_seats(leg2)
+            if seats2 > seats1:
+                order = (leg2.leg_number, leg1.leg_number)
+                primary_leg = leg2
+                dependent_leg = leg1
                 headline = (
-                    f"Book Leg {first_leg.leg_number} first, then select nearby coach "
-                    f"preference for Leg {second_leg.leg_number}"
+                    f"Book Leg {leg2.leg_number} "
+                    f"({leg2.from_station} to {leg2.to_station}) "
+                    "first for coach matching"
                 )
                 reason = (
-                    "Both legs have scarce inventory (1 seat each). Book Leg "
-                    f"{first_leg.leg_number} immediately to confirm, then enter its coach "
-                    f"ID when booking Leg {second_leg.leg_number}. If that coach is full, "
-                    "IRCTC PRS will allocate the nearest available coach."
+                    f"Leg {leg2.leg_number} has more open seats ({seats2} available) than "
+                    f"Leg {leg1.leg_number} ({seats1} available). "
+                    f"Securing your booking on Leg {leg2.leg_number} first locks in your "
+                    "confirmed coach ID (e.g., S3 or B2). "
+                    f"You can then enter that coach ID as your 'Preferred Coach' when booking "
+                    f"Leg {leg1.leg_number}."
                 )
-                probability = "BEST_EFFORT"
+                probability = "HIGH" if seats2 >= 4 and seats1 >= 1 else "MODERATE"
+            elif seats1 > seats2:
+                order = (leg1.leg_number, leg2.leg_number)
+                primary_leg = leg1
+                dependent_leg = leg2
+                headline = (
+                    f"Book Leg {leg1.leg_number} "
+                    f"({leg1.from_station} to {leg1.to_station}) "
+                    "first for coach matching"
+                )
+                reason = (
+                    f"Leg {leg1.leg_number} has more open seats ({seats1} available) than "
+                    f"Leg {leg2.leg_number} ({seats2} available). "
+                    f"Securing your booking on Leg {leg1.leg_number} first locks in your "
+                    "confirmed coach ID. "
+                    f"You can then enter that coach ID as your 'Preferred Coach' when booking "
+                    f"Leg {leg2.leg_number}."
+                )
+                probability = "HIGH" if seats1 >= 4 and seats2 >= 1 else "MODERATE"
             else:
+                order = (leg1.leg_number, leg2.leg_number)
+                primary_leg = leg1
+                dependent_leg = leg2
+                if seats1 <= 1:
+                    headline = (
+                        f"Book Leg {leg1.leg_number} first, then select nearby coach "
+                        f"preference for Leg {leg2.leg_number}"
+                    )
+                    reason = (
+                        "Both legs have scarce inventory (1 seat each). Book Leg "
+                        f"{leg1.leg_number} immediately to confirm, then enter its coach "
+                        f"ID when booking Leg {leg2.leg_number}. If that coach is full, "
+                        "IRCTC PRS will allocate the nearest available coach."
+                    )
+                    probability = "BEST_EFFORT"
+                else:
+                    headline = (
+                        f"Book Leg {leg1.leg_number} first, then match coach in "
+                        f"Leg {leg2.leg_number}"
+                    )
+                    reason = (
+                        f"Both legs have balanced availability ({seats1} seats each). Book Leg "
+                        f"{leg1.leg_number} to receive your coach number, then set that coach as "
+                        f"preferred when booking Leg {leg2.leg_number}."
+                    )
+                    probability = "HIGH" if seats1 >= 5 else "MODERATE"
+
+        # Case C: Both legs are RAC (or non-confirmed)
+        else:
+            rac1 = _get_rac_position(leg1)
+            rac2 = _get_rac_position(leg2)
+            if rac2 < rac1:
+                order = (leg2.leg_number, leg1.leg_number)
+                primary_leg = leg2
+                dependent_leg = leg1
                 headline = (
-                    f"Book Leg {first_leg.leg_number} first, then match coach in "
-                    f"Leg {second_leg.leg_number}"
+                    f"Book Leg {leg2.leg_number} ({leg2.from_station} to {leg2.to_station}) "
+                    "first (higher RAC confirmation priority)"
                 )
                 reason = (
-                    f"Both legs have balanced availability ({seats1} seats each). Book Leg "
-                    f"{first_leg.leg_number} to receive your coach number, then set that coach as "
-                    f"preferred when booking Leg {second_leg.leg_number}."
+                    f"Both legs are in RAC. Leg {leg2.leg_number} ({leg2.raw_status}) is closer "
+                    f"to confirmation than Leg {leg1.leg_number} ({leg1.raw_status}). Note that "
+                    "coach and berth assignments for RAC tickets are made during final chart "
+                    "preparation (4 hours prior to departure)."
                 )
-                probability = "HIGH" if seats1 >= 5 else "MODERATE"
+            else:
+                order = (leg1.leg_number, leg2.leg_number)
+                primary_leg = leg1
+                dependent_leg = leg2
+                headline = (
+                    f"Book Leg {leg1.leg_number} ({leg1.from_station} to {leg1.to_station}) "
+                    "first (higher RAC confirmation priority)"
+                )
+                reason = (
+                    f"Both legs are in RAC. Leg {leg1.leg_number} ({leg1.raw_status}) has equal "
+                    f"or higher confirmation likelihood than Leg {leg2.leg_number} "
+                    f"({leg2.raw_status}). Note that coach and berth assignments for RAC tickets "
+                    "are made during final chart preparation (4 hours prior to departure)."
+                )
+            probability = "BEST_EFFORT"
 
         date_primary = primary_leg.journey_date or origin_date
         date_dependent = dependent_leg.journey_date or origin_date
+
+        if primary_leg.status is AvailabilityStatus.AVAILABLE:
+            s1_title = (
+                f"Step 1: Book Leg {primary_leg.leg_number} "
+                f"({primary_leg.from_station} -> {primary_leg.to_station}) - Confirmed Anchor"
+            )
+            s1_instructions = (
+                f"Book on IRCTC for journey date {date_primary.strftime('%d-%b-%Y')} "
+                f"(Dep: {primary_leg.departure_time or 'Scheduled'}). Complete payment and note "
+                "assigned Coach ID (e.g. S4, B2, M1) from your confirmation screen."
+            )
+            s1_tip = (
+                "Do not set preferred coach for this first ticket. "
+                "Let IRCTC assign the primary coach."
+            )
+        else:
+            s1_title = (
+                f"Step 1: Book Leg {primary_leg.leg_number} "
+                f"({primary_leg.from_station} -> {primary_leg.to_station}) - Primary RAC Leg"
+            )
+            s1_instructions = (
+                f"Book on IRCTC for journey date {date_primary.strftime('%d-%b-%Y')} "
+                f"(Dep: {primary_leg.departure_time or 'Scheduled'}). Secure this leg first."
+            )
+            s1_tip = (
+                "Primary RAC booking - coach number will be assigned during final chart "
+                "preparation."
+            )
 
         step1 = BookingOrderStep(
             step_number=1,
@@ -347,20 +729,45 @@ def calculate_booking_strategy(legs: tuple[SubLeg, ...], origin_date: date) -> B
             departure_time=primary_leg.departure_time,
             raw_status=primary_leg.raw_status,
             available_seats=_extract_numeric_seats(primary_leg),
-            action_title=(
-                f"Step 1: Book Leg {primary_leg.leg_number} "
-                f"({primary_leg.from_station} -> {primary_leg.to_station})"
-            ),
-            action_instructions=(
-                f"Book on IRCTC for journey date {date_primary.strftime('%d-%b-%Y')} "
-                f"(Dep: {primary_leg.departure_time or 'Scheduled'}). Complete payment and note "
-                "assigned Coach ID (e.g. S4, B2, M1) from your confirmation screen."
-            ),
-            preferred_coach_tip=(
-                "Do not set preferred coach for this first ticket. "
-                "Let IRCTC assign the primary coach."
-            ),
+            action_title=s1_title,
+            action_instructions=s1_instructions,
+            preferred_coach_tip=s1_tip,
         )
+
+        if primary_leg.status is AvailabilityStatus.AVAILABLE:
+            s2_title = (
+                f"Step 2: Book Leg {dependent_leg.leg_number} "
+                f"({dependent_leg.from_station} -> {dependent_leg.to_station}) "
+                "with Coach Preference"
+            )
+            s2_instructions = (
+                f"Immediately book on IRCTC for journey date {date_dependent.strftime('%d-%b-%Y')} "
+                f"(Dep: {dependent_leg.departure_time or 'Scheduled'}). On the Passenger Details "
+                "page, expand 'Other Preferences' and enter the Coach ID from Step 1."
+            )
+            if dependent_leg.status is AvailabilityStatus.AVAILABLE:
+                s2_tip = (
+                    "Entering the Coach ID from Step 1 instructs IRCTC to seat you in the same "
+                    "coach. If the exact coach is full, IRCTC will allocate the closest adjacent "
+                    "coach."
+                )
+            else:
+                s2_tip = (
+                    "Entering the Coach ID from Step 1 instructs IRCTC PRS to seat or allocate "
+                    "your RAC berth in or nearest to your confirmed coach during chart preparation."
+                )
+        else:
+            s2_title = (
+                f"Step 2: Book Leg {dependent_leg.leg_number} "
+                f"({dependent_leg.from_station} -> {dependent_leg.to_station}) - Connecting RAC Leg"
+            )
+            s2_instructions = (
+                f"Book on IRCTC for journey date {date_dependent.strftime('%d-%b-%Y')} "
+                f"(Dep: {dependent_leg.departure_time or 'Scheduled'})."
+            )
+            s2_tip = (
+                "Both legs are in RAC. Berths and coaches are allocated during chart preparation."
+            )
 
         step2 = BookingOrderStep(
             step_number=2,
@@ -371,76 +778,101 @@ def calculate_booking_strategy(legs: tuple[SubLeg, ...], origin_date: date) -> B
             departure_time=dependent_leg.departure_time,
             raw_status=dependent_leg.raw_status,
             available_seats=_extract_numeric_seats(dependent_leg),
-            action_title=(
-                f"Step 2: Book Leg {dependent_leg.leg_number} "
-                f"({dependent_leg.from_station} -> {dependent_leg.to_station})"
-            ),
-            action_instructions=(
-                f"Immediately book on IRCTC for journey date {date_dependent.strftime('%d-%b-%Y')} "
-                f"(Dep: {dependent_leg.departure_time or 'Scheduled'}). On the Passenger Details "
-                "page, expand 'Other Preferences' and enter the Coach ID from Step 1."
-            ),
-            preferred_coach_tip=(
-                "Entering the Coach ID from Step 1 instructs IRCTC to seat you in the same coach. "
-                "If the exact coach is full, IRCTC will allocate the closest adjacent coach."
-            ),
+            action_title=s2_title,
+            action_instructions=s2_instructions,
+            preferred_coach_tip=s2_tip,
         )
 
         steps = (step1, step2)
     else:
-        sorted_legs = sorted(
-            legs, key=lambda item: (_extract_numeric_seats(item), item.distance_km), reverse=True
-        )
+
+        def _leg_priority_key(item: SubLeg) -> tuple[int, int, int]:
+            if item.status is AvailabilityStatus.AVAILABLE:
+                tier = 2
+                score = _get_confirmed_seats(item)
+            elif item.status is AvailabilityStatus.RAC:
+                tier = 1
+                score = -_get_rac_position(item)
+            else:
+                tier = 0
+                score = 0
+            return (tier, score, item.distance_km)
+
+        sorted_legs = sorted(legs, key=_leg_priority_key, reverse=True)
         order = tuple(item.leg_number for item in sorted_legs)
         first = sorted_legs[0]
-        headline = (
-            f"Book Leg {first.leg_number} ({first.from_station} to {first.to_station}) "
-            "first as anchor coach"
-        )
-        reason = (
-            f"Leg {first.leg_number} has the highest seat buffer "
-            f"({_extract_numeric_seats(first)} seats). "
-            "Booking it first establishes your anchor coach ID for the remaining connecting legs."
-        )
-        probability = "MODERATE"
+
+        if first.status is AvailabilityStatus.AVAILABLE:
+            headline = (
+                f"Book Leg {first.leg_number} ({first.from_station} to {first.to_station}) "
+                "first as anchor coach"
+            )
+            reason = (
+                f"Leg {first.leg_number} has confirmed berths "
+                f"({_get_confirmed_seats(first)} seats available). Booking it first establishes "
+                "your anchor coach ID for the remaining connecting legs."
+            )
+            all_avl = all(item.status is AvailabilityStatus.AVAILABLE for item in legs)
+            probability = "HIGH" if all_avl else "MODERATE"
+        else:
+            headline = (
+                f"Book Leg {first.leg_number} ({first.from_station} to {first.to_station}) "
+                "first (best confirmation queue)"
+            )
+            reason = (
+                f"All legs are in RAC/Waitlist. Leg {first.leg_number} ({first.raw_status}) has "
+                "the highest confirmation priority. Berths will be allotted at chart preparation."
+            )
+            probability = "BEST_EFFORT"
+
         step_list: list[BookingOrderStep] = []
         for idx, leg in enumerate(sorted_legs):
             ldate = leg.journey_date or origin_date
             if idx == 0:
-                s = BookingOrderStep(
-                    step_number=1,
-                    leg_number=leg.leg_number,
-                    from_station=leg.from_station,
-                    to_station=leg.to_station,
-                    journey_date=ldate,
-                    departure_time=leg.departure_time,
-                    raw_status=leg.raw_status,
-                    available_seats=_extract_numeric_seats(leg),
-                    action_title=f"Step 1: Book Leg {leg.leg_number} (Anchor Leg)",
-                    action_instructions=(
+                if leg.status is AvailabilityStatus.AVAILABLE:
+                    action_title = f"Step 1: Book Leg {leg.leg_number} (Confirmed Anchor Leg)"
+                    action_instructions = (
                         f"Book on IRCTC for journey date {ldate.strftime('%d-%b-%Y')} "
                         f"({leg.from_station} -> {leg.to_station}). "
                         "Note down the allotted Coach ID."
-                    ),
-                    preferred_coach_tip="Let IRCTC assign primary coach for this anchor ticket.",
-                )
-            else:
-                s = BookingOrderStep(
-                    step_number=idx + 1,
-                    leg_number=leg.leg_number,
-                    from_station=leg.from_station,
-                    to_station=leg.to_station,
-                    journey_date=ldate,
-                    departure_time=leg.departure_time,
-                    raw_status=leg.raw_status,
-                    available_seats=_extract_numeric_seats(leg),
-                    action_title=f"Step {idx + 1}: Book Leg {leg.leg_number} with Coach Preference",
-                    action_instructions=(
+                    )
+                    preferred_coach_tip = "Let IRCTC assign primary coach for this anchor ticket."
+                else:
+                    action_title = f"Step 1: Book Leg {leg.leg_number} (Primary RAC Leg)"
+                    action_instructions = (
                         f"Book on IRCTC for journey date {ldate.strftime('%d-%b-%Y')} "
-                        f"({leg.from_station} -> {leg.to_station}). Enter Coach ID from Step 1."
-                    ),
-                    preferred_coach_tip="Set Preferred Coach ID to match your anchor ticket.",
-                )
+                        f"({leg.from_station} -> {leg.to_station})."
+                    )
+                    preferred_coach_tip = "Primary RAC booking - coach assigned during charting."
+            else:
+                action_title = f"Step {idx + 1}: Book Leg {leg.leg_number} with Coach Preference"
+                if first.status is AvailabilityStatus.AVAILABLE:
+                    action_instructions = (
+                        f"Book on IRCTC for journey date {ldate.strftime('%d-%b-%Y')} "
+                        f"({leg.from_station} -> {leg.to_station}). "
+                        "Enter Coach ID from Step 1."
+                    )
+                    preferred_coach_tip = "Set Preferred Coach ID to match your anchor ticket."
+                else:
+                    action_instructions = (
+                        f"Book on IRCTC for journey date {ldate.strftime('%d-%b-%Y')} "
+                        f"({leg.from_station} -> {leg.to_station})."
+                    )
+                    preferred_coach_tip = "RAC leg - berths allocated during chart preparation."
+
+            s = BookingOrderStep(
+                step_number=idx + 1,
+                leg_number=leg.leg_number,
+                from_station=leg.from_station,
+                to_station=leg.to_station,
+                journey_date=ldate,
+                departure_time=leg.departure_time,
+                raw_status=leg.raw_status,
+                available_seats=_extract_numeric_seats(leg),
+                action_title=action_title,
+                action_instructions=action_instructions,
+                preferred_coach_tip=preferred_coach_tip,
+            )
             step_list.append(s)
         steps = tuple(step_list)
 
