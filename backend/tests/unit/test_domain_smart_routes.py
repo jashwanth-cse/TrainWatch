@@ -425,6 +425,174 @@ def test_calculate_booking_strategy_single_leg_and_3leg() -> None:
     strat3 = calculate_booking_strategy((leg_a, leg_b, leg_c), today)
     assert strat3.recommended_order[0] == 2  # leg 2 had 12 seats, so it is anchor leg
 
+
+def test_calculate_booking_strategy_rac_vs_avl_prioritizes_confirmed_berth() -> None:
+    """When Leg 1 has RAC 15 and Leg 2 has AVL 5, Leg 2 MUST be booked first."""
+    from trainwatch.domain.smart_routes import calculate_booking_strategy
+
+    today = date(2026, 12, 1)
+    leg_rac = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="RJPM",
+        to_station="MDU",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 15",
+        position=15,
+        fare=140,
+        departure_time="19:55",
+        arrival_time="21:15",
+        duration_minutes=80,
+        distance_km=89,
+        journey_date=today,
+    )
+    leg_avl = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="MDU",
+        to_station="MS",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 5",
+        position=5,
+        fare=280,
+        departure_time="21:20",
+        arrival_time="06:40",
+        duration_minutes=560,
+        distance_km=495,
+        journey_date=today,
+    )
+
+    strat = calculate_booking_strategy((leg_rac, leg_avl), today)
+    # Leg 2 (AVL 5) must be booked first as confirmed anchor
+    assert strat.recommended_order == (2, 1)
+    assert "Book Leg 2" in strat.headline
+    assert "secure confirmed berth" in strat.headline
+    assert "5 confirmed open berths" in strat.strategy_reason
+    assert "where berth allocation only occurs at chart preparation" in strat.strategy_reason
+    assert strat.same_coach_probability == "MODERATE"
+    assert strat.steps[0].leg_number == 2
+    assert "Confirmed Anchor" in strat.steps[0].action_title
+    assert strat.steps[1].leg_number == 1
+    assert "with Coach Preference" in strat.steps[1].action_title
+    assert "RAC berth" in (strat.steps[1].preferred_coach_tip or "")
+
+    # Inverted case: Leg 1 is AVL 5 and Leg 2 is RAC 15 -> Leg 1 must be booked first
+    strat_inv = calculate_booking_strategy((leg_avl, leg_rac), today)
+    assert strat_inv.recommended_order == (2, 1)
+    assert strat_inv.steps[0].leg_number == 2
+
+
+def test_calculate_booking_strategy_both_rac_prioritizes_lower_queue() -> None:
+    """When both legs are RAC, prioritize lower queue position for higher confirmation."""
+    from trainwatch.domain.smart_routes import calculate_booking_strategy
+
+    today = date(2026, 12, 1)
+    leg_rac15 = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="RJPM",
+        to_station="MDU",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 15",
+        position=15,
+        fare=140,
+        departure_time="19:55",
+        arrival_time="21:15",
+        duration_minutes=80,
+        distance_km=89,
+        journey_date=today,
+    )
+    leg_rac3 = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai Express",
+        from_station="MDU",
+        to_station="MS",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 3",
+        position=3,
+        fare=280,
+        departure_time="21:20",
+        arrival_time="06:40",
+        duration_minutes=560,
+        distance_km=495,
+        journey_date=today,
+    )
+
+    strat = calculate_booking_strategy((leg_rac15, leg_rac3), today)
+    # Leg 2 has RAC 3 (closer to confirmation than RAC 15), so Leg 2 is first
+    assert strat.recommended_order == (2, 1)
+    assert strat.same_coach_probability == "BEST_EFFORT"
+    assert "chart preparation" in strat.strategy_reason
+
+
+def test_calculate_booking_strategy_3leg_mixed_rac_and_avl() -> None:
+    """Multi-leg sorting ensures all confirmed legs precede any RAC legs."""
+    from trainwatch.domain.smart_routes import calculate_booking_strategy
+
+    today = date(2026, 12, 1)
+    leg1 = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="A",
+        to_station="B",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 20",
+        position=20,
+        distance_km=100,
+        journey_date=today,
+    )
+    leg2 = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="B",
+        to_station="C",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 2",
+        position=2,
+        distance_km=200,
+        journey_date=today,
+    )
+    leg3 = SubLeg(
+        leg_number=3,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="C",
+        to_station="D",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 8",
+        position=8,
+        distance_km=300,
+        journey_date=today,
+    )
+
+    strat = calculate_booking_strategy((leg1, leg2, leg3), today)
+    # Confirmed leg 3 (8 seats) > Confirmed leg 2 (2 seats) > RAC leg 1
+    assert strat.recommended_order == (3, 2, 1)
+    assert strat.same_coach_probability == "MODERATE"
+    assert strat.steps[0].leg_number == 3
+    assert strat.steps[1].leg_number == 2
+    assert strat.steps[2].leg_number == 1
+
     # Coverage for _extract_numeric_seats fallback branches
     from trainwatch.domain.smart_routes import _extract_numeric_seats
 
@@ -455,3 +623,183 @@ def test_calculate_booking_strategy_single_leg_and_3leg() -> None:
         position=None,
     )
     assert _extract_numeric_seats(subleg_wl_nodigit) == 0
+
+    # Additional coverage for _get_confirmed_seats and _get_rac_position
+    from trainwatch.domain.smart_routes import _get_confirmed_seats, _get_rac_position
+
+    assert _get_confirmed_seats(subleg_wl_nodigit) == 0
+    assert _get_rac_position(subleg_avl_nodigit) == 999999
+
+    subleg_avl_regex = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="RJPM",
+        to_station="MDU",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 4",
+        position=None,
+    )
+    assert _get_confirmed_seats(subleg_avl_regex) == 4
+
+    subleg_rac_regex = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="RJPM",
+        to_station="MDU",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 6",
+        position=None,
+    )
+    assert _get_rac_position(subleg_rac_regex) == 6
+
+    # Balanced confirmed inventory with >= 5 seats
+    leg_bal1 = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="A",
+        to_station="B",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 6",
+        position=6,
+        journey_date=today,
+    )
+    leg_bal2 = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="B",
+        to_station="C",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 6",
+        position=6,
+        journey_date=today,
+    )
+    strat_bal = calculate_booking_strategy((leg_bal1, leg_bal2), today)
+    assert strat_bal.same_coach_probability == "HIGH"
+    assert "balanced availability" in strat_bal.strategy_reason
+
+    # Both RAC where Leg 1 has lower queue than Leg 2
+    leg_r1 = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="A",
+        to_station="B",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 2",
+        position=2,
+        journey_date=today,
+    )
+    leg_r2 = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="B",
+        to_station="C",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 10",
+        position=10,
+        journey_date=today,
+    )
+    strat_r = calculate_booking_strategy((leg_r1, leg_r2), today)
+    assert strat_r.recommended_order == (1, 2)
+    assert strat_r.same_coach_probability == "BEST_EFFORT"
+
+    # 3-leg all RAC/Waitlist coverage
+    leg_w1 = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="A",
+        to_station="B",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 8",
+        position=8,
+        distance_km=100,
+        journey_date=today,
+    )
+    leg_w2 = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="B",
+        to_station="C",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 2",
+        position=2,
+        distance_km=200,
+        journey_date=today,
+    )
+    leg_w3 = SubLeg(
+        leg_number=3,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="C",
+        to_station="D",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.WAITLIST,
+        raw_status="WL 15",
+        position=15,
+        distance_km=150,
+        journey_date=today,
+    )
+    strat_all_w = calculate_booking_strategy((leg_w1, leg_w2, leg_w3), today)
+    assert strat_all_w.recommended_order == (2, 1, 3)
+    assert strat_all_w.same_coach_probability == "BEST_EFFORT"
+    assert "best confirmation queue" in strat_all_w.headline
+
+
+def test_get_confirmed_seats_and_rac_position_fallback() -> None:
+    """Test fallback when position is None/0 and raw_status contains no digits."""
+    from trainwatch.domain.smart_routes import _get_confirmed_seats, _get_rac_position
+
+    today = date(2026, 12, 1)
+    leg_avl_no_digits = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="A",
+        to_station="B",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE",
+        position=None,
+        journey_date=today,
+    )
+    assert _get_confirmed_seats(leg_avl_no_digits) == 1
+
+    leg_rac_no_digits = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai",
+        from_station="A",
+        to_station="B",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC",
+        position=None,
+        journey_date=today,
+    )
+    assert _get_rac_position(leg_rac_no_digits) == 1
