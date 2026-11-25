@@ -5,8 +5,8 @@ on:
     inputs:
       force_build:
         description: 'Force build even if app version matches latest release'
-        required: false
-        default: false
+        required: true
+        default: true
         type: boolean
   push:
     branches:
