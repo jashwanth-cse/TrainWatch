@@ -159,7 +159,7 @@ export function buildSmartRouteCacheKey(params: {
 }
 
 /**
- * Extract numeric available seats from a SubLeg's raw status or position.
+ * Extract numeric available seats or queue position from a SubLeg.
  */
 export function extractNumericSeats(leg: SubLeg): number {
   if (typeof leg.position === 'number' && leg.position > 0) {
@@ -167,6 +167,48 @@ export function extractNumericSeats(leg: SubLeg): number {
   }
   const match = (leg.raw_status || '').match(/\d+/);
   return match ? parseInt(match[0], 10) : 0;
+}
+
+/**
+ * Check if a SubLeg is confirmed (AVAILABLE status).
+ */
+export function isLegConfirmed(leg: SubLeg): boolean {
+  if (leg.status) {
+    return leg.status.toUpperCase() === 'AVAILABLE';
+  }
+  const raw = (leg.raw_status || '').trim().toUpperCase();
+  return raw.startsWith('AVL') || raw.startsWith('AVAILABLE') || raw.startsWith('CURR_AVBL');
+}
+
+/**
+ * Check if a SubLeg is in RAC status.
+ */
+export function isLegRac(leg: SubLeg): boolean {
+  if (leg.status) {
+    return leg.status.toUpperCase() === 'RAC';
+  }
+  const raw = (leg.raw_status || '').trim().toUpperCase();
+  return raw.startsWith('RAC');
+}
+
+/**
+ * Extract confirmed seat count if subleg is in AVAILABLE status.
+ */
+export function getConfirmedSeats(leg: SubLeg): number {
+  if (!isLegConfirmed(leg)) return 0;
+  if (typeof leg.position === 'number' && leg.position > 0) return leg.position;
+  const match = (leg.raw_status || '').match(/\d+/);
+  return match ? parseInt(match[0], 10) : 1;
+}
+
+/**
+ * Extract RAC queue position if subleg is in RAC status.
+ */
+export function getRacPosition(leg: SubLeg): number {
+  if (!isLegRac(leg)) return 999999;
+  if (typeof leg.position === 'number' && leg.position > 0) return leg.position;
+  const match = (leg.raw_status || '').match(/\d+/);
+  return match ? parseInt(match[0], 10) : 1;
 }
 
 /**
@@ -223,44 +265,97 @@ export function ensureBookingStrategy(
   const steps: BookingOrderStep[] = [];
 
   if (legs.length === 2) {
-    const [firstLeg, secondLeg] = legs;
-    const seats1 = extractNumericSeats(firstLeg);
-    const seats2 = extractNumericSeats(secondLeg);
+    const [leg1, leg2] = legs;
+    const isConf1 = isLegConfirmed(leg1);
+    const isConf2 = isLegConfirmed(leg2);
 
     let primaryLeg: SubLeg;
     let dependentLeg: SubLeg;
 
-    if (seats2 > seats1) {
-      order = [secondLeg.leg_number, firstLeg.leg_number];
-      primaryLeg = secondLeg;
-      dependentLeg = firstLeg;
-      headline = `Book Leg ${secondLeg.leg_number} (${secondLeg.from_station} to ${secondLeg.to_station}) first for coach matching`;
-      reason = `Leg ${secondLeg.leg_number} has more open seats (${seats2} available) than Leg ${firstLeg.leg_number} (${seats1} available). Securing your booking on Leg ${secondLeg.leg_number} first locks in your confirmed coach ID (e.g., S3 or B2). You can then enter that coach ID as your 'Preferred Coach' when booking Leg ${firstLeg.leg_number}.`;
-      probability = seats2 >= 4 && seats1 >= 1 ? 'HIGH' : 'MODERATE';
-    } else if (seats1 > seats2) {
-      order = [firstLeg.leg_number, secondLeg.leg_number];
-      primaryLeg = firstLeg;
-      dependentLeg = secondLeg;
-      headline = `Book Leg ${firstLeg.leg_number} (${firstLeg.from_station} to ${firstLeg.to_station}) first for coach matching`;
-      reason = `Leg ${firstLeg.leg_number} has more open seats (${seats1} available) than Leg ${secondLeg.leg_number} (${seats2} available). Securing your booking on Leg ${firstLeg.leg_number} first locks in your confirmed coach ID. You can then enter that coach ID as your 'Preferred Coach' when booking Leg ${secondLeg.leg_number}.`;
-      probability = seats1 >= 4 && seats2 >= 1 ? 'HIGH' : 'MODERATE';
-    } else {
-      order = [firstLeg.leg_number, secondLeg.leg_number];
-      primaryLeg = firstLeg;
-      dependentLeg = secondLeg;
-      if (seats1 <= 1) {
-        headline = `Book Leg ${firstLeg.leg_number} first, then select nearby coach preference for Leg ${secondLeg.leg_number}`;
-        reason = `Both legs have scarce inventory (1 seat each). Book Leg ${firstLeg.leg_number} immediately to confirm, then enter its coach ID when booking Leg ${secondLeg.leg_number}. If that coach is full, IRCTC PRS will allocate the nearest available coach.`;
-        probability = 'BEST_EFFORT';
+    // Case A: Mixed status - One leg is Confirmed (AVL), One is RAC/WL
+    if (isConf1 && !isConf2) {
+      order = [leg1.leg_number, leg2.leg_number];
+      primaryLeg = leg1;
+      dependentLeg = leg2;
+      const confSeats = getConfirmedSeats(leg1);
+      headline = `Book Leg ${leg1.leg_number} (${leg1.from_station} to ${leg1.to_station}) first to secure confirmed berth and anchor coach`;
+      reason = `Leg ${leg1.leg_number} has ${confSeats} confirmed open berths, securing a guaranteed sleeper berth and immediately providing your confirmed Coach ID. Leg ${leg2.leg_number} is in ${dependentLeg.status || 'RAC'} (${leg2.raw_status}), where berth allocation only occurs at chart preparation. Securing your booking on Leg ${leg1.leg_number} first gives you the Coach ID to enter in 'Preferred Coach' when booking Leg ${leg2.leg_number}.`;
+      probability = 'MODERATE';
+    } else if (isConf2 && !isConf1) {
+      order = [leg2.leg_number, leg1.leg_number];
+      primaryLeg = leg2;
+      dependentLeg = leg1;
+      const confSeats = getConfirmedSeats(leg2);
+      headline = `Book Leg ${leg2.leg_number} (${leg2.from_station} to ${leg2.to_station}) first to secure confirmed berth and anchor coach`;
+      reason = `Leg ${leg2.leg_number} has ${confSeats} confirmed open berths, securing a guaranteed sleeper berth and immediately providing your confirmed Coach ID. Leg ${leg1.leg_number} is in ${dependentLeg.status || 'RAC'} (${leg1.raw_status}), where berth allocation only occurs at chart preparation. Securing your booking on Leg ${leg2.leg_number} first gives you the Coach ID to enter in 'Preferred Coach' when booking Leg ${leg1.leg_number}.`;
+      probability = 'MODERATE';
+    } else if (isConf1 && isConf2) {
+      // Case B: Both Confirmed (AVL)
+      const seats1 = getConfirmedSeats(leg1);
+      const seats2 = getConfirmedSeats(leg2);
+      if (seats2 > seats1) {
+        order = [leg2.leg_number, leg1.leg_number];
+        primaryLeg = leg2;
+        dependentLeg = leg1;
+        headline = `Book Leg ${leg2.leg_number} (${leg2.from_station} to ${leg2.to_station}) first for coach matching`;
+        reason = `Leg ${leg2.leg_number} has more open seats (${seats2} available) than Leg ${leg1.leg_number} (${seats1} available). Securing your booking on Leg ${leg2.leg_number} first locks in your confirmed coach ID (e.g., S3 or B2). You can then enter that coach ID as your 'Preferred Coach' when booking Leg ${leg1.leg_number}.`;
+        probability = seats2 >= 4 && seats1 >= 1 ? 'HIGH' : 'MODERATE';
+      } else if (seats1 > seats2) {
+        order = [leg1.leg_number, leg2.leg_number];
+        primaryLeg = leg1;
+        dependentLeg = leg2;
+        headline = `Book Leg ${leg1.leg_number} (${leg1.from_station} to ${leg1.to_station}) first for coach matching`;
+        reason = `Leg ${leg1.leg_number} has more open seats (${seats1} available) than Leg ${leg2.leg_number} (${seats2} available). Securing your booking on Leg ${leg1.leg_number} first locks in your confirmed coach ID. You can then enter that coach ID as your 'Preferred Coach' when booking Leg ${leg2.leg_number}.`;
+        probability = seats1 >= 4 && seats2 >= 1 ? 'HIGH' : 'MODERATE';
       } else {
-        headline = `Book Leg ${firstLeg.leg_number} first, then match coach in Leg ${secondLeg.leg_number}`;
-        reason = `Both legs have balanced availability (${seats1} seats each). Book Leg ${firstLeg.leg_number} to receive your coach number, then set that coach as preferred when booking Leg ${secondLeg.leg_number}.`;
-        probability = seats1 >= 5 ? 'HIGH' : 'MODERATE';
+        order = [leg1.leg_number, leg2.leg_number];
+        primaryLeg = leg1;
+        dependentLeg = leg2;
+        if (seats1 <= 1) {
+          headline = `Book Leg ${leg1.leg_number} first, then select nearby coach preference for Leg ${leg2.leg_number}`;
+          reason = `Both legs have scarce inventory (1 seat each). Book Leg ${leg1.leg_number} immediately to confirm, then enter its coach ID when booking Leg ${leg2.leg_number}. If that coach is full, IRCTC PRS will allocate the nearest available coach.`;
+          probability = 'BEST_EFFORT';
+        } else {
+          headline = `Book Leg ${leg1.leg_number} first, then match coach in Leg ${leg2.leg_number}`;
+          reason = `Both legs have balanced availability (${seats1} seats each). Book Leg ${leg1.leg_number} to receive your coach number, then set that coach as preferred when booking Leg ${leg2.leg_number}.`;
+          probability = seats1 >= 5 ? 'HIGH' : 'MODERATE';
+        }
       }
+    } else {
+      // Case C: Both RAC / Non-confirmed
+      const rac1 = getRacPosition(leg1);
+      const rac2 = getRacPosition(leg2);
+      if (rac2 < rac1) {
+        order = [leg2.leg_number, leg1.leg_number];
+        primaryLeg = leg2;
+        dependentLeg = leg1;
+        headline = `Book Leg ${leg2.leg_number} (${leg2.from_station} to ${leg2.to_station}) first (higher RAC confirmation priority)`;
+        reason = `Both legs are in RAC. Leg ${leg2.leg_number} (${leg2.raw_status}) is closer to confirmation than Leg ${leg1.leg_number} (${leg1.raw_status}). Note that coach and berth assignments for RAC tickets are made during final chart preparation (4 hours prior to departure).`;
+      } else {
+        order = [leg1.leg_number, leg2.leg_number];
+        primaryLeg = leg1;
+        dependentLeg = leg2;
+        headline = `Book Leg ${leg1.leg_number} (${leg1.from_station} to ${leg1.to_station}) first (higher RAC confirmation priority)`;
+        reason = `Both legs are in RAC. Leg ${leg1.leg_number} (${leg1.raw_status}) has equal or higher confirmation likelihood than Leg ${leg2.leg_number} (${leg2.raw_status}). Note that coach and berth assignments for RAC tickets are made during final chart preparation (4 hours prior to departure).`;
+      }
+      probability = 'BEST_EFFORT';
     }
 
     const datePrimary = primaryLeg.journey_date || originDate || '';
     const dateDependent = dependentLeg.journey_date || originDate || '';
+
+    let s1Title: string;
+    let s1Instr: string;
+    let s1Tip: string;
+    if (isLegConfirmed(primaryLeg)) {
+      s1Title = `Step 1: Book Leg ${primaryLeg.leg_number} (${primaryLeg.from_station} -> ${primaryLeg.to_station}) - Confirmed Anchor`;
+      s1Instr = `Book on IRCTC for journey date ${formatDatePretty(datePrimary)} (Dep: ${primaryLeg.departure_time || 'Scheduled'}). Complete payment and note assigned Coach ID (e.g. S4, B2, M1) from your confirmation screen.`;
+      s1Tip = 'Do not set preferred coach for this first ticket. Let IRCTC assign the primary coach.';
+    } else {
+      s1Title = `Step 1: Book Leg ${primaryLeg.leg_number} (${primaryLeg.from_station} -> ${primaryLeg.to_station}) - Primary RAC Leg`;
+      s1Instr = `Book on IRCTC for journey date ${formatDatePretty(datePrimary)} (Dep: ${primaryLeg.departure_time || 'Scheduled'}). Secure this leg first.`;
+      s1Tip = 'Primary RAC booking - coach number will be assigned during final chart preparation.';
+    }
 
     steps.push({
       step_number: 1,
@@ -271,10 +366,25 @@ export function ensureBookingStrategy(
       departure_time: primaryLeg.departure_time,
       raw_status: primaryLeg.raw_status,
       available_seats: extractNumericSeats(primaryLeg),
-      action_title: `Step 1: Book Leg ${primaryLeg.leg_number} (${primaryLeg.from_station} -> ${primaryLeg.to_station})`,
-      action_instructions: `Book on IRCTC for journey date ${formatDatePretty(datePrimary)} (Dep: ${primaryLeg.departure_time || 'Scheduled'}). Complete payment and note assigned Coach ID (e.g. S4, B2, M1) from your confirmation screen.`,
-      preferred_coach_tip: 'Do not set preferred coach for this first ticket. Let IRCTC assign the primary coach.',
+      action_title: s1Title,
+      action_instructions: s1Instr,
+      preferred_coach_tip: s1Tip,
     });
+
+    let s2Title: string;
+    let s2Instr: string;
+    let s2Tip: string;
+    if (isLegConfirmed(primaryLeg)) {
+      s2Title = `Step 2: Book Leg ${dependentLeg.leg_number} (${dependentLeg.from_station} -> ${dependentLeg.to_station}) with Coach Preference`;
+      s2Instr = `Immediately book on IRCTC for journey date ${formatDatePretty(dateDependent)} (Dep: ${dependentLeg.departure_time || 'Scheduled'}). On the Passenger Details page, expand 'Other Preferences' and enter the Coach ID from Step 1.`;
+      s2Tip = isLegConfirmed(dependentLeg)
+        ? 'Entering the Coach ID from Step 1 instructs IRCTC to seat you in the same coach. If the exact coach is full, IRCTC will allocate the closest adjacent coach.'
+        : 'Entering the Coach ID from Step 1 instructs IRCTC PRS to seat or allocate your RAC berth in or nearest to your confirmed coach during chart preparation.';
+    } else {
+      s2Title = `Step 2: Book Leg ${dependentLeg.leg_number} (${dependentLeg.from_station} -> ${dependentLeg.to_station}) - Connecting RAC Leg`;
+      s2Instr = `Book on IRCTC for journey date ${formatDatePretty(dateDependent)} (Dep: ${dependentLeg.departure_time || 'Scheduled'}).`;
+      s2Tip = 'Both legs are in RAC. Berths and coaches are allocated during chart preparation.';
+    }
 
     steps.push({
       step_number: 2,
@@ -285,56 +395,87 @@ export function ensureBookingStrategy(
       departure_time: dependentLeg.departure_time,
       raw_status: dependentLeg.raw_status,
       available_seats: extractNumericSeats(dependentLeg),
-      action_title: `Step 2: Book Leg ${dependentLeg.leg_number} (${dependentLeg.from_station} -> ${dependentLeg.to_station})`,
-      action_instructions: `Immediately book on IRCTC for journey date ${formatDatePretty(dateDependent)} (Dep: ${dependentLeg.departure_time || 'Scheduled'}). On the Passenger Details page, expand 'Other Preferences' and enter the Coach ID from Step 1.`,
-      preferred_coach_tip: 'Entering the Coach ID from Step 1 instructs IRCTC to seat you in the same coach. If the exact coach is full, IRCTC will allocate the closest adjacent coach.',
+      action_title: s2Title,
+      action_instructions: s2Instr,
+      preferred_coach_tip: s2Tip,
     });
   } else {
     // Multi-leg (> 2 legs)
+    const legPriorityKey = (item: SubLeg) => {
+      let tier = 0;
+      let score = 0;
+      if (isLegConfirmed(item)) {
+        tier = 2;
+        score = getConfirmedSeats(item);
+      } else if (isLegRac(item)) {
+        tier = 1;
+        score = -getRacPosition(item);
+      }
+      return { tier, score, dist: item.distance_km || 0 };
+    };
+
     const sortedLegs = [...legs].sort((a, b) => {
-      const seatsA = extractNumericSeats(a);
-      const seatsB = extractNumericSeats(b);
-      if (seatsB !== seatsA) return seatsB - seatsA;
-      return (b.distance_km || 0) - (a.distance_km || 0);
+      const ka = legPriorityKey(a);
+      const kb = legPriorityKey(b);
+      if (kb.tier !== ka.tier) return kb.tier - ka.tier;
+      if (kb.score !== ka.score) return kb.score - ka.score;
+      return kb.dist - ka.dist;
     });
 
     order = sortedLegs.map((l) => l.leg_number);
     const first = sortedLegs[0];
-    headline = `Book Leg ${first.leg_number} (${first.from_station} to ${first.to_station}) first as anchor coach`;
-    reason = `Leg ${first.leg_number} has the highest seat buffer (${extractNumericSeats(first)} seats). Booking it first establishes your anchor coach ID for the remaining connecting legs.`;
-    probability = 'MODERATE';
+
+    if (isLegConfirmed(first)) {
+      headline = `Book Leg ${first.leg_number} (${first.from_station} to ${first.to_station}) first as anchor coach`;
+      reason = `Leg ${first.leg_number} has confirmed berths (${getConfirmedSeats(first)} seats available). Booking it first establishes your anchor coach ID for the remaining connecting legs.`;
+      const allAvl = legs.every((l) => isLegConfirmed(l));
+      probability = allAvl ? 'HIGH' : 'MODERATE';
+    } else {
+      headline = `Book Leg ${first.leg_number} (${first.from_station} to ${first.to_station}) first (best confirmation queue)`;
+      reason = `All legs are in RAC/Waitlist. Leg ${first.leg_number} (${first.raw_status}) has the highest confirmation priority. Berths will be allotted at chart preparation.`;
+      probability = 'BEST_EFFORT';
+    }
 
     sortedLegs.forEach((leg, idx) => {
       const ldate = leg.journey_date || originDate || '';
+      let title: string;
+      let instr: string;
+      let tip: string;
+
       if (idx === 0) {
-        steps.push({
-          step_number: 1,
-          leg_number: leg.leg_number,
-          from_station: leg.from_station,
-          to_station: leg.to_station,
-          journey_date: ldate,
-          departure_time: leg.departure_time,
-          raw_status: leg.raw_status,
-          available_seats: extractNumericSeats(leg),
-          action_title: `Step 1: Book Leg ${leg.leg_number} (Anchor Leg)`,
-          action_instructions: `Book on IRCTC for journey date ${formatDatePretty(ldate)} (${leg.from_station} -> ${leg.to_station}). Note down the allotted Coach ID.`,
-          preferred_coach_tip: 'Let IRCTC assign primary coach for this anchor ticket.',
-        });
+        if (isLegConfirmed(leg)) {
+          title = `Step 1: Book Leg ${leg.leg_number} (Confirmed Anchor Leg)`;
+          instr = `Book on IRCTC for journey date ${formatDatePretty(ldate)} (${leg.from_station} -> ${leg.to_station}). Note down the allotted Coach ID.`;
+          tip = 'Let IRCTC assign primary coach for this anchor ticket.';
+        } else {
+          title = `Step 1: Book Leg ${leg.leg_number} (Primary RAC Leg)`;
+          instr = `Book on IRCTC for journey date ${formatDatePretty(ldate)} (${leg.from_station} -> ${leg.to_station}).`;
+          tip = 'Primary RAC booking - coach assigned during charting.';
+        }
       } else {
-        steps.push({
-          step_number: idx + 1,
-          leg_number: leg.leg_number,
-          from_station: leg.from_station,
-          to_station: leg.to_station,
-          journey_date: ldate,
-          departure_time: leg.departure_time,
-          raw_status: leg.raw_status,
-          available_seats: extractNumericSeats(leg),
-          action_title: `Step ${idx + 1}: Book Leg ${leg.leg_number} with Coach Preference`,
-          action_instructions: `Book on IRCTC for journey date ${formatDatePretty(ldate)} (${leg.from_station} -> ${leg.to_station}). Enter Coach ID from Step 1.`,
-          preferred_coach_tip: 'Set Preferred Coach ID to match your anchor ticket.',
-        });
+        title = `Step ${idx + 1}: Book Leg ${leg.leg_number} with Coach Preference`;
+        if (isLegConfirmed(first)) {
+          instr = `Book on IRCTC for journey date ${formatDatePretty(ldate)} (${leg.from_station} -> ${leg.to_station}). Enter Coach ID from Step 1.`;
+          tip = 'Set Preferred Coach ID to match your anchor ticket.';
+        } else {
+          instr = `Book on IRCTC for journey date ${formatDatePretty(ldate)} (${leg.from_station} -> ${leg.to_station}).`;
+          tip = 'RAC leg - berths allocated during chart preparation.';
+        }
       }
+
+      steps.push({
+        step_number: idx + 1,
+        leg_number: leg.leg_number,
+        from_station: leg.from_station,
+        to_station: leg.to_station,
+        journey_date: ldate,
+        departure_time: leg.departure_time,
+        raw_status: leg.raw_status,
+        available_seats: extractNumericSeats(leg),
+        action_title: title,
+        action_instructions: instr,
+        preferred_coach_tip: tip,
+      });
     });
   }
 

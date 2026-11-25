@@ -885,6 +885,121 @@ test('ensureBookingStrategy synthesizes intelligent strategy when omitted from r
   assert.ok(strategyC);
   assert.deepEqual(Array.from(strategyC.recommended_order), [2, 3, 1]);
   assert.equal(strategyC.steps[0].leg_number, 2);
+
+  // Test case 4: RAC vs AVL (Leg 1 is RAC 15, Leg 2 is AVL 5)
+  // Even though 15 > 5 numerically, RAC has no confirmed berth. Leg 2 (AVL 5) MUST be booked first!
+  const solutionRacVsAvl = {
+    solution_id: 'sol_rac_vs_avl',
+    tier: 'PARTIALLY_CONFIRMED',
+    legs: [
+      {
+        leg_number: 1,
+        from_station: 'RJPM',
+        to_station: 'MDU',
+        raw_status: 'RAC 15',
+        status: 'RAC',
+        position: 15,
+        journey_date: '2026-11-20',
+      },
+      {
+        leg_number: 2,
+        from_station: 'MDU',
+        to_station: 'MAS',
+        raw_status: 'AVAILABLE 5',
+        status: 'AVAILABLE',
+        position: 5,
+        journey_date: '2026-11-21',
+      },
+    ],
+  };
+
+  const strategyRacVsAvl = exports.ensureBookingStrategy(solutionRacVsAvl, '2026-11-20');
+  assert.ok(strategyRacVsAvl);
+  assert.deepEqual(Array.from(strategyRacVsAvl.recommended_order), [2, 1]);
+  assert.equal(strategyRacVsAvl.steps[0].leg_number, 2, 'Confirmed leg must be Step 1 anchor');
+  assert.equal(strategyRacVsAvl.steps[1].leg_number, 1, 'RAC leg must be Step 2');
+  assert.match(strategyRacVsAvl.strategy_reason, /guaranteed sleeper berth/i);
+  assert.match(strategyRacVsAvl.steps[1].preferred_coach_tip, /chart preparation/i);
+
+  // Test case 5: Inverted AVL vs RAC (Leg 1 is AVL 5, Leg 2 is RAC 15)
+  const solutionAvlVsRac = {
+    solution_id: 'sol_avl_vs_rac',
+    tier: 'PARTIALLY_CONFIRMED',
+    legs: [
+      {
+        leg_number: 1,
+        from_station: 'RJPM',
+        to_station: 'MDU',
+        raw_status: 'AVAILABLE 5',
+        status: 'AVAILABLE',
+        position: 5,
+        journey_date: '2026-11-20',
+      },
+      {
+        leg_number: 2,
+        from_station: 'MDU',
+        to_station: 'MAS',
+        raw_status: 'RAC 15',
+        status: 'RAC',
+        position: 15,
+        journey_date: '2026-11-21',
+      },
+    ],
+  };
+
+  const strategyAvlVsRac = exports.ensureBookingStrategy(solutionAvlVsRac, '2026-11-20');
+  assert.ok(strategyAvlVsRac);
+  assert.deepEqual(Array.from(strategyAvlVsRac.recommended_order), [1, 2]);
+  assert.equal(strategyAvlVsRac.steps[0].leg_number, 1, 'Confirmed leg must be Step 1 anchor');
+  assert.equal(strategyAvlVsRac.steps[1].leg_number, 2, 'RAC leg must be Step 2');
+
+  // Test case 6: Both legs RAC (Leg 1 is RAC 15, Leg 2 is RAC 3) -> prioritize lower queue position RAC 3
+  const solutionBothRac = {
+    solution_id: 'sol_both_rac',
+    tier: 'RAC_SPLIT',
+    legs: [
+      {
+        leg_number: 1,
+        from_station: 'RJPM',
+        to_station: 'MDU',
+        raw_status: 'RAC 15',
+        status: 'RAC',
+        position: 15,
+        journey_date: '2026-11-20',
+      },
+      {
+        leg_number: 2,
+        from_station: 'MDU',
+        to_station: 'MAS',
+        raw_status: 'RAC 3',
+        status: 'RAC',
+        position: 3,
+        journey_date: '2026-11-21',
+      },
+    ],
+  };
+
+  const strategyBothRac = exports.ensureBookingStrategy(solutionBothRac, '2026-11-20');
+  assert.ok(strategyBothRac);
+  assert.deepEqual(Array.from(strategyBothRac.recommended_order), [2, 1]);
+  assert.equal(strategyBothRac.same_coach_probability, 'BEST_EFFORT');
+  assert.match(strategyBothRac.strategy_reason, /closer to confirmation/i);
+
+  // Test case 7: 3-leg mixed with RAC and AVL (Leg 1 is RAC 20, Leg 2 is AVL 2, Leg 3 is AVL 8)
+  const solution3LegMixed = {
+    solution_id: 'sol_3leg_mixed',
+    tier: 'PARTIALLY_CONFIRMED',
+    legs: [
+      { leg_number: 1, from_station: 'A', to_station: 'B', raw_status: 'RAC 20', status: 'RAC', position: 20 },
+      { leg_number: 2, from_station: 'B', to_station: 'C', raw_status: 'AVAILABLE 2', status: 'AVAILABLE', position: 2 },
+      { leg_number: 3, from_station: 'C', to_station: 'D', raw_status: 'AVAILABLE 8', status: 'AVAILABLE', position: 8 },
+    ],
+  };
+
+  const strategy3LegMixed = exports.ensureBookingStrategy(solution3LegMixed, '2026-11-20');
+  assert.ok(strategy3LegMixed);
+  assert.deepEqual(Array.from(strategy3LegMixed.recommended_order), [3, 2, 1]);
+
 });
 
 test('fetchSmartRoutes automatically synthesizes booking strategy if server returns bare solutions', async () => {
