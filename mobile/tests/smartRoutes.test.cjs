@@ -50,6 +50,9 @@ function loadSmartRouteService(mockFetch, mockStorage = new Map()) {
     './trainService': {
       getTransportApiBaseUrl: () => 'https://test-api.trainwatch.app',
     },
+    './stationService': {
+      registerStationNames: () => {},
+    },
     '../utils/errorUtils': errorUtilsExports,
   };
 

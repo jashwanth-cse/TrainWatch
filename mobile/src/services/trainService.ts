@@ -1,4 +1,5 @@
 import { sanitizeError } from '../utils/errorUtils';
+import { registerStationNames, Station } from './stationService';
 
 export interface StationSimple {
   code: string;
@@ -143,16 +144,60 @@ export async function searchTrains(params: SearchTrainsParams): Promise<TrainSea
 
   const resultType = (json.data.result_type || json.data.route_type || 'direct').toLowerCase();
 
+  const trains: TrainItem[] = json.data.trains || [];
+  const stationMap: Record<string, string> = {};
+  for (const t of trains) {
+    if (t?.from?.code && t?.from?.name) stationMap[t.from.code] = t.from.name;
+    if (t?.to?.code && t?.to?.name) stationMap[t.to.code] = t.to.name;
+  }
+  registerStationNames(stationMap);
+
   return {
     source: json.data.source,
     destination: json.data.destination,
     total_trains: json.data.total_trains,
-    trains: json.data.trains || [],
+    trains,
     route_type: resultType,
     result_type: resultType,
     fallback_reason: json.data.fallback_reason,
     latency_ms: json.data.latency_ms,
   };
+}
+
+/**
+ * Online fallback station search against upstream transport API.
+ */
+export async function searchStationsOnline(query: string): Promise<Station[]> {
+  const clean = (query || '').trim();
+  if (clean.length < 2) return [];
+  const baseUrl = getTransportApiBaseUrl();
+  if (!baseUrl) return [];
+
+  try {
+    const url = new URL(`${baseUrl}/api/v1/stations/search`);
+    url.searchParams.set('q', clean);
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return [];
+    const json = await response.json();
+    if (!json?.success || !Array.isArray(json.data)) return [];
+
+    const results: Station[] = [];
+    const reg: Record<string, string> = {};
+    for (const item of json.data) {
+      const code = String(item?.station_code || '').trim().toUpperCase();
+      const name = String(item?.station_name || '').trim();
+      if (!code || !name) continue;
+      reg[code] = name;
+      results.push({ code, name, state: '' });
+    }
+    registerStationNames(reg);
+    return results;
+  } catch {
+    return [];
+  }
 }
 
 /**

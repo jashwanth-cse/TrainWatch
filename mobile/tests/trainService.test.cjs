@@ -33,6 +33,9 @@ function loadTrainService(mockFetch) {
   const modules = {
     'react-native': { Platform: { OS: 'android' } },
     '../utils/errorUtils': errorUtilsExports,
+    './stationService': {
+      registerStationNames: () => {},
+    },
   };
   vm.runInNewContext(outputText, {
     exports,
@@ -165,4 +168,25 @@ test('fetchLiveAvailability issues POST request with expected arguments', async 
   assert.ok(calledUrl.includes('destination=MAS'));
   assert.ok(calledUrl.includes('travelClass=3A'));
   assert.equal(result.data.availability, 'AVAILABLE 42');
+});
+
+test('searchStationsOnline fetches missing stations from upstream API cleanly', async () => {
+  let calledUrl = '';
+  const mockFetch = async (url) => {
+    calledUrl = url;
+    return {
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: [{ station_code: 'KRR', station_name: 'Karur' }],
+      }),
+    };
+  };
+
+  const { searchStationsOnline } = loadTrainService(mockFetch);
+  const items = await searchStationsOnline('KRR');
+  assert.ok(calledUrl.includes('/api/v1/stations/search?q=KRR'));
+  assert.equal(items.length, 1);
+  assert.equal(items[0].code, 'KRR');
+  assert.equal(items[0].name, 'Karur');
 });
