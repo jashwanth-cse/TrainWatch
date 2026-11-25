@@ -205,6 +205,9 @@ def _sample_watch(
     journey_date: date | None = None,
     status: WatchStatus = WatchStatus.ACTIVE,
     created_at: datetime | None = None,
+    departure_time: str | None = None,
+    maximum_position: int = 10,
+    last_avl_count: int | None = None,
 ) -> Watch:
     now = created_at or (datetime.now(UTC) - timedelta(days=1))
     return Watch(
@@ -217,11 +220,13 @@ def _sample_watch(
             journey_date=journey_date or date(2026, 12, 15),
             travel_class="3A",
             quota="GN",
+            departure_time=departure_time,
         ),
-        condition=AlertCondition(kind=AlertKind.BECOMES_AVAILABLE),
+        condition=AlertCondition(kind=AlertKind.SEATS_BELOW, maximum_position=maximum_position),
         status=status,
         created_at=now,
         updated_at=now,
+        last_avl_count=last_avl_count,
     )
 
 
@@ -633,34 +638,34 @@ async def test_worker_retries_transient_failures_and_caps_at_max_attempts() -> N
 
 @pytest.mark.anyio
 async def test_worker_evaluates_condition_and_saves_outbox_idempotently() -> None:
-    """Outbox item is created on trigger; duplicate triggers deduplicate."""
+    """Outbox item is created on AVL drops and rapid decreases; duplicates deduplicate."""
     now = datetime(2026, 11, 1, 12, 0, tzinfo=UTC)
     job_repo = InMemoryJobRepository()
     watch_repo = InMemoryWatchRepository()
     obs_repo = InMemoryObservationRepository()
     outbox = InMemoryNotificationOutbox()
 
-    watch = _sample_watch(watch_id="w1")
+    watch = _sample_watch(watch_id="w1", created_at=now - timedelta(days=1), maximum_position=10)
     await watch_repo.save(watch)
 
-    # Initial baseline observation: WL 20
+    # Initial baseline observation: AVL 150
     baseline_obs = AvailabilityObservation.success(
         AvailabilitySnapshot(
-            status=AvailabilityStatus.WAITLIST,
-            position=20,
-            raw_availability="GNWL 20",
+            status=AvailabilityStatus.AVAILABLE,
+            position=None,
+            raw_availability="AVAILABLE 150",
             observed_at=now,
         )
     )
     await obs_repo.save_observation(watch_id="w1", observation=baseline_obs)
 
-    # Current observation: Available
+    # Current observation: AVL 9 (< 10)
     current_obs = AvailabilityObservation.success(
         AvailabilitySnapshot(
             status=AvailabilityStatus.AVAILABLE,
             position=None,
-            raw_availability="AVL",
-            observed_at=now,
+            raw_availability="AVL 9",
+            observed_at=now + timedelta(minutes=5),
         )
     )
     provider = FakeAvailabilityProvider(observation=current_obs)
@@ -689,15 +694,70 @@ async def test_worker_evaluates_condition_and_saves_outbox_idempotently() -> Non
     assert result.alert_triggered
 
     # Verify outbox item was created
-    expected_key = f"alert:w1:{now.isoformat()}:AVAILABLE:0"
+    expected_key = f"alert:w1:{now.isoformat()}:AVAILABLE:9"
     item = await outbox.get_by_key(expected_key)
     assert item is not None
-    assert "Seat Alert: Train 12661" in item.title
-    assert "AVAILABLE" in item.body
+    assert "Low Seat Alert: Train 12661" in item.title
+    assert "9 AVL" in item.body
 
     # Calling save_notification with the same idempotency key again returns False (idempotent)
     second_save = await outbox.save_notification(item)
     assert not second_save
+
+    # Rapid decrease from 9 -> 6 triggers another "Book Fast!" notification
+    provider.observation = AvailabilityObservation.success(
+        AvailabilitySnapshot(
+            status=AvailabilityStatus.AVAILABLE,
+            position=None,
+            raw_availability="AVL 6",
+            observed_at=now + timedelta(minutes=10),
+        )
+    )
+    now2 = job_repo.jobs["j1"].due_at
+    res_drop = await worker.process_job(job_id="j1", now=now2)
+    assert res_drop.alert_triggered
+    assert len(outbox.items) == 2
+
+    # Non-numeric AVAILABLE snapshot does not overwrite/crash
+    provider.observation = AvailabilityObservation.success(
+        AvailabilitySnapshot(
+            status=AvailabilityStatus.AVAILABLE,
+            position=None,
+            raw_availability="AVAILABLE",
+            observed_at=now + timedelta(minutes=20),
+        )
+    )
+    now3 = job_repo.jobs["j1"].due_at
+    res_unparseable = await worker.process_job(job_id="j1", now=now3)
+    assert not res_unparseable.alert_triggered
+
+    # Baseline check with no previous observation (fallback initial_avl = 150 -> AVL 8)
+    w2 = _sample_watch(
+        watch_id="w2", created_at=now - timedelta(days=1), maximum_position=10, last_avl_count=150
+    )
+    await watch_repo.save(w2)
+    await job_repo.save(
+        JobRecord(
+            job_id="j2",
+            watch_id="w2",
+            owner_id="u1",
+            due_at=now,
+            status=JobStatus.PENDING,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    provider.observation = AvailabilityObservation.success(
+        AvailabilitySnapshot(
+            status=AvailabilityStatus.AVAILABLE,
+            position=None,
+            raw_availability="AVL 8",
+            observed_at=now,
+        )
+    )
+    res_baseline = await worker.process_job(job_id="j2", now=now)
+    assert res_baseline.alert_triggered
+    assert "alert:w2:baseline:AVAILABLE:8" in outbox.items
 
 
 # ---------------------------------------------------------------------------
@@ -939,3 +999,82 @@ def test_worker_computes_interval_based_on_journey_proximity() -> None:
     assert worker.compute_next_interval_minutes(days_until_journey=7) == 15
     assert worker.compute_next_interval_minutes(days_until_journey=8) == 30
     assert worker.compute_next_interval_minutes(days_until_journey=30) == 30
+
+
+@pytest.mark.anyio
+async def test_dry_run_avl_150_to_below_10_rapid_decrease_and_departure_dissolve() -> None:
+    """Dry-run lifecycle: AVL 150 -> 9 -> 6 -> 8 -> 4 -> RAC 2 -> departed 20:00 IST."""
+    journey_day = date(2026, 11, 26)
+    created = datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
+    dep_time = "20:00"  # 14:30 UTC on 2026-11-26
+
+    job_repo = InMemoryJobRepository()
+    watch_repo = InMemoryWatchRepository()
+    obs_repo = InMemoryObservationRepository()
+    outbox = InMemoryNotificationOutbox()
+
+    watch = _sample_watch(
+        watch_id="w_dry",
+        journey_date=journey_day,
+        departure_time=dep_time,
+        maximum_position=10,
+        created_at=created,
+        last_avl_count=150,
+    )
+    await watch_repo.save(watch)
+    await job_repo.save(
+        JobRecord(
+            job_id="j_dry",
+            watch_id="w_dry",
+            owner_id="u1",
+            due_at=created,
+            status=JobStatus.PENDING,
+            created_at=created,
+            updated_at=created,
+        )
+    )
+    provider = FakeAvailabilityProvider()
+    worker = WorkerService(
+        job_repository=job_repo,
+        watch_repository=watch_repo,
+        availability_provider=provider,
+        observation_repository=obs_repo,
+        notification_outbox=outbox,
+    )
+
+    steps = [
+        (datetime(2026, 11, 10, 10, 0, tzinfo=UTC), AvailabilityStatus.AVAILABLE, "AVL 120", False),
+        (datetime(2026, 11, 20, 10, 0, tzinfo=UTC), AvailabilityStatus.AVAILABLE, "AVL 9", True),
+        (datetime(2026, 11, 20, 10, 15, tzinfo=UTC), AvailabilityStatus.AVAILABLE, "AVL 9", False),
+        (datetime(2026, 11, 25, 10, 0, tzinfo=UTC), AvailabilityStatus.AVAILABLE, "AVL 6", True),
+        (datetime(2026, 11, 25, 10, 5, tzinfo=UTC), AvailabilityStatus.AVAILABLE, "AVL 8", False),
+        (datetime(2026, 11, 25, 10, 10, tzinfo=UTC), AvailabilityStatus.AVAILABLE, "AVL 4", True),
+        (datetime(2026, 11, 26, 14, 0, tzinfo=UTC), AvailabilityStatus.RAC, "RAC 2", True),
+        (datetime(2026, 11, 26, 14, 5, tzinfo=UTC), AvailabilityStatus.RAC, "RAC 8", False),
+    ]
+
+    for tick, status, raw, expect_alert in steps:
+        pos = int(raw.split()[1]) if status is AvailabilityStatus.RAC else None
+        provider.observation = AvailabilityObservation.success(
+            AvailabilitySnapshot(
+                status=status, raw_availability=raw, observed_at=tick, position=pos
+            )
+        )
+        res = await worker.process_job(job_id="j_dry", now=tick)
+        assert res.status == "success"
+        assert res.alert_triggered is expect_alert
+
+    assert len(outbox.items) == 4  # AVL 9, AVL 6, AVL 4, SOLD_OUT->RAC 2 (RAC 8 suppressed)
+
+    # At 20:01 IST (14:31 UTC on same day), watch automatically dissolves before polling!
+    after_dep_utc = datetime(2026, 11, 26, 14, 31, tzinfo=UTC)
+    expired_res = await worker.process_job(job_id="j_dry", now=after_dep_utc)
+    assert expired_res.status == "completed_watch_expired"
+    assert not expired_res.alert_triggered
+    final_watch = await watch_repo.get(watch_id="w_dry", owner_id="u1")
+    assert final_watch is not None
+    assert final_watch.status is WatchStatus.EXPIRED
+    assert not final_watch.is_active
+    assert final_watch.expired_reason == "train_departed"
+    final_job = await job_repo.get(job_id="j_dry")
+    assert final_job is not None and final_job.status is JobStatus.COMPLETED

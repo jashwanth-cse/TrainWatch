@@ -13,7 +13,7 @@ from trainwatch.api.errors import ApiError
 from trainwatch.api.ownership import require_owner
 from trainwatch.domain.alerts import AlertCondition, AlertKind
 from trainwatch.domain.availability import AvailabilityStatus
-from trainwatch.domain.watch import TrainQuery, Watch, WatchStatus
+from trainwatch.domain.watch import IST, TrainQuery, Watch, WatchStatus, compute_departure_at
 from trainwatch.ports.identity import AuthenticatedUser
 from trainwatch.ports.watches import WatchRepository
 
@@ -37,6 +37,9 @@ class CreateWatchPayload(BaseModel):
     journey_date: date
     travel_class: str
     quota: str = "GN"
+    departure_time: str | None = None
+    departure_at: datetime | None = None
+    initial_avl_count: int | None = Field(default=None, ge=0)
     condition: AlertConditionPayload
 
 
@@ -56,6 +59,7 @@ class QueryResponse(BaseModel):
     journey_date: date
     travel_class: str
     quota: str
+    departure_time: str | None = None
     watch_key: str
 
 
@@ -75,6 +79,10 @@ class WatchResponse(BaseModel):
     query: QueryResponse
     condition: ConditionResponse
     status: str
+    is_active: bool
+    departure_at: datetime | None = None
+    last_avl_count: int | None = None
+    expired_reason: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -91,6 +99,7 @@ def _serialize_watch(watch: Watch) -> WatchResponse:
             journey_date=watch.query.journey_date,
             travel_class=watch.query.travel_class,
             quota=watch.query.quota,
+            departure_time=watch.query.departure_time,
             watch_key=watch.query.watch_key,
         ),
         condition=ConditionResponse(
@@ -101,9 +110,38 @@ def _serialize_watch(watch: Watch) -> WatchResponse:
             maximum_position=watch.condition.maximum_position,
         ),
         status=watch.status.value,
+        is_active=watch.is_active,
+        departure_at=watch.effective_departure_at(),
+        last_avl_count=watch.last_avl_count,
+        expired_reason=watch.expired_reason,
         created_at=watch.created_at,
         updated_at=watch.updated_at,
     )
+
+
+def _validate_avl_condition(payload: AlertConditionPayload) -> AlertCondition:
+    """Enforce AVL-only threshold alerts on watch creation and edits."""
+    condition = AlertCondition(
+        kind=payload.kind,
+        target_status=payload.target_status,
+        maximum_position=payload.maximum_position,
+    )
+    if not condition.is_avl_only:
+        raise ValueError("Only confirmed AVL seat threshold alerts (seats_below) are supported")
+    return condition
+
+
+async def _dissolve_if_due_and_persist(
+    watch: Watch,
+    *,
+    repo: WatchRepository,
+    now: datetime,
+) -> Watch:
+    """Ensure departed or legacy watches are disabled cleanly in persistence."""
+    updated = watch.dissolve_if_due(at=now, today=now.astimezone(IST).date())
+    if updated is not watch:
+        await repo.save(updated)
+    return updated
 
 
 async def get_current_user(
@@ -134,8 +172,10 @@ async def list_watches(
     repo: Annotated[WatchRepository, Depends(get_repository)],
 ) -> Any:
     """Retrieve all watches owned by the caller."""
+    now = datetime.now(UTC)
     watches = await repo.list_for_user(owner_id=user.uid)
-    return [_serialize_watch(w) for w in watches]
+    synced = [await _dissolve_if_due_and_persist(w, repo=repo, now=now) for w in watches]
+    return [_serialize_watch(w) for w in synced]
 
 
 @router.post("", response_model=WatchResponse, status_code=status.HTTP_201_CREATED)
@@ -144,7 +184,7 @@ async def create_watch(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     repo: Annotated[WatchRepository, Depends(get_repository)],
 ) -> Any:
-    """Create a new validated seat availability watch for the caller."""
+    """Create a new validated AVL seat availability watch for the caller."""
     try:
         query = TrainQuery(
             train_number=payload.train_number,
@@ -153,20 +193,21 @@ async def create_watch(
             journey_date=payload.journey_date,
             travel_class=payload.travel_class,
             quota=payload.quota,
+            departure_time=payload.departure_time,
         )
     except ValueError as exc:
         raise ApiError(status_code=422, code="validation_error", message=str(exc)) from None
 
     try:
-        condition = AlertCondition(
-            kind=payload.condition.kind,
-            target_status=payload.condition.target_status,
-            maximum_position=payload.condition.maximum_position,
-        )
+        condition = _validate_avl_condition(payload.condition)
     except ValueError as exc:
         raise ApiError(status_code=422, code="validation_error", message=str(exc)) from None
 
     now = datetime.now(UTC)
+    departure_at = payload.departure_at or compute_departure_at(
+        journey_date=query.journey_date,
+        departure_time=query.departure_time,
+    )
     watch_id = f"w_{uuid4().hex[:16]}"
     new_watch = Watch(
         watch_id=watch_id,
@@ -176,7 +217,15 @@ async def create_watch(
         status=WatchStatus.ACTIVE,
         created_at=now,
         updated_at=now,
+        departure_at=departure_at,
+        last_avl_count=payload.initial_avl_count,
     )
+    if new_watch.is_departed(at=now):
+        raise ApiError(
+            status_code=422,
+            code="validation_error",
+            message="Cannot create an alert for a train that has already departed",
+        )
 
     await repo.save(new_watch)
     return _serialize_watch(new_watch)
@@ -193,7 +242,8 @@ async def get_watch(
     if stored is None:
         raise ApiError(status_code=404, code="not_found", message="Watch not found")
     require_owner(user=user, resource_owner_id=stored.owner_id)
-    return _serialize_watch(stored)
+    synced = await _dissolve_if_due_and_persist(stored, repo=repo, now=datetime.now(UTC))
+    return _serialize_watch(synced)
 
 
 @router.patch("/{watch_id}", response_model=WatchResponse)
@@ -213,11 +263,7 @@ async def update_watch_status(
     current = stored
     if payload.condition is not None:
         try:
-            cond = AlertCondition(
-                kind=payload.condition.kind,
-                target_status=payload.condition.target_status,
-                maximum_position=payload.condition.maximum_position,
-            )
+            cond = _validate_avl_condition(payload.condition)
             current = current.update_condition(cond, at=now)
         except ValueError as exc:
             raise ApiError(status_code=422, code="validation_error", message=str(exc)) from None

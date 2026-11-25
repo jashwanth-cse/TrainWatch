@@ -175,18 +175,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.APP_VERSION }}
-          name: TrainWatch ${{ env.APP_VERSION }} - Performance Improvements
-          body: |
-            Release ${{ env.APP_VERSION }}
-
-            - Performance improvements and faster response times for live train search
-            - Improved network connectivity handling and offline recovery
-            - Enhanced seat alert tracking reliability
-            - Visual refinements and general stability fixes
+          name: TrainWatch ${{ env.APP_VERSION }} - Smart AVL Alerts & Fare Precision
+          body_path: .github/RELEASE_NOTES.md
           files: |
             ${{ github.workspace }}/build/TrainWatch-${{ env.APP_VERSION }}.apk
           draft: false
           prerelease: false
-          generate_release_notes: true
+          generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

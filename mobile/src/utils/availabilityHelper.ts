@@ -102,7 +102,7 @@ export function parseAvailabilityStatus(rawAvailability: string | null | undefin
     };
   }
 
-  // 4. RAC (Amber)
+  // 4. RAC (Amber) — bookable, but tracking is disabled under AVL-only monitoring policy
   if (upper.includes('RAC')) {
     return {
       raw,
@@ -112,11 +112,13 @@ export function parseAvailabilityStatus(rawAvailability: string | null | undefin
       textColor: colors.statusRac,
       dotColor: colors.statusRac,
       isBookable: true,
-      canTrack: true,
+      canTrack: false,
+      untrackableReason:
+        'Seat alerts track confirmed (AVL) seats only. For RAC, try Smart Split to find confirmed split-leg berths.',
     };
   }
 
-  // 5. Waitlisted (Red)
+  // 5. Waitlisted (Red) — bookable, but tracking is disabled under AVL-only monitoring policy
   if (
     upper.includes('WL') ||
     upper.includes('RLWL') ||
@@ -133,7 +135,9 @@ export function parseAvailabilityStatus(rawAvailability: string | null | undefin
       textColor: colors.statusWl,
       dotColor: colors.statusWl,
       isBookable: true,
-      canTrack: true,
+      canTrack: false,
+      untrackableReason:
+        'Seat alerts track confirmed (AVL) seats only. For Waitlist, try Smart Split to find confirmed split-leg berths.',
     };
   }
 

@@ -4,7 +4,14 @@ from datetime import UTC, datetime
 
 import pytest
 
-from trainwatch.domain.alerts import AlertCondition, AlertKind, should_alert
+from trainwatch.domain.alerts import (
+    AlertCondition,
+    AlertEventKind,
+    AlertKind,
+    AvlThresholdEvaluator,
+    compose_avl_alert_message,
+    should_alert,
+)
 from trainwatch.domain.availability import (
     AvailabilityObservation,
     AvailabilitySnapshot,
@@ -32,6 +39,8 @@ def observation(status: AvailabilityStatus, position: int | None = None) -> Avai
     ("status", "raw", "expected_status", "position"),
     [
         ("AVAILABLE", "AVAILABLE 15", AvailabilityStatus.AVAILABLE, None),
+        ("AVAILABLE", "AVAILABLE-0045", AvailabilityStatus.AVAILABLE, None),
+        ("AVAILABLE", "AVBL 12", AvailabilityStatus.AVAILABLE, None),
         ("AVAILABLE", " AVL 282 ", AvailabilityStatus.AVAILABLE, None),
         ("AVAILABLE", "CURR_AVBL 4", AvailabilityStatus.AVAILABLE, None),
         ("RAC", "RAC 5", AvailabilityStatus.RAC, 5),
@@ -256,11 +265,17 @@ def test_seats_below_condition_evaluation() -> None:
     def obs(status: AvailabilityStatus, raw: str) -> AvailabilityObservation:
         return AvailabilityObservation.success(AvailabilitySnapshot(status, raw, NOW, None))
 
-    # Drops from 50 to 20
+    # Drops from 50 to 20 -> crosses below 25
     assert should_alert(
         condition=cond,
         previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 50"),
         current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 20"),
+    )
+    # Exactly at threshold (50 to 25) is NOT strictly below 25
+    assert not should_alert(
+        condition=cond,
+        previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 50"),
+        current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 25"),
     )
     # Stays above 25 (e.g. 50 to 30)
     assert not should_alert(
@@ -268,19 +283,30 @@ def test_seats_below_condition_evaluation() -> None:
         previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 50"),
         current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 30"),
     )
-    # Already below 25 (20 to 15)
-    assert not should_alert(
+    # Already below 25 and drops further (20 to 15) -> rapid decrease alert ("book fast")
+    assert should_alert(
         condition=cond,
         previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 20"),
         current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 15"),
     )
-    # Slips into RAC from AVAILABLE
+    # Unchanged or increased while below 25 -> do not spam
+    assert not should_alert(
+        condition=cond,
+        previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 15"),
+        current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 15"),
+    )
+    assert not should_alert(
+        condition=cond,
+        previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 15"),
+        current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 18"),
+    )
+    # Slips into RAC from AVAILABLE -> final sold-out alert
     assert should_alert(
         condition=cond,
         previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE 5"),
         current=observation(AvailabilityStatus.RAC, 2),
     )
-    # Stays in RAC (before was already not AVL)
+    # Stays in RAC (before was already not AVL) -> never alerts on RAC/WL
     assert not should_alert(
         condition=cond,
         previous=observation(AvailabilityStatus.RAC, 2),
@@ -292,6 +318,85 @@ def test_seats_below_condition_evaluation() -> None:
         previous=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE"),
         current=obs(AvailabilityStatus.AVAILABLE, "AVAILABLE"),
     )
+
+
+def test_avl_threshold_evaluator_full_lifecycle_and_messages() -> None:
+    """Verify baseline seed, rapid drops, recovery re-crossing, and notification copy."""
+
+    def snap(status: AvailabilityStatus, raw: str) -> AvailabilitySnapshot:
+        return AvailabilitySnapshot(status, raw, NOW, None)
+
+    # First check with initial fallback 150 -> 9 (< 10)
+    cross = AvlThresholdEvaluator.evaluate(
+        threshold=10,
+        previous_snapshot=None,
+        current_snapshot=snap(AvailabilityStatus.AVAILABLE, "AVL 9"),
+        fallback_previous_avl=150,
+    )
+    assert cross.should_alert
+    assert cross.event_kind is AlertEventKind.THRESHOLD_CROSSED
+    assert cross.current_avl == 9
+    assert cross.previous_avl == 150
+    t1, b1 = compose_avl_alert_message(
+        train_number="12661",
+        travel_class="3A",
+        journey_date="2026-12-10",
+        threshold=10,
+        evaluation=cross,
+        snapshot=snap(AvailabilityStatus.AVAILABLE, "AVL 9"),
+    )
+    assert "Low Seat Alert" in t1 and "9 AVL" in b1 and "down from AVL 150" in b1
+
+    # Subsequent rapid decrease 9 -> 6
+    drop = AvlThresholdEvaluator.evaluate(
+        threshold=10,
+        previous_snapshot=snap(AvailabilityStatus.AVAILABLE, "AVL 9"),
+        current_snapshot=snap(AvailabilityStatus.AVAILABLE, "AVL 6"),
+    )
+    assert drop.should_alert
+    assert drop.event_kind is AlertEventKind.SEATS_DECREASING
+    t2, b2 = compose_avl_alert_message(
+        train_number="12661",
+        travel_class="3A",
+        journey_date="2026-12-10",
+        threshold=10,
+        evaluation=drop,
+        snapshot=snap(AvailabilityStatus.AVAILABLE, "AVL 6"),
+    )
+    assert "Book Fast" in t2 and "6 AVL left (was AVL 9)" in b2
+
+    # Sold out 6 -> RAC 3
+    sold = AvlThresholdEvaluator.evaluate(
+        threshold=10,
+        previous_snapshot=snap(AvailabilityStatus.AVAILABLE, "AVL 6"),
+        current_snapshot=AvailabilitySnapshot(AvailabilityStatus.RAC, "RAC 3", NOW, 3),
+    )
+    assert sold.should_alert and sold.event_kind is AlertEventKind.SOLD_OUT
+    t3, b3 = compose_avl_alert_message(
+        train_number="12661",
+        travel_class="3A",
+        journey_date="2026-12-10",
+        threshold=10,
+        evaluation=sold,
+        snapshot=AvailabilitySnapshot(AvailabilityStatus.RAC, "RAC 3", NOW, 3),
+    )
+    assert "Confirmed Seats Gone" in t3 and "RAC 3" in b3
+
+    # Recovery from RAC back to AVL 3 (< 10)
+    reopen = AvlThresholdEvaluator.evaluate(
+        threshold=10,
+        previous_snapshot=AvailabilitySnapshot(AvailabilityStatus.RAC, "RAC 3", NOW, 3),
+        current_snapshot=snap(AvailabilityStatus.AVAILABLE, "AVL 3"),
+    )
+    assert reopen.should_alert and reopen.event_kind is AlertEventKind.THRESHOLD_CROSSED
+
+    # Fails closed on None / UNKNOWN
+    unknown = AvlThresholdEvaluator.evaluate(
+        threshold=10,
+        previous_snapshot=None,
+        current_snapshot=None,
+    )
+    assert not unknown.should_alert and unknown.event_kind is AlertEventKind.NONE
 
 
 def test_rapid_rac_increase_evaluation() -> None:

@@ -23,13 +23,22 @@ from trainwatch.main import FirestoreWatchDispatcher
 from trainwatch.services.worker import WorkerService
 
 
-def observation(status: AvailabilityStatus, at: datetime) -> AvailabilityObservation:
+def observation(raw: str, at: datetime, *, rac_pos: int | None = None) -> AvailabilityObservation:
+    if rac_pos is not None:
+        return AvailabilityObservation.success(
+            AvailabilitySnapshot(
+                status=AvailabilityStatus.RAC,
+                raw_availability=raw,
+                observed_at=at,
+                position=rac_pos,
+            )
+        )
     return AvailabilityObservation.success(
         AvailabilitySnapshot(
-            status=status,
-            raw_availability="WL 20" if status is AvailabilityStatus.WAITLIST else "AVAILABLE",
+            status=AvailabilityStatus.AVAILABLE,
+            raw_availability=raw,
             observed_at=at,
-            position=20 if status is AvailabilityStatus.WAITLIST else None,
+            position=None,
         )
     )
 
@@ -43,7 +52,7 @@ async def test_worker_retries_partial_write_and_alerts_on_later_transition(
     now = datetime(2026, 11, 1, tzinfo=UTC)
     jobs, watches = InMemoryJobRepository(), InMemoryWatchRepository()
     observations, outbox = InMemoryObservationRepository(), InMemoryNotificationOutbox()
-    await watches.save(_sample_watch(watch_id="w1"))
+    await watches.save(_sample_watch(watch_id="w1", maximum_position=10))
     await jobs.save(
         JobRecord(
             job_id="j1",
@@ -55,9 +64,9 @@ async def test_worker_retries_partial_write_and_alerts_on_later_transition(
             updated_at=now,
         )
     )
-    baseline = observation(AvailabilityStatus.WAITLIST, now)
+    baseline = observation("AVAILABLE 150", now)
     await observations.save_observation(watch_id="w1", observation=baseline)
-    provider = FakeAvailabilityProvider(observation=observation(AvailabilityStatus.AVAILABLE, now))
+    provider = FakeAvailabilityProvider(observation=observation("AVAILABLE 9", now))
     worker = WorkerService(
         job_repository=jobs,
         watch_repository=watches,
@@ -88,10 +97,7 @@ async def test_worker_retries_partial_write_and_alerts_on_later_transition(
     assert len(outbox.items) == 1
     now = jobs.jobs["j1"].due_at
     assert not (await worker.process_job(job_id="j1", now=now)).alert_triggered
-    provider.observation = observation(AvailabilityStatus.WAITLIST, now)
-    now = jobs.jobs["j1"].due_at
-    await worker.process_job(job_id="j1", now=now)
-    provider.observation = observation(AvailabilityStatus.AVAILABLE, now)
+    provider.observation = observation("AVAILABLE 6", now)
     now = jobs.jobs["j1"].due_at
     assert (await worker.process_job(job_id="j1", now=now)).alert_triggered
     assert len(outbox.items) == 2
@@ -103,6 +109,7 @@ async def test_firestore_dispatcher_distinguishes_later_reentry() -> None:
     data = {
         "schemaVersion": 1,
         "status": "active",
+        "isActive": True,
         "ownerId": "u1",
         "query": {
             "trainNumber": "12661",
@@ -112,13 +119,13 @@ async def test_firestore_dispatcher_distinguishes_later_reentry() -> None:
             "travelClass": "SL",
             "quota": "GN",
         },
-        "condition": {"kind": "becomes_available", "targetStatus": None, "maximumPosition": None},
+        "condition": {"kind": "seats_below", "targetStatus": None, "maximumPosition": 10},
         "createdAt": now,
         "updatedAt": now,
         "lastObservation": {
-            "status": "WL",
-            "rawAvailability": "WL 20",
-            "position": 20,
+            "status": "AVAILABLE",
+            "rawAvailability": "AVAILABLE 50",
+            "position": None,
             "observedAt": now.isoformat(),
         },
     }
@@ -144,7 +151,7 @@ async def test_firestore_dispatcher_distinguishes_later_reentry() -> None:
     cursor_ref = client.collection.return_value.document.return_value
     cursor_ref.get = AsyncMock(return_value=MagicMock(to_dict=lambda: {}))
     cursor_ref.set = AsyncMock()
-    provider = FakeAvailabilityProvider(observation=observation(AvailabilityStatus.AVAILABLE, now))
+    provider = FakeAvailabilityProvider(observation=observation("AVAILABLE 9", now))
     outbox = InMemoryNotificationOutbox()
     dispatcher = FirestoreWatchDispatcher(client, availability_provider=provider, outbox=outbox)
     await dispatcher.dispatch_due_jobs(now=now)
@@ -157,9 +164,9 @@ async def test_firestore_dispatcher_distinguishes_later_reentry() -> None:
     await dispatcher.dispatch_due_jobs(now=now)
     assert len(outbox.items) == 1
     now += timedelta(minutes=5)
-    provider.observation = observation(AvailabilityStatus.WAITLIST, now)
+    provider.observation = observation("AVAILABLE 15", now)
     await dispatcher.dispatch_due_jobs(now=now)
     now += timedelta(minutes=5)
-    provider.observation = observation(AvailabilityStatus.AVAILABLE, now)
+    provider.observation = observation("AVAILABLE 7", now)
     await dispatcher.dispatch_due_jobs(now=now)
     assert len(outbox.items) == 2

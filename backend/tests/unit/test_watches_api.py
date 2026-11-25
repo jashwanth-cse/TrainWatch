@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -10,7 +11,8 @@ from fastapi import FastAPI
 from tests.asgi import request
 from tests.unit.test_api_boundary import FakeTokenVerifier
 from trainwatch.config import AppSettings
-from trainwatch.domain.watch import Watch
+from trainwatch.domain.alerts import AlertCondition, AlertKind
+from trainwatch.domain.watch import TrainQuery, Watch, WatchStatus
 from trainwatch.main import create_app
 
 
@@ -48,7 +50,7 @@ def _build_test_app(
 
 @pytest.mark.anyio
 async def test_create_watch_success() -> None:
-    """A valid watch creation request succeeds with 201 and valid response structure."""
+    """A valid AVL watch creation request succeeds with 201 and valid response structure."""
     repo = InMemoryWatchRepository()
     app = _build_test_app(repo)
 
@@ -56,11 +58,14 @@ async def test_create_watch_success() -> None:
         "train_number": "12661",
         "source": "MS",
         "destination": "TEN",
-        "journey_date": "2026-11-15",
+        "journey_date": "2099-11-15",
         "travel_class": "3A",
         "quota": "GN",
+        "departure_time": "20:00",
+        "initial_avl_count": 150,
         "condition": {
-            "kind": "becomes_available",
+            "kind": "seats_below",
+            "maximum_position": 10,
         },
     }
 
@@ -80,26 +85,32 @@ async def test_create_watch_success() -> None:
     assert body["query"]["source"] == "MS"
     assert body["query"]["destination"] == "TEN"
     assert body["query"]["travel_class"] == "3A"
-    assert body["condition"]["kind"] == "becomes_available"
+    assert body["query"]["departure_time"] == "20:00"
+    assert body["condition"]["kind"] == "seats_below"
+    assert body["condition"]["maximum_position"] == 10
     assert body["status"] == "active"
+    assert body["is_active"] is True
+    assert body["last_avl_count"] == 150
+    assert body["departure_at"] is not None
 
     # Verify stored in repository
     stored = await repo.get(watch_id=body["watch_id"], owner_id="user-a")
     assert stored is not None
     assert stored.query.train_number == "12661"
+    assert stored.last_avl_count == 150
 
 
 @pytest.mark.anyio
 async def test_create_watch_with_threshold_condition() -> None:
-    """Create watch with reaches_threshold and numeric target position."""
+    """Reject RAC/WL threshold alerts under the AVL-only policy and accept AVL thresholds."""
     repo = InMemoryWatchRepository()
     app = _build_test_app(repo)
 
-    payload = {
+    rac_payload = {
         "train_number": "12662",
         "source": "TEN",
         "destination": "MS",
-        "journey_date": "2026-11-20",
+        "journey_date": "2099-11-20",
         "travel_class": "SL",
         "quota": "GN",
         "condition": {
@@ -109,18 +120,38 @@ async def test_create_watch_with_threshold_condition() -> None:
         },
     }
 
+    rejected = await request(
+        app,
+        "POST",
+        "/api/v1/watches",
+        json_body=rac_payload,
+        headers={"Authorization": "Bearer ticket-a"},
+    )
+    assert rejected.status_code == 422
+    assert "AVL seat threshold alerts" in rejected.json()["error"]["message"]
+
+    avl_payload = {
+        "train_number": "12662",
+        "source": "TEN",
+        "destination": "MS",
+        "journey_date": "2099-11-20",
+        "travel_class": "SL",
+        "quota": "GN",
+        "condition": {
+            "kind": "seats_below",
+            "maximum_position": 10,
+        },
+    }
     response = await request(
         app,
         "POST",
         "/api/v1/watches",
-        json_body=payload,
+        json_body=avl_payload,
         headers={"Authorization": "Bearer ticket-a"},
     )
-
     assert response.status_code == 201
     body = response.json()
-    assert body["condition"]["kind"] == "reaches_threshold"
-    assert body["condition"]["target_status"] == "RAC"
+    assert body["condition"]["kind"] == "seats_below"
     assert body["condition"]["maximum_position"] == 10
 
 
@@ -141,6 +172,14 @@ async def test_create_watch_with_threshold_condition() -> None:
             {"condition": {"kind": "becomes_available", "maximum_position": 5}},
             "only threshold alerts accept target fields",
         ),
+        (
+            {"condition": {"kind": "becomes_available"}},
+            "Only confirmed AVL seat threshold alerts",
+        ),
+        (
+            {"journey_date": "2020-01-01", "departure_time": "10:00"},
+            "already departed",
+        ),
     ],
 )
 async def test_create_watch_input_validation_errors(
@@ -153,10 +192,10 @@ async def test_create_watch_input_validation_errors(
         "train_number": "12661",
         "source": "MS",
         "destination": "TEN",
-        "journey_date": "2026-11-15",
+        "journey_date": "2099-11-15",
         "travel_class": "3A",
         "quota": "GN",
-        "condition": {"kind": "becomes_available"},
+        "condition": {"kind": "seats_below", "maximum_position": 10},
     }
     base_payload.update(invalid_patch)
 
@@ -186,10 +225,10 @@ async def test_get_watch_success_and_cross_user_isolation() -> None:
             "train_number": "12661",
             "source": "MS",
             "destination": "TEN",
-            "journey_date": "2026-11-15",
+            "journey_date": "2099-11-15",
             "travel_class": "3A",
             "quota": "GN",
-            "condition": {"kind": "becomes_available"},
+            "condition": {"kind": "seats_below", "maximum_position": 10},
         },
         headers={"Authorization": "Bearer ticket-a"},
     )
@@ -239,9 +278,9 @@ async def test_patch_watch_status_transitions() -> None:
             "train_number": "12661",
             "source": "MS",
             "destination": "TEN",
-            "journey_date": "2026-11-15",
+            "journey_date": "2099-11-15",
             "travel_class": "3A",
-            "condition": {"kind": "becomes_available"},
+            "condition": {"kind": "seats_below", "maximum_position": 10},
         },
         headers={"Authorization": "Bearer ticket-a"},
     )
@@ -257,6 +296,7 @@ async def test_patch_watch_status_transitions() -> None:
     )
     assert pause_resp.status_code == 200
     assert pause_resp.json()["status"] == "paused"
+    assert pause_resp.json()["is_active"] is False
 
     # PAUSED -> ACTIVE
     resume_resp = await request(
@@ -268,6 +308,7 @@ async def test_patch_watch_status_transitions() -> None:
     )
     assert resume_resp.status_code == 200
     assert resume_resp.json()["status"] == "active"
+    assert resume_resp.json()["is_active"] is True
 
     # ACTIVE -> CANCELLED
     cancel_resp = await request(
@@ -294,7 +335,7 @@ async def test_patch_watch_status_transitions() -> None:
         app,
         "PATCH",
         f"/api/v1/watches/{watch_id}",
-        json_body={"condition": {"kind": "becomes_available"}},
+        json_body={"condition": {"kind": "seats_below", "maximum_position": 15}},
         headers={"Authorization": "Bearer ticket-a"},
     )
     assert invalid_cond.status_code == 422
@@ -326,9 +367,9 @@ async def test_delete_watch_success_and_isolation() -> None:
             "train_number": "12661",
             "source": "MS",
             "destination": "TEN",
-            "journey_date": "2026-11-15",
+            "journey_date": "2099-11-15",
             "travel_class": "3A",
-            "condition": {"kind": "becomes_available"},
+            "condition": {"kind": "seats_below", "maximum_position": 10},
         },
         headers={"Authorization": "Bearer ticket-a"},
     )
@@ -379,9 +420,9 @@ async def test_service_unavailable_when_repository_unconfigured() -> None:
             "train_number": "12661",
             "source": "MS",
             "destination": "TEN",
-            "journey_date": "2026-11-15",
+            "journey_date": "2099-11-15",
             "travel_class": "3A",
-            "condition": {"kind": "becomes_available"},
+            "condition": {"kind": "seats_below", "maximum_position": 10},
         },
         headers={"Authorization": "Bearer ticket-user"},
     )
@@ -390,7 +431,7 @@ async def test_service_unavailable_when_repository_unconfigured() -> None:
 
 
 @pytest.mark.anyio
-async def test_list_watches_for_user() -> None:
+async def test_list_watches_for_user_and_lazy_dissolution() -> None:
     repo = InMemoryWatchRepository()
     app = _build_test_app(repo)
 
@@ -402,17 +443,66 @@ async def test_list_watches_for_user() -> None:
             "train_number": "12661",
             "source": "MS",
             "destination": "TEN",
-            "journey_date": "2026-11-15",
+            "journey_date": "2099-11-15",
             "travel_class": "3A",
-            "condition": {"kind": "becomes_available"},
+            "condition": {"kind": "seats_below", "maximum_position": 10},
         },
         headers={"Authorization": "Bearer ticket-a"},
+    )
+
+    # Seed one departed watch and one legacy RAC watch for lazy server dissolution on GET
+    past = datetime.now(UTC) - timedelta(days=5)
+    await repo.save(
+        Watch(
+            watch_id="w_departed",
+            owner_id="user-a",
+            query=TrainQuery(
+                train_number="12662",
+                source="MS",
+                destination="TEN",
+                journey_date=date(2020, 1, 1),
+                travel_class="SL",
+                departure_time="20:00",
+            ),
+            condition=AlertCondition(AlertKind.SEATS_BELOW, maximum_position=10),
+            status=WatchStatus.ACTIVE,
+            created_at=past,
+            updated_at=past,
+        )
+    )
+    await repo.save(
+        Watch(
+            watch_id="w_legacy",
+            owner_id="user-a",
+            query=TrainQuery(
+                train_number="12663",
+                source="MS",
+                destination="TEN",
+                journey_date=date(2099, 12, 1),
+                travel_class="SL",
+            ),
+            condition=AlertCondition(AlertKind.BECOMES_AVAILABLE),
+            status=WatchStatus.ACTIVE,
+            created_at=past,
+            updated_at=past,
+        )
     )
 
     headers_a = {"Authorization": "Bearer ticket-a"}
     resp_a = await request(app, "GET", "/api/v1/watches", headers=headers_a)
     assert resp_a.status_code == 200
-    assert len(resp_a.json()) == 1
+    items = {item["watch_id"]: item for item in resp_a.json()}
+    assert len(items) == 3
+    assert items["w_departed"]["status"] == "expired"
+    assert items["w_departed"]["is_active"] is False
+    assert items["w_departed"]["expired_reason"] == "train_departed"
+    assert items["w_legacy"]["status"] == "expired"
+    assert items["w_legacy"]["is_active"] is False
+    assert items["w_legacy"]["expired_reason"] == "avl_only_policy"
+
+    # Confirm persisted in repo as expired
+    stored_dep = await repo.get(watch_id="w_departed", owner_id="user-a")
+    assert stored_dep is not None and stored_dep.status is WatchStatus.EXPIRED
 
     headers_b = {"Authorization": "Bearer ticket-b"}
     resp_b = await request(app, "GET", "/api/v1/watches", headers=headers_b)
@@ -433,9 +523,9 @@ async def test_update_watch_condition() -> None:
             "train_number": "12661",
             "source": "MS",
             "destination": "TEN",
-            "journey_date": "2026-11-15",
+            "journey_date": "2099-11-15",
             "travel_class": "3A",
-            "condition": {"kind": "becomes_available"},
+            "condition": {"kind": "seats_below", "maximum_position": 10},
         },
         headers={"Authorization": "Bearer ticket-a"},
     )
@@ -479,9 +569,9 @@ async def test_update_watch_invalid_transition() -> None:
             "train_number": "12661",
             "source": "MS",
             "destination": "TEN",
-            "journey_date": "2026-11-15",
+            "journey_date": "2099-11-15",
             "travel_class": "3A",
-            "condition": {"kind": "becomes_available"},
+            "condition": {"kind": "seats_below", "maximum_position": 10},
         },
         headers={"Authorization": "Bearer ticket-a"},
     )
@@ -510,7 +600,7 @@ async def test_update_watch_invalid_transition() -> None:
         app,
         "PATCH",
         f"/api/v1/watches/{watch_id}",
-        json_body={"condition": {"kind": "becomes_available"}},
+        json_body={"condition": {"kind": "seats_below", "maximum_position": 20}},
         headers={"Authorization": "Bearer ticket-a"},
     )
     assert invalid_cond.status_code == 422

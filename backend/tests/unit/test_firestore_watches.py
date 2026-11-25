@@ -9,7 +9,6 @@ from typing import cast
 import pytest
 
 from trainwatch.domain.alerts import AlertCondition, AlertKind
-from trainwatch.domain.availability import AvailabilityStatus
 from trainwatch.domain.watch import TrainQuery, Watch, WatchStatus
 from trainwatch.infrastructure.firestore import client as client_module
 from trainwatch.infrastructure.firestore.client import create_firestore_client
@@ -125,18 +124,43 @@ async def test_round_trip_uses_owner_scoped_path() -> None:
     """Save and reconstruct a watch only below its owner's reminder path."""
     client = FakeClient()
     repository: WatchRepository = FirestoreWatchRepository(client)
-    expected = watch(
-        condition=AlertCondition(
-            AlertKind.REACHES_THRESHOLD,
-            target_status=AvailabilityStatus.RAC,
-            maximum_position=11,
-        )
+    dep_at = datetime(2026, 11, 1, 14, 30, tzinfo=UTC)
+    expected = Watch(
+        watch_id="watch-1",
+        owner_id="user-a",
+        query=TrainQuery(
+            train_number="12661",
+            source="RJPM",
+            destination="MS",
+            journey_date=date(2026, 11, 1),
+            travel_class="3A",
+            quota="GN",
+            departure_time="20:00",
+        ),
+        condition=AlertCondition(AlertKind.SEATS_BELOW, maximum_position=10),
+        status=WatchStatus.ACTIVE,
+        created_at=datetime(2026, 10, 24, 8, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 10, 24, 8, 0, tzinfo=UTC),
+        departure_at=dep_at,
+        last_avl_count=42,
+        last_alerted_avl=None,
+        expired_reason=None,
     )
 
     await repository.save(expected)
 
     assert set(client.store) == {"users/user-a/reminders/watch-1"}
+    saved_doc = client.store["users/user-a/reminders/watch-1"]
+    assert saved_doc is not None and saved_doc["isActive"] is True
     assert await repository.get(watch_id="watch-1", owner_id="user-a") == expected
+
+    # ISO string departureAt and isActive=False coercion
+    stored_doc = client.store["users/user-a/reminders/watch-1"]
+    assert stored_doc is not None
+    stored_doc["departureAt"] = dep_at.isoformat()
+    stored_doc["isActive"] = False
+    decoded = await repository.get(watch_id="watch-1", owner_id="user-a")
+    assert decoded is not None and decoded.status is WatchStatus.EXPIRED and not decoded.is_active
 
 
 @pytest.mark.anyio

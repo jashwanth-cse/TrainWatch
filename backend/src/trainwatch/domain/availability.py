@@ -71,7 +71,7 @@ class AvailabilityObservation:
         return cls(failure=failure)
 
 
-_AVAILABLE_PATTERN = re.compile(r"^(?:AVAILABLE|AVL|CURR_AVBL)(?:\s+\d+)?$", re.IGNORECASE)
+_AVAILABLE_PATTERN = re.compile(r"^(?:AVAILABLE|AVBL|AVL|CURR_AVBL)(?:[-\s]+\d+)?$", re.IGNORECASE)
 _RAC_PATTERN = re.compile(r"^RAC\s*(\d+)$", re.IGNORECASE)
 _WAITLIST_PATTERN = re.compile(r"(?:WL|WAITLIST)\s*(\d+)", re.IGNORECASE)
 _REGRET_PATTERN = re.compile(r"^REGRET(?:/WL)?$", re.IGNORECASE)

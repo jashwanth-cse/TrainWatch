@@ -974,3 +974,31 @@ async def test_overnight_origin_midnight_halt_and_preboarding_selection() -> Non
     assert stn_map["TSI"] == "TENKASI JN"
     assert stn_map["RJPM"] == "RAJAPALAYAM"
     assert stn_map["MS"] == "CHENNAI EGMORE"
+
+
+def test_calculate_duration_minutes_branches() -> None:
+    """Verify duration calculation across midnight rollovers, timeline, and invalid times."""
+    from trainwatch.services.smart_routing_engine import (
+        ScheduleTimeline,
+        _calculate_duration_minutes,
+    )
+
+    bad_stop = _stop(1, "BAD", "BAD", "--", "--", 0, 1, 0)
+    ok_stop = _stop(2, "OK", "OK", "01:00", "01:05", 5, 1, 50)
+    assert _calculate_duration_minutes(bad_stop, ok_stop) == 1
+    assert _calculate_duration_minutes(ok_stop, bad_stop) == 1
+
+    # Missing raw day increment across midnight (23:50 Day 1 -> 00:30 Day 1) -> 40 min
+    s1 = _stop(1, "S1", "S1", "23:45", "23:50", 5, 1, 0)
+    s2 = _stop(2, "S2", "S2", "00:30", "00:35", 5, 1, 40)
+    assert _calculate_duration_minutes(s1, s2) == 40
+
+    # Normal same-day duration without timeline
+    s3 = _stop(3, "S3", "S3", "02:30", "02:35", 5, 1, 100)
+    assert _calculate_duration_minutes(s2, s3) == 115
+
+    # With timeline after midnight halt
+    halt_stop = _stop(2, "TSI", "TSI", "23:55", "00:05", 10, 1, 10)
+    dest_stop = _stop(3, "MS", "MS", "14:00", "14:00", 0, 2, 670)
+    tl = ScheduleTimeline((s1, halt_stop, dest_stop))
+    assert _calculate_duration_minutes(halt_stop, dest_stop, timeline=tl) == 835

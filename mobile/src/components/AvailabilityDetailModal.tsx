@@ -29,7 +29,6 @@ import {
   CheckCircle2,
   X,
   AlertCircle,
-  TrendingUp,
   Wifi,
   WifiOff,
   Route,
@@ -99,32 +98,54 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   const [creatingAlert, setCreatingAlert] = useState(false);
   const [alertError, setAlertError] = useState<string | null>(null);
 
-  // Alert condition form states
-  const [avlThreshold, setAvlThreshold] = useState<string>('25');
+  // Alert condition form states (AVL seats threshold only)
+  const [avlThreshold, setAvlThreshold] = useState<string>('10');
   const [thresholdError, setThresholdError] = useState<string | null>(null);
-  const [racOption, setRacOption] = useState<'drop_to_avl' | 'rapid_increase'>('drop_to_avl');
-  const [wlOption, setWlOption] = useState<'drop_to_rac' | 'drop_to_avl' | 'improves'>('drop_to_rac');
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  // Sync initial threshold with available count when class changes
+  // Sync initial threshold with available count and snapshot current time when class opens
   useEffect(() => {
     if (selectedClass) {
       const seats = extractAvailableSeats(selectedClass.availability);
       const defaultVal = seats && seats > 0
-        ? Math.min(25, Math.max(1, Math.floor(seats / 2)))
-        : 25;
+        ? Math.min(10, Math.max(1, Math.floor(seats / 2)))
+        : 10;
       queueMicrotask(() => {
         setAvlThreshold(String(defaultVal));
         setThresholdError(null);
         setAlertError(null);
+        setNowMs(Date.now());
       });
     }
-  }, [selectedClass]);
+  }, [selectedClass, visible]);
 
   if (!train || !selectedClass) return null;
 
   const currentStatus = liveAvailability || selectedClass.availability;
   const parsedStatus = parseAvailabilityStatus(currentStatus);
   const availableSeatsCap = extractAvailableSeats(currentStatus);
+
+  const hasTrainDeparted = (() => {
+    if (!journeyDate || !train.departure_time) return false;
+    const dateParts = journeyDate.trim().split(/[-/]/);
+    const timeMatch = train.departure_time.trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (dateParts.length !== 3 || !timeMatch) return false;
+    const isoDate =
+      dateParts[0].length === 4
+        ? `${dateParts[0]}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`
+        : `${dateParts[2]}-${dateParts[1].padStart(2, '0')}-${dateParts[0].padStart(2, '0')}`;
+    const hh = timeMatch[1].padStart(2, '0');
+    const mm = timeMatch[2];
+    const depTimestamp = Date.parse(`${isoDate}T${hh}:${mm}:00+05:30`);
+    return Number.isFinite(depTimestamp) && nowMs >= depTimestamp;
+  })();
+
+  const isTrackableAvl =
+    parsedStatus.canTrack && parsedStatus.badgeLabel === 'AVAILABLE' && !hasTrainDeparted;
+  const untrackableNotice = hasTrainDeparted
+    ? `Train departure (${train.departure_time}) has already passed.`
+    : parsedStatus.untrackableReason ||
+      'Seat alerts are supported only when confirmed (AVL) berths are available.';
 
   const normalizedClass = (selectedClass.travel_class || '').trim().toUpperCase();
   const isClassEligibleForSplit = SMART_SPLIT_ELIGIBLE_CLASSES.includes(normalizedClass);
@@ -199,38 +220,24 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
   const handleCreateAlert = async () => {
     setAlertError(null);
 
-    let condition: WatchCondition;
-    if (parsedStatus.badgeLabel === 'AVAILABLE') {
-      const num = parseInt(avlThreshold, 10);
-      if (isNaN(num) || num <= 0) {
-        setThresholdError('Enter a threshold number greater than 0');
-        return;
-      }
-      if (availableSeatsCap !== null && num > availableSeatsCap) {
-        setThresholdError(`Cannot exceed current available seats (${availableSeatsCap})`);
-        return;
-      }
-      condition = {
-        kind: 'seats_below',
-        maximum_position: num,
-      };
-    } else if (parsedStatus.badgeLabel === 'RAC') {
-      if (racOption === 'drop_to_avl') {
-        condition = { kind: 'becomes_available' };
-      } else {
-        condition = { kind: 'rapid_rac_increase' };
-      }
-    } else if (parsedStatus.badgeLabel === 'WAITLIST') {
-      if (wlOption === 'drop_to_rac') {
-        condition = { kind: 'improves', target_status: 'RAC' };
-      } else if (wlOption === 'drop_to_avl') {
-        condition = { kind: 'becomes_available' };
-      } else {
-        condition = { kind: 'improves' };
-      }
-    } else {
-      condition = { kind: 'becomes_available' };
+    if (!isTrackableAvl) {
+      setAlertError(untrackableNotice);
+      return;
     }
+
+    const num = parseInt(avlThreshold, 10);
+    if (isNaN(num) || num <= 0) {
+      setThresholdError('Enter a threshold number greater than 0');
+      return;
+    }
+    if (availableSeatsCap !== null && num > availableSeatsCap) {
+      setThresholdError(`Cannot exceed current available seats (${availableSeatsCap})`);
+      return;
+    }
+    const condition: WatchCondition = {
+      kind: 'seats_below',
+      maximum_position: num,
+    };
 
     setCreatingAlert(true);
     try {
@@ -244,6 +251,8 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
         journeyDate,
         travelClass: selectedClass.travel_class,
         quota,
+        departureTime: train.departure_time,
+        initialAvlCount: availableSeatsCap,
         condition,
       });
       setAlertConfigured(true);
@@ -539,11 +548,11 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
                 </View>
               ) : null}
 
-              {!parsedStatus.canTrack ? (
+              {!isTrackableAvl ? (
                 <View style={styles.alertDisabledBox}>
                   <AlertCircle size={16} color={colors.textSecondary} strokeWidth={2.2} style={{ marginRight: 8 }} />
                   <Text style={styles.alertDisabledText}>
-                    {parsedStatus.untrackableReason || 'Tracking unavailable for this seat status.'}
+                    {untrackableNotice}
                   </Text>
                 </View>
               ) : isAlreadyActive ? (
@@ -574,7 +583,7 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
                     <View style={styles.conditionSection}>
                       <Text style={styles.conditionSectionTitle}>Alert Condition</Text>
                       <Text style={styles.conditionSectionDesc}>
-                        Alert me when available seats drop below your threshold:
+                        Get alerted when available seats drop below your limit, and again as seats keep filling fast:
                       </Text>
 
                       {/* Locked Prefix + Numeric Input */}
@@ -632,129 +641,6 @@ export const AvailabilityDetailModal: React.FC<AvailabilityDetailModalProps> = (
                           );
                         })}
                       </View>
-                    </View>
-                  )}
-
-                  {/* CASE 2: RAC STATUS (RAC drops to AVL or RAC increases rapidly) */}
-                  {parsedStatus.badgeLabel === 'RAC' && (
-                    <View style={styles.conditionSection}>
-                      <Text style={styles.conditionSectionTitle}>Select Alert Condition</Text>
-                      <Text style={styles.conditionSectionDesc}>
-                        Choose how TrainWatch should monitor this RAC berth:
-                      </Text>
-
-                      {/* Option A: RAC drops to AVL */}
-                      <TouchableOpacity
-                        style={[
-                          styles.optionCard,
-                          racOption === 'drop_to_avl' && styles.optionCardSelected,
-                        ]}
-                        onPress={() => setRacOption('drop_to_avl')}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.optionRadio}>
-                          {racOption === 'drop_to_avl' && <View style={styles.optionRadioDot} />}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.optionTitle}>Notify when RAC drops to AVL</Text>
-                          <Text style={styles.optionSub}>
-                            Alert immediately as soon as confirmed berths open up.
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      {/* Option B: RAC increases rapidly */}
-                      <TouchableOpacity
-                        style={[
-                          styles.optionCard,
-                          racOption === 'rapid_increase' && styles.optionCardSelected,
-                        ]}
-                        onPress={() => setRacOption('rapid_increase')}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.optionRadio}>
-                          {racOption === 'rapid_increase' && <View style={styles.optionRadioDot} />}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <View style={styles.optionHeaderRow}>
-                            <Text style={styles.optionTitle}>Notify when RAC increases rapidly</Text>
-                            <TrendingUp size={14} color={colors.statusRac} strokeWidth={2.4} style={{ marginLeft: 4 }} />
-                          </View>
-                          <Text style={styles.optionSub}>
-                            Alert if the RAC queue grows by 5+ or slips to WL so you can book fast to avoid waitlisting.
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-
-                  {/* CASE 3: WAITLIST STATUS (WL drops to RAC / WL drops to AVL / Improves) */}
-                  {parsedStatus.badgeLabel === 'WAITLIST' && (
-                    <View style={styles.conditionSection}>
-                      <Text style={styles.conditionSectionTitle}>Select Alert Condition</Text>
-                      <Text style={styles.conditionSectionDesc}>
-                        Choose when you want to be alerted as waitlist clears:
-                      </Text>
-
-                      {/* Option A: WL drops to RAC */}
-                      <TouchableOpacity
-                        style={[
-                          styles.optionCard,
-                          wlOption === 'drop_to_rac' && styles.optionCardSelected,
-                        ]}
-                        onPress={() => setWlOption('drop_to_rac')}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.optionRadio}>
-                          {wlOption === 'drop_to_rac' && <View style={styles.optionRadioDot} />}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.optionTitle}>Notify when WL drops to RAC</Text>
-                          <Text style={styles.optionSub}>
-                            Alert as soon as your waitlist clears into RAC status.
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      {/* Option B: WL drops to AVL */}
-                      <TouchableOpacity
-                        style={[
-                          styles.optionCard,
-                          wlOption === 'drop_to_avl' && styles.optionCardSelected,
-                        ]}
-                        onPress={() => setWlOption('drop_to_avl')}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.optionRadio}>
-                          {wlOption === 'drop_to_avl' && <View style={styles.optionRadioDot} />}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.optionTitle}>Notify when WL drops to AVL</Text>
-                          <Text style={styles.optionSub}>
-                            Alert only when confirmed berths become available.
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      {/* Option C: Any improvement */}
-                      <TouchableOpacity
-                        style={[
-                          styles.optionCard,
-                          wlOption === 'improves' && styles.optionCardSelected,
-                        ]}
-                        onPress={() => setWlOption('improves')}
-                        activeOpacity={0.8}
-                      >
-                        <View style={styles.optionRadio}>
-                          {wlOption === 'improves' && <View style={styles.optionRadioDot} />}
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.optionTitle}>Notify on any position improvement</Text>
-                          <Text style={styles.optionSub}>
-                            Alert whenever the queue position moves up.
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
                     </View>
                   )}
 
