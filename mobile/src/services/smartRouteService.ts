@@ -815,6 +815,53 @@ export async function fetchSmartRoutes(
 }
 
 /**
+ * Compute consistent Direct vs Solution comparison figures, prioritizing live backend totals
+ * over cached search-screen parameters so displayed surcharge always equals (totalFare - directFare).
+ */
+export interface ComparisonMetrics {
+  directStatusText: string;
+  directFareNum: number | null;
+  fareDelta: number;
+  surchargePct: number;
+}
+
+export function computeComparisonMetrics(
+  resultData: SmartRoutesResultData | null | undefined,
+  bestSolution: SmartRouteSolution | null | undefined,
+  fallbackStatus?: string,
+  fallbackFare?: string
+): ComparisonMetrics {
+  const directStatusText = resultData?.direct_status || fallbackStatus || 'Waitlist';
+  const parsedFallback = fallbackFare ? parseInt(fallbackFare, 10) : NaN;
+  const directFareNum =
+    resultData?.direct_fare !== null && resultData?.direct_fare !== undefined
+      ? resultData.direct_fare
+      : !Number.isNaN(parsedFallback) && parsedFallback > 0
+        ? parsedFallback
+        : null;
+
+  const fareDelta =
+    bestSolution && bestSolution.total_fare !== null && directFareNum !== null
+      ? bestSolution.total_fare - directFareNum
+      : bestSolution?.fare_surcharge ?? 0;
+
+  const surchargePct =
+    bestSolution &&
+    bestSolution.total_fare !== null &&
+    directFareNum !== null &&
+    directFareNum > 0
+      ? (Math.abs(fareDelta) / directFareNum) * 100.0
+      : bestSolution?.fare_surcharge_pct ?? 0;
+
+  return {
+    directStatusText,
+    directFareNum,
+    fareDelta,
+    surchargePct,
+  };
+}
+
+/**
  * Clear all smart route cache entries (useful for testing or full app logout).
  */
 export async function clearSmartRouteCache(): Promise<void> {

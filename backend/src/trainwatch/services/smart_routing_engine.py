@@ -65,6 +65,7 @@ class ScheduleTimeline:
 
     def __init__(self, stops: tuple[ScheduleStop, ...]) -> None:
         self._departure_days: dict[tuple[int, str], int] = {}
+        self._arrival_days: dict[tuple[int, str], int] = {}
         self._build_timeline(stops)
 
     def _build_timeline(self, stops: tuple[ScheduleStop, ...]) -> None:
@@ -93,10 +94,15 @@ class ScheduleTimeline:
             if idx > 0 and arr_min is not None and dep_min is not None and dep_min < arr_min:
                 dep_day = arr_day + 1
 
+            self._arrival_days[(stop.stop_number, stop.station_code)] = arr_day
             self._departure_days[(stop.stop_number, stop.station_code)] = dep_day
             prev_dep_day = dep_day
             prev_dep_min = dep_min
             prev_raw_day = stop.day
+
+    def effective_arrival_day(self, stop: ScheduleStop) -> int:
+        """Return the effective arrival day index (1-based) for a schedule stop."""
+        return self._arrival_days.get((stop.stop_number, stop.station_code), stop.day)
 
     def effective_departure_day(self, stop: ScheduleStop) -> int:
         """Return the effective departure day index (1-based) for a schedule stop."""
@@ -124,12 +130,25 @@ def _calculate_leg_journey_date(
     return query_origin_date + timedelta(days=day_offset)
 
 
-def _calculate_duration_minutes(dep_stop: ScheduleStop, arr_stop: ScheduleStop) -> int:
+def _calculate_duration_minutes(
+    dep_stop: ScheduleStop,
+    arr_stop: ScheduleStop,
+    timeline: ScheduleTimeline | None = None,
+) -> int:
     """Calculate running duration in minutes between two schedule stops."""
-    dep_h, dep_m = (int(x) for x in dep_stop.departure_time.split(":")[:2])
-    arr_h, arr_m = (int(x) for x in arr_stop.arrival_time.split(":")[:2])
-    day_diff = max(0, arr_stop.day - dep_stop.day)
-    duration = (day_diff * 1440) + (arr_h * 60 + arr_m) - (dep_h * 60 + dep_m)
+    dep_min = _parse_hhmm_minutes(dep_stop.departure_time)
+    arr_min = _parse_hhmm_minutes(arr_stop.arrival_time)
+    if dep_min is None or arr_min is None:
+        return 1
+    if timeline is not None:
+        day_diff = max(
+            0, timeline.effective_arrival_day(arr_stop) - timeline.effective_departure_day(dep_stop)
+        )
+    else:
+        day_diff = max(0, arr_stop.day - dep_stop.day)
+        if day_diff == 0 and arr_min < dep_min:
+            day_diff = 1
+    duration = (day_diff * 1440) + arr_min - dep_min
     return max(1, duration)
 
 
@@ -173,7 +192,7 @@ class SmartRoutingEngine:
         origin_stop = subroute[0]
         dest_stop = subroute[-1]
         timeline = ScheduleTimeline(schedule.stops)
-        journey_duration_min = _calculate_duration_minutes(origin_stop, dest_stop)
+        journey_duration_min = _calculate_duration_minutes(origin_stop, dest_stop, timeline)
         journey_duration_hours = journey_duration_min / 60.0
         journey_distance_km = max(1, dest_stop.distance_km - origin_stop.distance_km)
         max_leg_horizon = compute_leg_horizon(journey_duration_hours)
@@ -372,6 +391,7 @@ class SmartRoutingEngine:
         direct_fare: int | None,
         is_confirmed: bool,
         is_rac: bool,
+        timeline: ScheduleTimeline | None = None,
     ) -> SmartRouteSolution:
         """Assemble a scored Tier 1 same-train split solution with server presentation."""
         total_fare = (
@@ -411,7 +431,7 @@ class SmartRoutingEngine:
             total_fare=total_fare,
             fare_surcharge=max(0, surcharge),
             fare_surcharge_pct=round(max(0.0, surcharge_pct), 1),
-            total_duration_minutes=_calculate_duration_minutes(origin_stop, dest_stop),
+            total_duration_minutes=_calculate_duration_minutes(origin_stop, dest_stop, timeline),
             boarding_station=None,
             is_confirmed=is_confirmed,
             is_rac=is_rac,
@@ -502,6 +522,7 @@ class SmartRoutingEngine:
             direct_fare=direct_fare,
             is_confirmed=is_confirmed,
             is_rac=is_rac,
+            timeline=timeline,
         )
 
     async def _evaluate_3leg_candidate(
@@ -574,6 +595,7 @@ class SmartRoutingEngine:
             direct_fare=direct_fare,
             is_confirmed=is_confirmed,
             is_rac=is_rac,
+            timeline=timeline,
         )
 
     async def _evaluate_4leg_candidate(
@@ -671,6 +693,7 @@ class SmartRoutingEngine:
             direct_fare=direct_fare,
             is_confirmed=is_confirmed,
             is_rac=is_rac,
+            timeline=timeline,
         )
 
     @staticmethod
@@ -840,7 +863,7 @@ class SmartRoutingEngine:
             total_fare=ext_fare,
             fare_surcharge=safe_surcharge,
             fare_surcharge_pct=round(max(0.0, surcharge_pct), 1),
-            total_duration_minutes=_calculate_duration_minutes(origin_stop, dest_stop),
+            total_duration_minutes=_calculate_duration_minutes(origin_stop, dest_stop, timeline),
             boarding_station=query.origin,
             is_confirmed=is_confirmed,
             is_rac=is_rac,
@@ -869,7 +892,7 @@ class SmartRoutingEngine:
         raw_status = snapshot.raw_availability if snapshot else "UNKNOWN"
         position = snapshot.position if snapshot else None
 
-        duration_min = _calculate_duration_minutes(from_stop, to_stop)
+        duration_min = _calculate_duration_minutes(from_stop, to_stop, timeline=timeline)
         distance_km = max(0, to_stop.distance_km - from_stop.distance_km)
         if timeline is not None:
             leg_date = timeline.leg_departure_date(
