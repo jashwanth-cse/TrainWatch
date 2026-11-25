@@ -5,7 +5,7 @@ on:
     inputs:
       force_build:
         description: 'Force build even if app version matches latest release'
-        required: true
+        required: false
         default: true
         type: boolean
   push:
@@ -34,7 +34,7 @@ jobs:
         id: version-check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORCE_BUILD: ${{ inputs.force_build }}
+          FORCE_BUILD: ${{ inputs.force_build == true && 'true' || 'false' }}
         run: |
           # 1. Read app version from mobile/app.json
           RAW_VERSION=$(node -p "require('./mobile/app.json').expo.version")
