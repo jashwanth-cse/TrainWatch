@@ -13,8 +13,10 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { radius } from '../theme/tokens';
 import {
   fetchSmartRoutes,
+  resolveSolutionPresentation,
   SmartRoutesResultData,
   SmartRouteSolution,
+  SolutionPresentation,
   SubLeg,
 } from '../services/smartRouteService';
 import { getStationName } from '../services/stationService';
@@ -34,6 +36,7 @@ import {
   ChevronDown,
   ChevronUp,
   Zap,
+  MapPin,
 } from 'lucide-react-native';
 
 interface OptionTheme {
@@ -246,6 +249,10 @@ export const SmartRoutesScreen: React.FC = () => {
       ? resultData.solutions[0]
       : null;
 
+  const bestPres: SolutionPresentation | null = bestSolution
+    ? resolveSolutionPresentation(bestSolution, isoDate)
+    : null;
+
   const alternativeSolutions: SmartRouteSolution[] =
     resultData && resultData.solutions && resultData.solutions.length > 1
       ? resultData.solutions.slice(1)
@@ -255,6 +262,149 @@ export const SmartRoutesScreen: React.FC = () => {
   const directFareNum = params.directFare
     ? parseInt(params.directFare, 10)
     : resultData?.direct_fare || null;
+
+  const renderSolutionTimeline = (
+    sol: SmartRouteSolution,
+    accentColor = '#2563EB',
+    themeBadgeBg?: string,
+    themeBorder?: string,
+    themePrimary?: string
+  ) => (
+    <View style={styles.timelineContainer}>
+      {sol.legs.map((leg: SubLeg, legIdx: number) => {
+        const isLast = legIdx === sol.legs.length - 1;
+        const isLegRac = (leg.status || '').toUpperCase() === 'RAC';
+        return (
+          <React.Fragment key={legIdx}>
+            <View
+              style={[
+                styles.legCard,
+                themeBadgeBg ? { borderLeftColor: accentColor, borderLeftWidth: 3 } : null,
+              ]}
+            >
+              <View style={styles.legHeaderRow}>
+                <View
+                  style={[
+                    styles.legNumberCircle,
+                    themeBadgeBg
+                      ? { backgroundColor: themeBadgeBg, borderColor: themeBorder }
+                      : null,
+                  ]}
+                >
+                  <Text style={[styles.legNumberText, themePrimary ? { color: themePrimary } : null]}>
+                    Leg {leg.leg_number}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.legStatusPill,
+                    isLegRac ? { backgroundColor: '#FEF3C7' } : null,
+                  ]}
+                >
+                  <CheckCircle2
+                    size={12}
+                    color={isLegRac ? '#B45309' : '#15803D'}
+                    strokeWidth={2.4}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text
+                    style={[
+                      styles.legStatusPillText,
+                      isLegRac ? { color: '#B45309' } : null,
+                    ]}
+                  >
+                    {leg.raw_status}
+                  </Text>
+                </View>
+                {leg.fare !== null && (
+                  <Text style={styles.legFareText}>₹{leg.fare}</Text>
+                )}
+              </View>
+
+              <View style={styles.legRouteRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.legStationCode}>{leg.from_station}</Text>
+                  <Text style={styles.legStationName} numberOfLines={1}>
+                    {getStationName(leg.from_station)}
+                  </Text>
+                  <Text style={styles.legTimeText}>
+                    {leg.journey_date ? `${leg.journey_date} • ` : ''}
+                    {leg.departure_time || 'Dep'}
+                  </Text>
+                </View>
+                <View style={styles.legArrowBlock}>
+                  <Text style={styles.legDistanceText}>{leg.distance_km} km</Text>
+                  <View style={styles.legLine}>
+                    <View style={[styles.legDot, { backgroundColor: accentColor }]} />
+                    <View style={styles.legDash} />
+                    <View style={[styles.legDot, { backgroundColor: accentColor }]} />
+                  </View>
+                </View>
+                <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                  <Text style={styles.legStationCode}>{leg.to_station}</Text>
+                  <Text style={[styles.legStationName, { textAlign: 'right' }]} numberOfLines={1}>
+                    {getStationName(leg.to_station)}
+                  </Text>
+                  <Text style={styles.legTimeText}>{leg.arrival_time || 'Arr'}</Text>
+                </View>
+              </View>
+            </View>
+
+            {!isLast && (
+              <View style={styles.shiftConnector}>
+                <View style={styles.shiftLineVertical} />
+                <View
+                  style={[
+                    styles.shiftBadge,
+                    themeBadgeBg
+                      ? { backgroundColor: themeBadgeBg, borderColor: themeBorder }
+                      : null,
+                  ]}
+                >
+                  <Split
+                    size={14}
+                    color={themePrimary || '#D97706'}
+                    strokeWidth={2.4}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.shiftBadgeText, themePrimary ? { color: themePrimary } : null]}>
+                    Shift seat at {leg.to_station} ({getStationName(leg.to_station)}) (Same Train)
+                  </Text>
+                </View>
+                <View style={styles.shiftLineVertical} />
+              </View>
+            )}
+          </React.Fragment>
+        );
+      })}
+
+      {(sol.tier === 'TIER_2_ORIGIN_EXTENSION' || Boolean(sol.boarding_station)) &&
+        sol.boarding_station && (
+          <View style={styles.boardingPointBanner}>
+            <MapPin size={14} color="#047857" strokeWidth={2.4} style={{ marginRight: 6 }} />
+            <Text style={styles.boardingPointText}>
+              Set IRCTC Boarding Station to {sol.boarding_station} ({getStationName(sol.boarding_station)})
+            </Text>
+          </View>
+        )}
+    </View>
+  );
+
+  const renderBookingGuideBox = (
+    pres: SolutionPresentation,
+    borderColor = '#2563EB',
+    noteColor = '#2563EB'
+  ) => (
+    <View style={[styles.bookingGuideBox, { borderLeftColor: borderColor }]}>
+      <Text style={styles.bookingGuideTitle}>How to book on IRCTC:</Text>
+      {pres.guide_steps.map((stepText: string, idx: number) => (
+        <Text key={idx} style={styles.bookingGuideStep}>
+          {stepText}
+        </Text>
+      ))}
+      <Text style={[styles.bookingGuideNote, { color: noteColor }]}>{pres.guide_note}</Text>
+    </View>
+  );
 
   return (
     <LinearGradient
@@ -390,21 +540,48 @@ export const SmartRoutesScreen: React.FC = () => {
 
               <View style={styles.comparisonDivider} />
 
-              {/* Right Column: Smart Split Solution */}
+              {/* Right Column: Recommended Solution */}
               <View style={[styles.comparisonCol, styles.comparisonColHighlight]}>
-                <Text style={[styles.colLabel, { color: '#1E40AF' }]}>Smart Split</Text>
-                <View style={styles.splitStatusBadge}>
+                <Text style={[styles.colLabel, { color: '#1E40AF' }]}>
+                  {bestPres?.strategy_label || 'Smart Split'}
+                </Text>
+                <View
+                  style={[
+                    styles.splitStatusBadge,
+                    bestSolution && !bestSolution.is_confirmed && bestSolution.is_rac
+                      ? { backgroundColor: '#D97706' }
+                      : null,
+                  ]}
+                >
                   <CheckCircle2 size={13} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 4 }} />
-                  <Text style={styles.splitStatusText}>CONFIRMED</Text>
+                  <Text style={styles.splitStatusText}>
+                    {bestPres?.badge_text || 'CONFIRMED'}
+                  </Text>
                 </View>
                 <Text style={styles.colFareHighlight}>
                   {bestSolution?.total_fare ? `₹${bestSolution.total_fare}` : 'Dynamic'}
                 </Text>
                 <Text style={styles.colSubHighlight}>
-                  {bestSolution ? `${bestSolution.legs.length - 1} seat shift` : 'Same train'}
+                  {bestPres?.comparison_sublabel || 'Same train'}
                 </Text>
-                <View style={styles.confirmedTag}>
-                  <Text style={styles.confirmedTagText}>Guaranteed Seat</Text>
+                <View
+                  style={[
+                    styles.confirmedTag,
+                    bestSolution && !bestSolution.is_confirmed && bestSolution.is_rac
+                      ? { backgroundColor: '#FEF3C7' }
+                      : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.confirmedTagText,
+                      bestSolution && !bestSolution.is_confirmed && bestSolution.is_rac
+                        ? { color: '#B45309' }
+                        : null,
+                    ]}
+                  >
+                    {bestPres?.confirmed_tag || 'Guaranteed Seat'}
+                  </Text>
                 </View>
               </View>
             </View>
@@ -413,15 +590,15 @@ export const SmartRoutesScreen: React.FC = () => {
               <View style={styles.surchargeFooter}>
                 <Info size={13} color="#1E40AF" style={{ marginRight: 6 }} />
                 <Text style={styles.surchargeFooterText}>
-                  Confirmed berth for just ₹{bestSolution.fare_surcharge} more (+
-                  {bestSolution.fare_surcharge_pct.toFixed(1)}%).
+                  {bestSolution.is_confirmed ? 'Confirmed berth' : 'Improved seat option'} for just ₹
+                  {bestSolution.fare_surcharge} more (+{bestSolution.fare_surcharge_pct.toFixed(1)}%).
                 </Text>
               </View>
             )}
           </View>
 
           {/* Best Recommended Solution Card */}
-          {bestSolution ? (
+          {bestSolution && bestPres ? (
             <View style={styles.bestSolutionCard}>
               <LinearGradient
                 colors={['#1E3A8A', '#2563EB']}
@@ -439,94 +616,16 @@ export const SmartRoutesScreen: React.FC = () => {
               </LinearGradient>
 
               <View style={styles.solutionBody}>
-                <Text style={styles.solutionHeadline}>
-                  Stay on the same train! Just shift your seat at{' '}
-                  <Text style={{ fontWeight: '800', color: '#1E40AF' }}>
-                    {bestSolution.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')}
-                  </Text>
-                  .
-                </Text>
+                <Text style={styles.solutionHeadline}>{bestPres.card_headline}</Text>
 
                 {/* Leg-by-Leg Journey Timeline */}
-                <View style={styles.timelineContainer}>
-                  {bestSolution.legs.map((leg: SubLeg, idx: number) => {
-                    const isLast = idx === bestSolution.legs.length - 1;
-                    return (
-                      <React.Fragment key={idx}>
-                        {/* Leg Card */}
-                        <View style={styles.legCard}>
-                          <View style={styles.legHeaderRow}>
-                            <View style={styles.legNumberCircle}>
-                              <Text style={styles.legNumberText}>Leg {leg.leg_number}</Text>
-                            </View>
-                            <View style={styles.legStatusPill}>
-                              <CheckCircle2 size={12} color="#15803D" strokeWidth={2.4} style={{ marginRight: 4 }} />
-                              <Text style={styles.legStatusPillText}>{leg.raw_status}</Text>
-                            </View>
-                            {leg.fare !== null && (
-                              <Text style={styles.legFareText}>₹{leg.fare}</Text>
-                            )}
-                          </View>
-
-                          <View style={styles.legRouteRow}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.legStationCode}>{leg.from_station}</Text>
-                              <Text style={styles.legStationName} numberOfLines={1}>
-                                {getStationName(leg.from_station)}
-                              </Text>
-                              <Text style={styles.legTimeText}>{leg.departure_time || 'Dep'}</Text>
-                            </View>
-                            <View style={styles.legArrowBlock}>
-                              <Text style={styles.legDistanceText}>{leg.distance_km} km</Text>
-                              <View style={styles.legLine}>
-                                <View style={styles.legDot} />
-                                <View style={styles.legDash} />
-                                <View style={styles.legDot} />
-                              </View>
-                            </View>
-                            <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                              <Text style={styles.legStationCode}>{leg.to_station}</Text>
-                              <Text style={[styles.legStationName, { textAlign: 'right' }]} numberOfLines={1}>
-                                {getStationName(leg.to_station)}
-                              </Text>
-                              <Text style={styles.legTimeText}>{leg.arrival_time || 'Arr'}</Text>
-                            </View>
-                          </View>
-                        </View>
-
-                        {/* Shift Point Connector */}
-                        {!isLast && (
-                          <View style={styles.shiftConnector}>
-                            <View style={styles.shiftLineVertical} />
-                            <View style={styles.shiftBadge}>
-                              <Split size={14} color="#D97706" strokeWidth={2.4} style={{ marginRight: 6 }} />
-                              <Text style={styles.shiftBadgeText}>
-                                Shift seat at {leg.to_station} ({getStationName(leg.to_station)}) (Same Train)
-                              </Text>
-                            </View>
-                            <View style={styles.shiftLineVertical} />
-                          </View>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </View>
+                {renderSolutionTimeline(bestSolution)}
 
                 {/* IRCTC Booking Guidance Box */}
-                <View style={styles.bookingGuideBox}>
-                  <Text style={styles.bookingGuideTitle}>How to book on IRCTC:</Text>
-                  {bestSolution.legs.map((leg: SubLeg, idx: number) => (
-                    <Text key={idx} style={styles.bookingGuideStep}>
-                      {idx + 1}. Book Ticket {idx + 1}: {leg.from_station} ({getStationName(leg.from_station)}) to {leg.to_station} ({getStationName(leg.to_station)}) on {leg.journey_date || isoDate} • Train {leg.train_no} ({leg.travel_class})
-                    </Text>
-                  ))}
-                  <Text style={styles.bookingGuideNote}>
-                    You remain on Train {params.trainNo} throughout the entire journey.
-                  </Text>
-                </View>
+                {renderBookingGuideBox(bestPres)}
 
-                {/* Show Booking Trick Button */}
-                {bestSolution.legs && bestSolution.legs.length > 1 && (
+                {/* Show Booking Trick / Boarding Guide Button */}
+                {bestPres.action_button_label && (
                   <TouchableOpacity
                     style={styles.showTrickBtn}
                     activeOpacity={0.8}
@@ -538,10 +637,10 @@ export const SmartRoutesScreen: React.FC = () => {
                       })
                     }
                     accessibilityRole="button"
-                    accessibilityLabel="Show same coach booking trick for Option 1"
+                    accessibilityLabel={`${bestPres.action_button_label} for Option 1`}
                   >
                     <Zap size={14} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 6 }} />
-                    <Text style={styles.showTrickBtnText}>Show Same-Coach Booking Trick</Text>
+                    <Text style={styles.showTrickBtnText}>{bestPres.action_button_label}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -560,7 +659,7 @@ export const SmartRoutesScreen: React.FC = () => {
           {alternativeSolutions.length > 0 && (
             <View style={styles.altSection}>
               <View style={styles.altSectionHeaderRow}>
-                <Text style={styles.altSectionTitle}>Alternative Split Options</Text>
+                <Text style={styles.altSectionTitle}>Alternative Options</Text>
                 <Text style={styles.altSectionCount}>
                   {alternativeSolutions.length} {alternativeSolutions.length === 1 ? 'option available' : 'options available'}
                 </Text>
@@ -570,6 +669,7 @@ export const SmartRoutesScreen: React.FC = () => {
                 const solKey = sol.solution_id || `alt-option-${optionNum}`;
                 const isExpanded = !!expandedOptionIds[solKey];
                 const theme = OPTION_THEMES[(idx + 1) % OPTION_THEMES.length];
+                const altPres = resolveSolutionPresentation(sol, isoDate);
 
                 return (
                   <View
@@ -595,7 +695,7 @@ export const SmartRoutesScreen: React.FC = () => {
                         },
                       ]}
                       accessibilityRole="button"
-                      accessibilityLabel={`Option ${optionNum}, split at ${sol.split_stations.join(', ')}. Tap to ${isExpanded ? 'collapse' : 'expand'} details.`}
+                      accessibilityLabel={`Option ${optionNum}, ${altPres.alt_summary}. Tap to ${isExpanded ? 'collapse' : 'expand'} details.`}
                     >
                       <View style={styles.altHeaderRow}>
                         <View style={styles.altHeaderLeft}>
@@ -616,7 +716,9 @@ export const SmartRoutesScreen: React.FC = () => {
                         </View>
 
                         <View style={styles.altHeaderRight}>
-                          <Text style={styles.altFareValue}>₹{sol.total_fare}</Text>
+                          <Text style={styles.altFareValue}>
+                            {sol.total_fare !== null ? `₹${sol.total_fare}` : 'Dynamic'}
+                          </Text>
                           <View
                             style={[
                               styles.expandTogglePill,
@@ -637,14 +739,18 @@ export const SmartRoutesScreen: React.FC = () => {
 
                       {/* Route Summary Row */}
                       <View style={styles.altRouteSummaryRow}>
-                        <Split size={13} color={theme.accent} style={{ marginRight: 6 }} />
+                        {sol.tier === 'TIER_2_ORIGIN_EXTENSION' || Boolean(sol.boarding_station) ? (
+                          <MapPin size={13} color={theme.accent} style={{ marginRight: 6 }} />
+                        ) : (
+                          <Split size={13} color={theme.accent} style={{ marginRight: 6 }} />
+                        )}
                         <Text style={styles.altRouteSummaryText} numberOfLines={isExpanded ? undefined : 1}>
-                          Shift at {sol.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')} • {sol.legs.length} confirmed legs
+                          {altPres.alt_summary}
                         </Text>
                       </View>
 
                       {/* Quick Booking Trick trigger on collapsed card */}
-                      {sol.legs && sol.legs.length > 1 && !isExpanded && (
+                      {altPres.action_button_label && !isExpanded && (
                         <TouchableOpacity
                           style={[
                             styles.altQuickTrickBtn,
@@ -659,11 +765,11 @@ export const SmartRoutesScreen: React.FC = () => {
                             })
                           }
                           accessibilityRole="button"
-                          accessibilityLabel={`Show same coach booking trick for Option ${optionNum}`}
+                          accessibilityLabel={`${altPres.action_button_label} for Option ${optionNum}`}
                         >
                           <Zap size={12} color={theme.accent} strokeWidth={2.4} style={{ marginRight: 5 }} />
                           <Text style={[styles.altQuickTrickText, { color: theme.accent }]}>
-                            Show Same-Coach Booking Trick
+                            {altPres.action_button_label}
                           </Text>
                         </TouchableOpacity>
                       )}
@@ -672,116 +778,22 @@ export const SmartRoutesScreen: React.FC = () => {
                     {/* Detailed Leg Breakdown (when expanded) */}
                     {isExpanded && (
                       <View style={styles.altExpandedBody}>
-                        <Text style={styles.solutionHeadline}>
-                          Stay on the same train! Just shift your seat at{' '}
-                          <Text style={{ fontWeight: '800', color: theme.primary }}>
-                            {sol.split_stations.map((st) => `${st} (${getStationName(st)})`).join(', ')}
-                          </Text>
-                          .
-                        </Text>
+                        <Text style={styles.solutionHeadline}>{altPres.card_headline}</Text>
 
                         {/* Leg-by-Leg Journey Timeline */}
-                        <View style={styles.timelineContainer}>
-                          {sol.legs.map((leg: SubLeg, legIdx: number) => {
-                            const isLastLeg = legIdx === sol.legs.length - 1;
-                            return (
-                              <React.Fragment key={legIdx}>
-                                {/* Leg Card */}
-                                <View style={[styles.legCard, { borderLeftColor: theme.accent, borderLeftWidth: 3 }]}>
-                                  <View style={styles.legHeaderRow}>
-                                    <View
-                                      style={[
-                                        styles.legNumberCircle,
-                                        { backgroundColor: theme.badgeBg, borderColor: theme.borderColor },
-                                      ]}
-                                    >
-                                      <Text style={[styles.legNumberText, { color: theme.badgeText }]}>
-                                        Leg {leg.leg_number}
-                                      </Text>
-                                    </View>
-                                    <View style={styles.legStatusPill}>
-                                      <CheckCircle2
-                                        size={12}
-                                        color="#15803D"
-                                        strokeWidth={2.4}
-                                        style={{ marginRight: 4 }}
-                                      />
-                                      <Text style={styles.legStatusPillText}>{leg.raw_status}</Text>
-                                    </View>
-                                    {leg.fare !== null && (
-                                      <Text style={styles.legFareText}>₹{leg.fare}</Text>
-                                    )}
-                                  </View>
-
-                                  <View style={styles.legRouteRow}>
-                                    <View style={{ flex: 1 }}>
-                                      <Text style={styles.legStationCode}>{leg.from_station}</Text>
-                                      <Text style={styles.legStationName} numberOfLines={1}>
-                                        {getStationName(leg.from_station)}
-                                      </Text>
-                                      <Text style={styles.legTimeText}>{leg.departure_time || 'Dep'}</Text>
-                                    </View>
-                                    <View style={styles.legArrowBlock}>
-                                      <Text style={styles.legDistanceText}>{leg.distance_km} km</Text>
-                                      <View style={styles.legLine}>
-                                        <View style={[styles.legDot, { backgroundColor: theme.accent }]} />
-                                        <View style={styles.legDash} />
-                                        <View style={[styles.legDot, { backgroundColor: theme.accent }]} />
-                                      </View>
-                                    </View>
-                                    <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                                      <Text style={styles.legStationCode}>{leg.to_station}</Text>
-                                      <Text style={[styles.legStationName, { textAlign: 'right' }]} numberOfLines={1}>
-                                        {getStationName(leg.to_station)}
-                                      </Text>
-                                      <Text style={styles.legTimeText}>{leg.arrival_time || 'Arr'}</Text>
-                                    </View>
-                                  </View>
-                                </View>
-
-                                {/* Shift Point Connector */}
-                                {!isLastLeg && (
-                                  <View style={styles.shiftConnector}>
-                                    <View style={styles.shiftLineVertical} />
-                                    <View
-                                      style={[
-                                        styles.shiftBadge,
-                                        { backgroundColor: theme.badgeBg, borderColor: theme.borderColor },
-                                      ]}
-                                    >
-                                      <Split
-                                        size={14}
-                                        color={theme.accent}
-                                        strokeWidth={2.4}
-                                        style={{ marginRight: 6 }}
-                                      />
-                                      <Text style={[styles.shiftBadgeText, { color: theme.primary }]}>
-                                        Shift seat at {leg.to_station} ({getStationName(leg.to_station)}) (Same Train)
-                                      </Text>
-                                    </View>
-                                    <View style={styles.shiftLineVertical} />
-                                  </View>
-                                )}
-                              </React.Fragment>
-                            );
-                          })}
-                        </View>
+                        {renderSolutionTimeline(
+                          sol,
+                          theme.accent,
+                          theme.badgeBg,
+                          theme.borderColor,
+                          theme.primary
+                        )}
 
                         {/* IRCTC Booking Guidance Box */}
-                        <View style={[styles.bookingGuideBox, { borderLeftColor: theme.accent }]}>
-                          <Text style={styles.bookingGuideTitle}>How to book on IRCTC:</Text>
-                          {sol.legs.map((leg: SubLeg, legIdx: number) => (
-                            <Text key={legIdx} style={styles.bookingGuideStep}>
-                              {legIdx + 1}. Book Ticket {legIdx + 1}: {leg.from_station} ({getStationName(leg.from_station)}) to {leg.to_station} ({getStationName(leg.to_station)}) on {leg.journey_date || isoDate} • Train {leg.train_no} ({leg.travel_class})
-                            </Text>
-                          ))}
-                          <Text style={[styles.bookingGuideNote, { color: theme.primary }]}>
-                            You remain on Train {params.trainNo} throughout the entire journey.
-                          </Text>
-                        </View>
+                        {renderBookingGuideBox(altPres, theme.accent, theme.primary)}
 
                         {/* Show Booking Trick Button for Alternative Option */}
-                        {sol.legs && sol.legs.length > 1 && (
+                        {altPres.action_button_label && (
                           <TouchableOpacity
                             style={[styles.showTrickBtnAlt, { backgroundColor: theme.primary }]}
                             activeOpacity={0.8}
@@ -793,10 +805,10 @@ export const SmartRoutesScreen: React.FC = () => {
                               })
                             }
                             accessibilityRole="button"
-                            accessibilityLabel={`Show same coach booking trick for Option ${optionNum}`}
+                            accessibilityLabel={`${altPres.action_button_label} for Option ${optionNum}`}
                           >
                             <Zap size={14} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 6 }} />
-                            <Text style={styles.showTrickBtnText}>Show Same-Coach Booking Trick</Text>
+                            <Text style={styles.showTrickBtnText}>{altPres.action_button_label}</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1318,6 +1330,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#B45309',
+  },
+  boardingPointBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+  },
+  boardingPointText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#047857',
+    flex: 1,
   },
   bookingGuideBox: {
     backgroundColor: '#F1F5F9',

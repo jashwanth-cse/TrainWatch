@@ -803,3 +803,148 @@ def test_get_confirmed_seats_and_rac_position_fallback() -> None:
         journey_date=today,
     )
     assert _get_rac_position(leg_rac_no_digits) == 1
+
+
+def test_origin_extension_strategy_and_presentation_builder() -> None:
+    """Verify OriginExtensionStrategyBuilder and SolutionPresentationBuilder across tiers."""
+    from trainwatch.domain.smart_routes import (
+        SolutionPresentationBuilder,
+        SolutionTier,
+        calculate_booking_strategy,
+    )
+
+    board_date = date(2026, 12, 16)
+    prev_night = date(2026, 12, 15)
+
+    # Overnight Origin Extension leg (starts Dec 15 23:30, boards Dec 16 06:30)
+    leg_ext_night = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai Exp",
+        from_station="SCT",
+        to_station="MS",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 22",
+        position=22,
+        fare=440,
+        departure_time="23:30",
+        arrival_time="09:00",
+        journey_date=prev_night,
+    )
+    strat_night = calculate_booking_strategy(
+        (leg_ext_night,),
+        board_date,
+        boarding_station="RJPM",
+        boarding_departure_time="06:30",
+        fare_surcharge=30,
+    )
+    assert "Boarding Station to RJPM" in strat_night.headline
+    assert "15-Dec-2026" in strat_night.strategy_reason
+    assert "16-Dec-2026" in strat_night.strategy_reason
+    assert "06:30" in strat_night.strategy_reason
+    assert strat_night.steps[0].preferred_coach_tip is not None
+    assert "RJPM" in strat_night.steps[0].preferred_coach_tip
+
+    pres_ext_night = SolutionPresentationBuilder.build(
+        tier=SolutionTier.TIER_2_ORIGIN_EXTENSION,
+        legs=(leg_ext_night,),
+        is_confirmed=True,
+        is_rac=False,
+        split_stations=(),
+        boarding_station="RJPM",
+        boarding_date=board_date,
+        boarding_departure_time="06:30",
+        fare_surcharge=30,
+    )
+    assert pres_ext_night.badge_text == "CONFIRMED"
+    assert pres_ext_night.strategy_label == "Origin Quota"
+    assert "(+Rs 30)" in pres_ext_night.card_headline
+    assert "Boarding Point as RJPM" in pres_ext_night.card_headline
+    assert "Date Notice:" in pres_ext_night.guide_steps[2]
+
+    # Same-day Origin Extension with RAC status & 0 surcharge
+    leg_ext_same_day = SubLeg(
+        leg_number=1,
+        train_no="12662",
+        train_name="Pothigai Exp",
+        from_station="TSI",
+        to_station="MS",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.RAC,
+        raw_status="RAC 12",
+        position=12,
+        journey_date=board_date,
+    )
+    strat_same = calculate_booking_strategy(
+        (leg_ext_same_day,),
+        board_date,
+        boarding_station="RJPM",
+    )
+    assert "same day" in strat_same.strategy_reason
+
+    pres_ext_rac = SolutionPresentationBuilder.build(
+        tier=SolutionTier.TIER_2_ORIGIN_EXTENSION,
+        legs=(leg_ext_same_day,),
+        is_confirmed=False,
+        is_rac=True,
+        split_stations=(),
+        boarding_station="RJPM",
+        boarding_date=board_date,
+        fare_surcharge=0,
+    )
+    assert pres_ext_rac.badge_text == "RAC 12"
+    assert pres_ext_rac.confirmed_tag == "Better RAC Queue"
+
+    # Tier 1 Same Train Split (3 legs vs 2 legs)
+    leg2 = SubLeg(
+        leg_number=2,
+        train_no="12662",
+        train_name="Pothigai Exp",
+        from_station="MDU",
+        to_station="TPJ",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 8",
+        journey_date=board_date,
+    )
+    leg3 = SubLeg(
+        leg_number=3,
+        train_no="12662",
+        train_name="Pothigai Exp",
+        from_station="TPJ",
+        to_station="MS",
+        travel_class="SL",
+        quota="GN",
+        status=AvailabilityStatus.AVAILABLE,
+        raw_status="AVAILABLE 4",
+        journey_date=board_date,
+    )
+    pres_t1 = SolutionPresentationBuilder.build(
+        tier=SolutionTier.TIER_1_SAME_TRAIN_SPLIT,
+        legs=(leg_ext_same_day, leg2, leg3),
+        is_confirmed=False,
+        is_rac=True,
+        split_stations=("MDU", "TPJ"),
+        boarding_station=None,
+        boarding_date=board_date,
+    )
+    assert pres_t1.comparison_sublabel == "2 seat shifts"
+    assert pres_t1.action_button_label == "Show Same-Coach Booking Trick"
+
+    # Tier 3 Transfer Backup coverage
+    pres_t3 = SolutionPresentationBuilder.build(
+        tier=SolutionTier.TIER_3_TRANSFER_BACKUP,
+        legs=(leg_ext_same_day,),
+        is_confirmed=False,
+        is_rac=False,
+        split_stations=(),
+        boarding_station=None,
+        boarding_date=board_date,
+    )
+    assert pres_t3.badge_text == "ALTERNATIVE"
+    assert pres_t3.strategy_label == "Transfer Route"
+    assert pres_t3.action_button_label is None

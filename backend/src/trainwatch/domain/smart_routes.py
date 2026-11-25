@@ -109,6 +109,23 @@ class BookingStrategy:
 
 
 @dataclass(frozen=True, slots=True)
+class SolutionPresentation:
+    """Server-driven presentation metadata rendered dynamically by client UI."""
+
+    badge_text: str
+    strategy_label: str
+    comparison_sublabel: str
+    confirmed_tag: str
+    card_headline: str
+    alt_summary: str
+    guide_steps: tuple[str, ...]
+    guide_note: str
+    action_button_label: str | None = None
+    modal_title: str = "Same-Coach Booking Trick"
+    modal_tagline: str = "INTELLIGENT BOOKING ORDER"
+
+
+@dataclass(frozen=True, slots=True)
 class SmartRouteSolution:
     """A viable multi-leg or extended route option."""
 
@@ -125,6 +142,7 @@ class SmartRouteSolution:
     recommendation_score: float
     split_stations: tuple[str, ...]
     booking_strategy: BookingStrategy | None = None
+    presentation: SolutionPresentation | None = None
 
     def __post_init__(self) -> None:
         if not self.legs:
@@ -254,10 +272,242 @@ def _get_rac_position(subleg: SubLeg) -> int:
     return 1
 
 
-def calculate_booking_strategy(legs: tuple[SubLeg, ...], origin_date: date) -> BookingStrategy:
-    """Evaluate berth inventory across split legs and generate optimal coach-matching order."""
+class OriginExtensionStrategyBuilder:
+    """Strategy builder for single-PNR Origin Extension with boarding point modification."""
+
+    @staticmethod
+    def build(
+        leg: SubLeg,
+        *,
+        boarding_station: str,
+        boarding_date: date,
+        boarding_departure_time: str | None = None,
+        fare_surcharge: int = 0,
+    ) -> BookingStrategy:
+        """Build step-by-step IRCTC instructions for Origin Extension booking."""
+        ticket_date = leg.journey_date or boarding_date
+        ticket_date_str = ticket_date.strftime("%d-%b-%Y")
+        board_date_str = boarding_date.strftime("%d-%b-%Y")
+        board_time_note = f" at {boarding_departure_time}" if boarding_departure_time else ""
+        surcharge_note = f" for just Rs {fare_surcharge} extra" if fare_surcharge > 0 else ""
+
+        if ticket_date < boarding_date:
+            date_shift_note = (
+                f" Note the overnight schedule: Train {leg.train_no} starts at {leg.from_station} "
+                f"on {ticket_date_str} (Dep: {leg.departure_time or 'Scheduled'}) and reaches "
+                f"{boarding_station} on {board_date_str}{board_time_note}."
+            )
+        else:
+            date_shift_note = (
+                f" Train {leg.train_no} departs {leg.from_station} on {ticket_date_str} and "
+                f"reaches {boarding_station} on the same day{board_time_note}."
+            )
+
+        headline = (
+            f"Book full ticket from {leg.from_station} to {leg.to_station} "
+            f"and set Boarding Station to {boarding_station}"
+        )
+        reason = (
+            f"Upstream quota from {leg.from_station} offers {leg.raw_status}{surcharge_note} "
+            f"on a single ticket with zero berth switching.{date_shift_note} By selecting "
+            f"{boarding_station} as your Boarding Point during IRCTC checkout, your seat remains "
+            f"reserved until you board at {boarding_station}."
+        )
+        step = BookingOrderStep(
+            step_number=1,
+            leg_number=leg.leg_number,
+            from_station=leg.from_station,
+            to_station=leg.to_station,
+            journey_date=ticket_date,
+            departure_time=leg.departure_time,
+            raw_status=leg.raw_status,
+            available_seats=_extract_numeric_seats(leg),
+            action_title=(
+                f"Book Full Ticket ({leg.from_station} -> {leg.to_station}) & Set Boarding Point"
+            ),
+            action_instructions=(
+                f"1. Search and book Train {leg.train_no} ({leg.travel_class}) from "
+                f"{leg.from_station} to {leg.to_station} on journey date {ticket_date_str}.\n"
+                f"2. On the IRCTC Passenger / Review page, change 'Boarding Station' to "
+                f"{boarding_station} ({board_date_str}{board_time_note})."
+            ),
+            preferred_coach_tip=(
+                f"CRITICAL: You MUST select {boarding_station} as your Boarding Station during "
+                "booking (or update it at least 24 hours before departure) so the TTE does not "
+                "mark you absent after departure from the origin."
+            ),
+        )
+        tips = (
+            (
+                "Changing Boarding Point forward along the same train is 100% IRCTC compliant "
+                "and carries zero extra fee."
+            ),
+            (
+                "Double-check the ticket date: book for the train start date at "
+                f"{leg.from_station} ({ticket_date_str}), then board at {boarding_station} on "
+                f"{board_date_str}."
+            ),
+            "Once set, IRCTC updates your Boarding Station on your Electronic Reservation Slip.",
+            "Single PNR booking: zero coach switching needed throughout your trip.",
+        )
+        return BookingStrategy(
+            headline=headline,
+            recommended_order=(leg.leg_number,),
+            strategy_reason=reason,
+            same_coach_probability="HIGH",
+            steps=(step,),
+            insider_tips=tips,
+        )
+
+
+class SolutionPresentationBuilder:
+    """Builds server-driven UI presentation payloads for SmartRouteSolution objects."""
+
+    @staticmethod
+    def build(
+        *,
+        tier: SolutionTier,
+        legs: tuple[SubLeg, ...],
+        is_confirmed: bool,
+        is_rac: bool,
+        split_stations: tuple[str, ...],
+        boarding_station: str | None,
+        boarding_date: date,
+        boarding_departure_time: str | None = None,
+        fare_surcharge: int = 0,
+    ) -> SolutionPresentation:
+        """Construct server-authored copy and UI instructions for any solution tier."""
+        first_leg = legs[0]
+        badge_text = (
+            "CONFIRMED" if is_confirmed else (first_leg.raw_status if is_rac else "ALTERNATIVE")
+        )
+
+        if tier is SolutionTier.TIER_2_ORIGIN_EXTENSION and boarding_station:
+            ticket_date = first_leg.journey_date or boarding_date
+            ticket_date_str = ticket_date.strftime("%d-%b-%Y")
+            board_date_str = boarding_date.strftime("%d-%b-%Y")
+            board_time = f" ({boarding_departure_time})" if boarding_departure_time else ""
+            surcharge_str = f" (+Rs {fare_surcharge})" if fare_surcharge > 0 else ""
+
+            if ticket_date < boarding_date:
+                date_note = (
+                    f"Date Notice: Train departs {first_leg.from_station} on {ticket_date_str} "
+                    f"({first_leg.departure_time or 'Night'}) and reaches {boarding_station} on "
+                    f"{board_date_str}{board_time}."
+                )
+            else:
+                date_note = (
+                    f"Book for {ticket_date_str} from {first_leg.from_station} and board at "
+                    f"{boarding_station} on {board_date_str}{board_time}."
+                )
+
+            guide_steps = (
+                (
+                    f"1. Book Full Ticket: {first_leg.from_station} to {first_leg.to_station} on "
+                    f"{ticket_date_str} - Train {first_leg.train_no} ({first_leg.travel_class}) "
+                    f"[{first_leg.raw_status}]."
+                ),
+                (
+                    f"2. Set Boarding Station to {boarding_station} on {board_date_str}"
+                    f"{board_time} during IRCTC checkout."
+                ),
+                date_note,
+            )
+            return SolutionPresentation(
+                badge_text=badge_text,
+                strategy_label="Origin Quota",
+                comparison_sublabel="No seat shift",
+                confirmed_tag="Single Ticket" if is_confirmed else "Better RAC Queue",
+                card_headline=(
+                    f"Book full ticket from {first_leg.from_station} to {first_leg.to_station}"
+                    f"{surcharge_str} and select Boarding Point as {boarding_station}. "
+                    "Zero seat shifts!"
+                ),
+                alt_summary=(
+                    f"Book {first_leg.from_station} -> {first_leg.to_station}, board at "
+                    f"{boarding_station} • {first_leg.raw_status}"
+                ),
+                guide_steps=guide_steps,
+                guide_note=(
+                    f"Important: Select Boarding Point as {boarding_station} on IRCTC so your "
+                    f"berth is held until {boarding_station}."
+                ),
+                action_button_label="Show Boarding Point Trick",
+                modal_title="Origin Boarding Trick",
+                modal_tagline="ORIGIN QUOTA OPTIMIZATION",
+            )
+
+        if tier is SolutionTier.TIER_1_SAME_TRAIN_SPLIT:
+            switches = max(0, len(legs) - 1)
+            shift_word = "shift" if switches == 1 else "shifts"
+            split_label = ", ".join(split_stations) if split_stations else "intermediate hub"
+            guide_steps_list = [
+                (
+                    f"{idx + 1}. Book Ticket {idx + 1}: {leg.from_station} to {leg.to_station} "
+                    f"on {(leg.journey_date or boarding_date).strftime('%Y-%m-%d')} - "
+                    f"Train {leg.train_no} ({leg.travel_class})."
+                )
+                for idx, leg in enumerate(legs)
+            ]
+            return SolutionPresentation(
+                badge_text=badge_text,
+                strategy_label="Smart Split",
+                comparison_sublabel=f"{switches} seat {shift_word}",
+                confirmed_tag="Guaranteed Seat" if is_confirmed else "RAC Combination",
+                card_headline=(f"Stay on the same train! Just shift your seat at {split_label}."),
+                alt_summary=f"Shift at {split_label} • {len(legs)} legs ({badge_text})",
+                guide_steps=tuple(guide_steps_list),
+                guide_note=(
+                    f"You remain on Train {first_leg.train_no} throughout the entire journey."
+                ),
+                action_button_label="Show Same-Coach Booking Trick" if len(legs) > 1 else None,
+                modal_title="Same-Coach Booking Trick",
+                modal_tagline="INTELLIGENT BOOKING ORDER",
+            )
+
+        # Tier 3 / Fallback backup
+        guide_steps_backup = tuple(
+            f"{idx + 1}. Book {leg.from_station} to {leg.to_station} on "
+            f"{(leg.journey_date or boarding_date).strftime('%Y-%m-%d')} - Train {leg.train_no}."
+            for idx, leg in enumerate(legs)
+        )
+        return SolutionPresentation(
+            badge_text=badge_text,
+            strategy_label="Transfer Route",
+            comparison_sublabel=f"{max(0, len(legs) - 1)} transfer",
+            confirmed_tag="Confirmed Transfer" if is_confirmed else "Backup Option",
+            card_headline=(
+                f"Transfer route via {', '.join(split_stations) if split_stations else 'hub'}."
+            ),
+            alt_summary=f"{len(legs)} segments ({badge_text})",
+            guide_steps=guide_steps_backup,
+            guide_note="Check transfer buffer time carefully before booking connecting trains.",
+            action_button_label="Show Booking Order" if len(legs) > 1 else None,
+            modal_title="Transfer Booking Guide",
+            modal_tagline="MULTI-TRAIN CONNECTION",
+        )
+
+
+def calculate_booking_strategy(
+    legs: tuple[SubLeg, ...],
+    origin_date: date,
+    *,
+    boarding_station: str | None = None,
+    boarding_departure_time: str | None = None,
+    fare_surcharge: int = 0,
+) -> BookingStrategy:
+    """Evaluate berth inventory across legs and generate optimal booking strategy."""
     if len(legs) <= 1:
         leg = legs[0]
+        if boarding_station:
+            return OriginExtensionStrategyBuilder.build(
+                leg,
+                boarding_station=boarding_station,
+                boarding_date=origin_date,
+                boarding_departure_time=boarding_departure_time,
+                fare_surcharge=fare_surcharge,
+            )
+
         leg_date = leg.journey_date or origin_date
         step = BookingOrderStep(
             step_number=1,

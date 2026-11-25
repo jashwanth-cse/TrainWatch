@@ -51,8 +51,28 @@ export const BookingTrickModal: React.FC<BookingTrickModalProps> = ({
   }
 
   const strat = solution.booking_strategy || ensureBookingStrategy(solution);
+  const isOriginExtension =
+    solution.tier === 'TIER_2_ORIGIN_EXTENSION' || Boolean(solution.boarding_station);
+
+  const modalTagline = solution.presentation?.modal_tagline
+    ? `${solution.presentation.modal_tagline} • OPTION ${optionNumber}`
+    : isOriginExtension
+      ? `ORIGIN QUOTA OPTIMIZATION • OPTION ${optionNumber}`
+      : `INTELLIGENT BOOKING ORDER • OPTION ${optionNumber}`;
+
+  const modalTitle =
+    solution.presentation?.modal_title ||
+    (isOriginExtension ? 'Origin Boarding Trick' : 'Same-Coach Booking Trick');
 
   const getProbabilityBadge = (prob: string) => {
+    if (isOriginExtension) {
+      return {
+        bg: '#ECFDF5',
+        border: '#A7F3D0',
+        text: '#047857',
+        label: 'Single PNR • Set Boarding Point on IRCTC',
+      };
+    }
     switch (prob) {
       case 'HIGH':
         return {
@@ -106,11 +126,9 @@ export const BookingTrickModal: React.FC<BookingTrickModalProps> = ({
             <View style={{ flex: 1 }}>
               <View style={styles.taglineBadge}>
                 <Zap size={11} color="#2563EB" strokeWidth={2.5} style={{ marginRight: 4 }} />
-                <Text style={styles.taglineBadgeText}>
-                  INTELLIGENT BOOKING ORDER • OPTION {optionNumber}
-                </Text>
+                <Text style={styles.taglineBadgeText}>{modalTagline}</Text>
               </View>
-              <Text style={styles.headerTitle}>Same-Coach Booking Trick</Text>
+              <Text style={styles.headerTitle}>{modalTitle}</Text>
               <Text style={styles.headerSubtitle} numberOfLines={1}>
                 Train {trainNo} {trainName ? `• ${trainName}` : ''}
               </Text>
@@ -129,7 +147,7 @@ export const BookingTrickModal: React.FC<BookingTrickModalProps> = ({
 
           {/* Probability Pill */}
           <View style={[styles.probPill, { backgroundColor: probBadge.bg, borderColor: probBadge.border }]}>
-            {strat.same_coach_probability === 'HIGH' ? (
+            {isOriginExtension || strat.same_coach_probability === 'HIGH' ? (
               <CheckCircle2 size={13} color={probBadge.text} strokeWidth={2.4} style={{ marginRight: 6 }} />
             ) : strat.same_coach_probability === 'BEST_EFFORT' ? (
               <AlertCircle size={13} color={probBadge.text} strokeWidth={2.4} style={{ marginRight: 6 }} />
@@ -149,13 +167,17 @@ export const BookingTrickModal: React.FC<BookingTrickModalProps> = ({
             <View style={styles.reasonCard}>
               <View style={styles.reasonHeader}>
                 <Info size={14} color="#1E40AF" strokeWidth={2.4} style={{ marginRight: 6 }} />
-                <Text style={styles.reasonTitle}>Why Book in this Order?</Text>
+                <Text style={styles.reasonTitle}>
+                  {isOriginExtension ? 'Why This Origin Trick Works' : 'Why Book in this Order?'}
+                </Text>
               </View>
               <Text style={styles.reasonBody}>{strat.strategy_reason}</Text>
             </View>
 
             {/* Step-by-Step Instructions */}
-            <Text style={styles.stepsSectionTitle}>Recommended Booking Sequence</Text>
+            <Text style={styles.stepsSectionTitle}>
+              {isOriginExtension ? 'Booking Instructions' : 'Recommended Booking Sequence'}
+            </Text>
 
             {strat.steps.map((step: BookingOrderStep) => {
               const isFirstStep = step.step_number === 1;
@@ -222,7 +244,7 @@ export const BookingTrickModal: React.FC<BookingTrickModalProps> = ({
             })}
 
             {/* Edge Case Fallback Advisory */}
-            {strat.same_coach_probability === 'BEST_EFFORT' && (
+            {!isOriginExtension && strat.same_coach_probability === 'BEST_EFFORT' && (
               <View style={styles.advisoryCard}>
                 <AlertCircle size={15} color="#D97706" strokeWidth={2.4} style={{ marginRight: 8, marginTop: 1 }} />
                 <View style={{ flex: 1 }}>

@@ -76,6 +76,20 @@ export interface BookingStrategy {
   insider_tips: string[];
 }
 
+export interface SolutionPresentation {
+  badge_text: string;
+  strategy_label: string;
+  comparison_sublabel: string;
+  confirmed_tag: string;
+  card_headline: string;
+  alt_summary: string;
+  guide_steps: string[];
+  guide_note: string;
+  action_button_label?: string | null;
+  modal_title?: string;
+  modal_tagline?: string;
+}
+
 export interface SmartRouteSolution {
   solution_id: string;
   tier: string;
@@ -90,6 +104,7 @@ export interface SmartRouteSolution {
   recommendation_score: number;
   split_stations: string[];
   booking_strategy?: BookingStrategy | null;
+  presentation?: SolutionPresentation | null;
 }
 
 export interface SmartRoutesResultData {
@@ -256,6 +271,70 @@ export function ensureBookingStrategy(
     };
     solution.booking_strategy = fallbackStrategy;
     return fallbackStrategy;
+  }
+
+  if (legs.length === 1) {
+    const leg = legs[0];
+    const ticketDate = leg.journey_date || originDate || '';
+    const ticketDatePretty = formatDatePretty(ticketDate);
+    if (solution.boarding_station) {
+      const originStrategy: BookingStrategy = {
+        headline: `Book full ticket from ${leg.from_station} to ${leg.to_station} and set Boarding Station to ${solution.boarding_station}`,
+        recommended_order: [leg.leg_number],
+        strategy_reason: `Upstream quota from ${leg.from_station} provides ${leg.raw_status} on a single ticket with zero seat shifting. Select ${solution.boarding_station} as your Boarding Point during IRCTC checkout.`,
+        same_coach_probability: 'HIGH',
+        steps: [
+          {
+            step_number: 1,
+            leg_number: leg.leg_number,
+            from_station: leg.from_station,
+            to_station: leg.to_station,
+            journey_date: ticketDate,
+            departure_time: leg.departure_time,
+            raw_status: leg.raw_status,
+            available_seats: extractNumericSeats(leg),
+            action_title: `Book Full Ticket (${leg.from_station} -> ${leg.to_station}) & Set Boarding Point`,
+            action_instructions: `1. Book Train ${leg.train_no} (${leg.travel_class}) from ${leg.from_station} to ${leg.to_station} on ${ticketDatePretty}.\n2. Select '${solution.boarding_station}' as your Boarding Station on the IRCTC review screen.`,
+            preferred_coach_tip: `CRITICAL: Select ${solution.boarding_station} as your Boarding Point during checkout so your berth is preserved until you board.`,
+          },
+        ],
+        insider_tips: [
+          'Changing Boarding Point forward along the same train is 100% IRCTC compliant with zero extra fee.',
+          `Ensure the ticket date matches departure from ${leg.from_station} (${ticketDatePretty}).`,
+          'Single PNR booking: zero coach switching needed.',
+        ],
+      };
+      solution.booking_strategy = originStrategy;
+      return originStrategy;
+    }
+
+    const singleLegStrategy: BookingStrategy = {
+      headline: 'Single Leg Booking',
+      recommended_order: [leg.leg_number],
+      strategy_reason: 'Single leg journey requires no intermediate coach transfer.',
+      same_coach_probability: 'HIGH',
+      steps: [
+        {
+          step_number: 1,
+          leg_number: leg.leg_number,
+          from_station: leg.from_station,
+          to_station: leg.to_station,
+          journey_date: ticketDate,
+          departure_time: leg.departure_time,
+          raw_status: leg.raw_status,
+          available_seats: extractNumericSeats(leg),
+          action_title: 'Direct Ticket Booking',
+          action_instructions: `Book Ticket: ${leg.from_station} to ${leg.to_station} on ${ticketDatePretty} (Train ${leg.train_no}, ${leg.travel_class}).`,
+          preferred_coach_tip: null,
+        },
+      ],
+      insider_tips: [
+        'Book during IRCTC reservation hours (00:20 to 23:45 IST).',
+        'Ensure passenger names are in your IRCTC Master List for rapid checkout.',
+      ],
+    };
+    solution.booking_strategy = singleLegStrategy;
+    return singleLegStrategy;
   }
 
   let order: number[];
@@ -497,6 +576,81 @@ export function ensureBookingStrategy(
 
   solution.booking_strategy = strategy;
   return strategy;
+}
+
+/**
+ * Resolve server-driven presentation metadata, synthesizing safe fallback if omitted by older caches.
+ */
+export function resolveSolutionPresentation(
+  solution: SmartRouteSolution,
+  originDate?: string
+): SolutionPresentation {
+  if (solution.presentation) {
+    return solution.presentation;
+  }
+
+  const legs = solution.legs || [];
+  const firstLeg = legs[0];
+  const badgeText = solution.is_confirmed
+    ? 'CONFIRMED'
+    : solution.is_rac && firstLeg
+      ? firstLeg.raw_status
+      : 'ALTERNATIVE';
+
+  if (
+    (solution.tier === 'TIER_2_ORIGIN_EXTENSION' || Boolean(solution.boarding_station)) &&
+    firstLeg
+  ) {
+    const boardStn = solution.boarding_station || firstLeg.from_station;
+    const ticketDate = firstLeg.journey_date || originDate || '';
+    const ticketPretty = formatDatePretty(ticketDate);
+    const boardPretty = formatDatePretty(originDate || ticketDate);
+    const surchargeStr = solution.fare_surcharge > 0 ? ` (+₹${solution.fare_surcharge})` : '';
+
+    return {
+      badge_text: badgeText,
+      strategy_label: 'Origin Quota',
+      comparison_sublabel: 'No seat shift',
+      confirmed_tag: solution.is_confirmed ? 'Single Ticket' : 'Better RAC Queue',
+      card_headline: `Book full ticket from ${firstLeg.from_station} to ${firstLeg.to_station}${surchargeStr} and select Boarding Point as ${boardStn}. Zero seat shifts!`,
+      alt_summary: `Book ${firstLeg.from_station} -> ${firstLeg.to_station}, board at ${boardStn} • ${firstLeg.raw_status}`,
+      guide_steps: [
+        `1. Book Full Ticket: ${firstLeg.from_station} to ${firstLeg.to_station} on ${ticketPretty} - Train ${firstLeg.train_no} (${firstLeg.travel_class}) [${firstLeg.raw_status}].`,
+        `2. Set Boarding Station to ${boardStn}${originDate ? ` on ${boardPretty}` : ''} during IRCTC checkout.`,
+      ],
+      guide_note: `Important: Select Boarding Point as ${boardStn} on IRCTC so your berth is held until ${boardStn}.`,
+      action_button_label: 'Show Boarding Point Trick',
+      modal_title: 'Origin Boarding Trick',
+      modal_tagline: 'ORIGIN QUOTA OPTIMIZATION',
+    };
+  }
+
+  const switches = Math.max(0, legs.length - 1);
+  const shiftWord = switches === 1 ? 'shift' : 'shifts';
+  const splitLabel =
+    solution.split_stations && solution.split_stations.length > 0
+      ? solution.split_stations.join(', ')
+      : 'intermediate hub';
+  const guideSteps = legs.map(
+    (leg, idx) =>
+      `${idx + 1}. Book Ticket ${idx + 1}: ${leg.from_station} to ${leg.to_station} on ${leg.journey_date || originDate || 'Scheduled'} - Train ${leg.train_no} (${leg.travel_class}).`
+  );
+
+  return {
+    badge_text: badgeText,
+    strategy_label: 'Smart Split',
+    comparison_sublabel: `${switches} seat ${shiftWord}`,
+    confirmed_tag: solution.is_confirmed ? 'Guaranteed Seat' : 'RAC Combination',
+    card_headline: `Stay on the same train! Just shift your seat at ${splitLabel}.`,
+    alt_summary: `Shift at ${splitLabel} • ${legs.length} legs (${badgeText})`,
+    guide_steps: guideSteps,
+    guide_note: firstLeg
+      ? `You remain on Train ${firstLeg.train_no} throughout the entire journey.`
+      : 'Stay on board throughout your journey.',
+    action_button_label: legs.length > 1 ? 'Show Same-Coach Booking Trick' : null,
+    modal_title: 'Same-Coach Booking Trick',
+    modal_tagline: 'INTELLIGENT BOOKING ORDER',
+  };
 }
 
 /**

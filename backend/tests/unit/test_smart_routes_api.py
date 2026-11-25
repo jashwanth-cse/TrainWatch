@@ -12,6 +12,7 @@ from trainwatch.domain.availability import AvailabilitySnapshot, AvailabilitySta
 from trainwatch.domain.smart_routes import (
     SmartRouteResult,
     SmartRouteSolution,
+    SolutionPresentation,
     SolutionTier,
     SubLeg,
 )
@@ -65,6 +66,17 @@ def _mock_result() -> SmartRouteResult:
         is_rac=False,
         recommendation_score=85.0,
         split_stations=("MDU",),
+        presentation=SolutionPresentation(
+            badge_text="CONFIRMED",
+            strategy_label="Smart Split",
+            comparison_sublabel="1 seat shift",
+            confirmed_tag="Guaranteed Seat",
+            card_headline="Stay on the same train! Just shift your seat at MDU.",
+            alt_summary="Shift at MDU • 2 legs (CONFIRMED)",
+            guide_steps=("1. Book RJPM to MDU", "2. Book MDU to MS"),
+            guide_note="Remain on Train 12662.",
+            action_button_label="Show Same-Coach Booking Trick",
+        ),
     )
     direct_snap = AvailabilitySnapshot(
         status=AvailabilityStatus.WAITLIST,
@@ -139,6 +151,12 @@ async def test_find_smart_routes_success(test_app: tuple[FastAPI, AsyncMock]) ->
         assert sol["legs"][0]["to_station"] == "MDU"
         assert sol["legs"][1]["from_station"] == "MDU"
         assert sol["legs"][1]["to_station"] == "MS"
+        assert sol["presentation"] is not None
+        assert sol["presentation"]["badge_text"] == "CONFIRMED"
+        assert sol["presentation"]["guide_steps"] == [
+            "1. Book RJPM to MDU",
+            "2. Book MDU to MS",
+        ]
 
 
 @pytest.mark.anyio
