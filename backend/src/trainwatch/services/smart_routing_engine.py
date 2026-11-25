@@ -940,6 +940,22 @@ class SmartRoutingEngine:
         queries_executed: int,
     ) -> SmartRouteResult:
         elapsed = (time.monotonic() - start_time) * 1000.0
+        relevant_codes: set[str] = {query.origin, query.destination}
+        for sol in solutions:
+            if sol.boarding_station:
+                relevant_codes.add(sol.boarding_station)
+            for st in sol.split_stations:
+                relevant_codes.add(st)
+            for leg in sol.legs:
+                relevant_codes.add(leg.from_station)
+                relevant_codes.add(leg.to_station)
+
+        station_names = tuple(
+            (stop.station_code, stop.station_name)
+            for stop in schedule.stops
+            if stop.station_code in relevant_codes and stop.station_name
+        )
+
         return SmartRouteResult(
             train_no=query.train_no,
             train_name=schedule.train_name,
@@ -956,4 +972,5 @@ class SmartRoutingEngine:
             execution_time_ms=round(elapsed, 2),
             stations_evaluated_count=stations_evaluated,
             queries_executed_count=queries_executed,
+            station_names=station_names,
         )

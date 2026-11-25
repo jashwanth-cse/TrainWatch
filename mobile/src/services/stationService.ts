@@ -77,6 +77,30 @@ export function formatStationName(str: string | null | undefined): string {
 }
 
 /**
+ * Dynamically register station code -> name mappings received from live API responses.
+ */
+export function registerStationNames(names: Record<string, string> | null | undefined): void {
+  if (!names) return;
+  for (const [rawCode, rawName] of Object.entries(names)) {
+    const code = (rawCode || '').trim().toUpperCase();
+    const name = (rawName || '').trim();
+    if (!code || !name) continue;
+    const existing = stationCodeMap.get(code);
+    if (!existing) {
+      const station: Station = { code, name, state: '' };
+      stationCodeMap.set(code, station);
+      const upperName = name.toUpperCase();
+      allStations.push({
+        ...station,
+        upperCode: code,
+        upperName,
+        words: upperName.split(' '),
+      });
+    }
+  }
+}
+
+/**
  * Look up a station by exact station code (case-insensitive)
  */
 export function getStationByCode(code: string): Station | undefined {

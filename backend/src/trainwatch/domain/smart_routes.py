@@ -200,6 +200,7 @@ class SmartRouteResult:
     execution_time_ms: float
     stations_evaluated_count: int
     queries_executed_count: int
+    station_names: tuple[tuple[str, str], ...] = ()
 
 
 def calculate_recommendation_score(

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadStationService } = require('./helpers/loadStationService.cjs');
 
-const { searchStations, getStationByCode, POPULAR_STATIONS } = loadStationService();
+const { searchStations, getStationByCode, getStationName, registerStationNames, POPULAR_STATIONS } = loadStationService();
 
 test('empty query returns popular stations default list', () => {
   const results = searchStations('');
@@ -54,4 +54,25 @@ test('repeated station searches return results for every query', () => {
     const res = searchStations(q);
     assert.ok(res.length > 0);
   }
+});
+
+test('missing South India stations including KRR (Karur) resolve and search properly', () => {
+  const krr = getStationByCode('KRR');
+  assert.ok(krr);
+  assert.equal(krr.code, 'KRR');
+  assert.match(krr.name, /KARUR/i);
+  assert.match(getStationName('krr'), /Karur/i);
+
+  for (const code of ['CAPE', 'NMKL', 'ERS', 'TVC', 'VGLJ']) {
+    assert.ok(getStationByCode(code), `Expected bundled station code ${code} to resolve`);
+  }
+
+  const karurSearch = searchStations('KRR');
+  assert.equal(karurSearch[0].code, 'KRR');
+});
+
+test('registerStationNames dynamically resolves previously unknown codes in runtime cache', () => {
+  assert.equal(getStationName('XYZQ'), 'XYZQ');
+  registerStationNames({ XYZQ: 'NEW JUNCTION TEST' });
+  assert.equal(getStationName('XYZQ'), 'New Junction Test');
 });
