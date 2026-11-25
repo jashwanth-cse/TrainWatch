@@ -93,6 +93,7 @@ def _encode(watch: Watch) -> dict[str, object]:
             "journeyDate": watch.query.journey_date.isoformat(),
             "travelClass": watch.query.travel_class,
             "quota": watch.query.quota,
+            "departureTime": watch.query.departure_time,
         },
         "condition": {
             "kind": watch.condition.kind.value,
@@ -102,6 +103,11 @@ def _encode(watch: Watch) -> dict[str, object]:
             "maximumPosition": watch.condition.maximum_position,
         },
         "status": watch.status.value,
+        "isActive": watch.is_active,
+        "departureAt": watch.departure_at,
+        "lastAvlCount": watch.last_avl_count,
+        "lastAlertedAvl": watch.last_alerted_avl,
+        "expiredReason": watch.expired_reason,
         "createdAt": watch.created_at,
         "updatedAt": watch.updated_at,
     }
@@ -144,6 +150,15 @@ def _timestamp(value: object, *, field: str) -> datetime:
     return value
 
 
+def _optional_timestamp(value: object, *, field: str) -> datetime | None:
+    """Decode an optional Firestore datetime or ISO timestamp."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+    return _timestamp(value, field=field)
+
+
 def _decode(data: Mapping[str, object], *, watch_id: str, owner_id: str) -> Watch:
     """Decode and revalidate a versioned Firestore watch document."""
     version = data.get("schemaVersion")
@@ -152,6 +167,15 @@ def _decode(data: Mapping[str, object], *, watch_id: str, owner_id: str) -> Watc
     query = _mapping(data.get("query"), field="query")
     condition = _mapping(data.get("condition"), field="condition")
     target = _optional_text(condition.get("targetStatus"), field="targetStatus")
+    parsed_status = WatchStatus(_text(data.get("status"), field="status"))
+    is_active_raw = data.get("isActive")
+    if (
+        isinstance(is_active_raw, bool)
+        and not is_active_raw
+        and parsed_status is WatchStatus.ACTIVE
+    ):
+        parsed_status = WatchStatus.EXPIRED
+
     return Watch(
         watch_id=watch_id,
         owner_id=owner_id,
@@ -162,6 +186,7 @@ def _decode(data: Mapping[str, object], *, watch_id: str, owner_id: str) -> Watc
             journey_date=date.fromisoformat(_text(query.get("journeyDate"), field="journeyDate")),
             travel_class=_text(query.get("travelClass"), field="travelClass"),
             quota=_text(query.get("quota"), field="quota"),
+            departure_time=_optional_text(query.get("departureTime"), field="departureTime"),
         ),
         condition=AlertCondition(
             kind=AlertKind(_text(condition.get("kind"), field="kind")),
@@ -170,9 +195,13 @@ def _decode(data: Mapping[str, object], *, watch_id: str, owner_id: str) -> Watc
                 condition.get("maximumPosition"), field="maximumPosition"
             ),
         ),
-        status=WatchStatus(_text(data.get("status"), field="status")),
+        status=parsed_status,
         created_at=_timestamp(data.get("createdAt"), field="createdAt"),
         updated_at=_timestamp(data.get("updatedAt"), field="updatedAt"),
+        departure_at=_optional_timestamp(data.get("departureAt"), field="departureAt"),
+        last_avl_count=_optional_integer(data.get("lastAvlCount"), field="lastAvlCount"),
+        last_alerted_avl=_optional_integer(data.get("lastAlertedAvl"), field="lastAlertedAvl"),
+        expired_reason=_optional_text(data.get("expiredReason"), field="expiredReason"),
     )
 
 

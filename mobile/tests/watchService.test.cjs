@@ -91,6 +91,8 @@ test('createWatch posts correct body with device auth header', async () => {
     journeyDate: '15-11-2026',
     travelClass: '3a',
     quota: 'gn',
+    departureTime: '20:00',
+    initialAvlCount: 150,
   });
 
   assert.equal(capturedUrl, 'https://test-api.trainwatch.app/api/v1/watches');
@@ -104,8 +106,12 @@ test('createWatch posts correct body with device auth header', async () => {
   assert.equal(parsedBody.journey_date, '2026-11-15');
   assert.equal(parsedBody.travel_class, '3A');
   assert.equal(parsedBody.quota, 'GN');
-  assert.equal(parsedBody.condition.kind, 'becomes_available');
+  assert.equal(parsedBody.departure_time, '20:00');
+  assert.equal(parsedBody.initial_avl_count, 150);
+  assert.equal(parsedBody.condition.kind, 'seats_below');
+  assert.equal(parsedBody.condition.maximum_position, 10);
   assert.equal(result.watch_id, 'watch_abc');
+  assert.equal(result.is_active, true);
 });
 
 test('createWatch handles validation errors from backend gracefully', async () => {
@@ -224,4 +230,41 @@ test('listWatches and updateWatchCondition perform expected HTTP calls', async (
     condition: { kind: 'seats_below', maximum_position: 25 },
   });
   assert.equal(updated.condition.kind, 'seats_below');
+});
+
+test('listWatches normalizes expired and dissolved watches with is_active=false', async () => {
+  const mockFetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => [
+      {
+        watch_id: 'w_exp',
+        owner_id: 'tw_1',
+        status: 'expired',
+        is_active: false,
+        expired_reason: 'train_departed',
+        last_avl_count: 12,
+        departure_at: '2026-11-26T14:30:00Z',
+        query: {
+          train_number: '12661',
+          source: 'MS',
+          destination: 'TEN',
+          journey_date: '2026-11-26',
+          travel_class: '3A',
+          quota: 'GN',
+          departure_time: '20:00',
+          watch_key: 'v1:test',
+        },
+        condition: { kind: 'seats_below', maximum_position: 10 },
+      },
+    ],
+  });
+
+  const { watchService } = loadWatchService(mockFetch);
+  const watches = await watchService.listWatches();
+  assert.equal(watches.length, 1);
+  assert.equal(watches[0].status, 'EXPIRED');
+  assert.equal(watches[0].is_active, false);
+  assert.equal(watches[0].expired_reason, 'train_departed');
+  assert.equal(watches[0].last_avl_count, 12);
 });

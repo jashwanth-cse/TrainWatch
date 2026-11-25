@@ -1147,3 +1147,207 @@ test('ensureBookingStrategy and resolveSolutionPresentation handle Tier 2 Origin
   assert.equal(presSplit.confirmed_tag, 'RAC Combination');
   assert.match(presSplit.card_headline, /shift your seat at MDU/);
 });
+
+test('SmartRoutesScreen prefers live server direct_fare (372) over stale route param (355) so surcharge (82) matches displayed fares', async () => {
+  const screenPath = path.join(__dirname, '../src/screens/SmartRoutesScreen.tsx');
+  const screenSrc = fs.readFileSync(screenPath, 'utf8');
+  const { outputText } = ts.transpileModule(screenSrc, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.React,
+      esModuleInterop: true,
+    },
+  });
+
+  const servicePath = path.join(__dirname, '../src/services/smartRouteService.ts');
+  const serviceSrc = fs.readFileSync(servicePath, 'utf8');
+  const serviceTranspiled = ts.transpileModule(serviceSrc, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
+  });
+  const serviceExports = {};
+  vm.runInNewContext(serviceTranspiled.outputText, {
+    exports: serviceExports,
+    require(name) {
+      if (name === '@react-native-async-storage/async-storage') {
+        return { getItem: async () => null, setItem: async () => {} };
+      }
+      if (name === '../utils/errorUtils') return { sanitizeError: (e) => ({ userMessage: String(e) }) };
+      if (name === './stationService') return { registerStationNames: () => {} };
+      return require(name);
+    },
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        success: true,
+        data: {
+          train_no: '16160',
+          train_name: 'MAQ CHENNAI EXP',
+          origin: 'CBE',
+          destination: 'MS',
+          journey_date: '2026-12-01',
+          travel_class: 'SL',
+          direct_status: 'RAC 21',
+          direct_fare: 372,
+          solutions: [
+            {
+              solution_id: 'sol_cbe_krr',
+              tier: 'TIER_1_SAME_TRAIN_SPLIT',
+              legs: [
+                { leg_number: 1, train_no: '16160', from_station: 'CBE', to_station: 'KRR', travel_class: 'SL', status: 'AVAILABLE', raw_status: 'AVL 68', fare: 167 },
+                { leg_number: 2, train_no: '16160', from_station: 'KRR', to_station: 'MS', travel_class: 'SL', status: 'AVAILABLE', raw_status: 'AVL 43', fare: 287 },
+              ],
+              total_fare: 454,
+              fare_surcharge: 82,
+              fare_surcharge_pct: 22.0,
+              boarding_station: null,
+              is_confirmed: true,
+              is_rac: false,
+              recommendation_score: 79,
+              split_stations: ['KRR'],
+            },
+          ],
+        },
+      }),
+    }),
+    process: { env: { EXPO_PUBLIC_TRAINWATCH_API_URL: 'https://test-api.trainwatch.app' } },
+    Date: globalThis.Date,
+    Math: globalThis.Math,
+    JSON: globalThis.JSON,
+    Error: globalThis.Error,
+    Array: globalThis.Array,
+    Object: globalThis.Object,
+  });
+
+  const slots = [];
+  const effects = [];
+  let idx = 0;
+  const react = {
+    Fragment: 'Fragment',
+    createElement: (type, props, ...children) => ({ type, props: { ...props, children } }),
+    useState(init) {
+      const s = idx++;
+      if (!(s in slots)) slots[s] = typeof init === 'function' ? init() : init;
+      return [slots[s], (val) => { slots[s] = typeof val === 'function' ? val(slots[s]) : val; }];
+    },
+    useRef(init) { const s = idx++; slots[s] ??= { current: init }; return slots[s]; },
+    useCallback(fn, deps = []) {
+      const s = idx++;
+      const prev = slots[s];
+      if (!prev || deps.some((d, i) => !Object.is(d, prev.deps[i]))) {
+        slots[s] = { deps, callback: fn };
+      }
+      return slots[s].callback;
+    },
+    useEffect(fn, deps) {
+      const s = idx++;
+      const prev = slots[s];
+      if (!prev || !deps || deps.some((d, i) => !Object.is(d, prev.deps[i]))) {
+        effects.push(() => {
+          prev?.cleanup?.();
+          slots[s] = { deps, cleanup: fn() };
+        });
+      }
+    },
+  };
+
+  const modules = {
+    react,
+    'react-native': { View: 'View', Text: 'Text', TouchableOpacity: 'TouchableOpacity', ScrollView: 'ScrollView', StyleSheet: { create: (s) => s } },
+    'expo-linear-gradient': { LinearGradient: 'LinearGradient' },
+    'expo-status-bar': { StatusBar: 'StatusBar' },
+    'react-native-safe-area-context': { useSafeAreaInsets: () => ({ top: 10, bottom: 10 }) },
+    'expo-router': {
+      useRouter: () => ({ back() {}, push() {} }),
+      useLocalSearchParams: () => ({
+        trainNo: '16160', trainName: 'MAQ CHENNAI EXP', source: 'CBE', destination: 'MS',
+        date: '2026-12-01', travelClass: 'SL', directStatus: 'RAC 21', directFare: '355',
+      }),
+    },
+    '../theme/tokens': { radius: { sm: 4, md: 8, lg: 12, xl: 16, full: 999 } },
+    '../services/smartRouteService': serviceExports,
+    '../services/stationService': { getStationName: (c) => String(c || '') },
+    '../components/NostalgicTrainLoader': { NostalgicTrainLoader: 'NostalgicTrainLoader' },
+    '../components/BookingTrickModal': { BookingTrickModal: 'BookingTrickModal' },
+    'lucide-react-native': new Proxy({}, { get: (_, k) => String(k) }),
+  };
+
+  const exports = {};
+  vm.runInNewContext(outputText, {
+    exports,
+    queueMicrotask,
+    setTimeout,
+    clearTimeout,
+    setInterval: () => 1,
+    clearInterval: () => {},
+    require(name) {
+      if (name in modules) return modules[name];
+      return require(name);
+    },
+  });
+
+  const renderTree = () => {
+    idx = 0;
+    const t = exports.SmartRoutesScreen();
+    return t;
+  };
+  renderTree();
+  let rounds = 0;
+  while (effects.length > 0 && rounds++ < 10) {
+    const fn = effects.shift();
+    fn();
+    await new Promise((r) => setTimeout(r, 15));
+    renderTree();
+  }
+  const tree = renderTree();
+
+  function collectText(node, out = []) {
+    if (node == null) return out;
+    if (typeof node === 'string' || typeof node === 'number') {
+      out.push(String(node));
+      return out;
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) collectText(item, out);
+      return out;
+    }
+    if (typeof node === 'object' && node.props) {
+      collectText(node.props.children, out);
+    }
+    return out;
+  }
+
+  const allTexts = collectText(tree).join(' | ');
+  assert.ok(allTexts.includes('₹372'), `Expected live direct fare ₹372 in output, got: ${allTexts}`);
+  assert.ok(!allTexts.includes('₹355'), 'Stale param directFare ₹355 must be superseded by live ₹372');
+  assert.ok(allTexts.includes('₹454'), 'Expected split fare ₹454');
+  assert.ok(allTexts.includes('₹82'), 'Expected exact surcharge ₹82 matching 454 - 372');
+  assert.ok(allTexts.includes('+22.0%'), 'Expected exact surcharge percentage +22.0%');
+});
+
+test('computeComparisonMetrics reconciles fallback fares and cheaper savings deltas accurately', () => {
+  const { exports } = loadSmartRouteService(async () => {});
+
+  // When server direct_fare is absent, fallback route param (355) is used consistently for delta (99)
+  const fallbackMetrics = exports.computeComparisonMetrics(
+    { direct_status: 'RAC 21', direct_fare: null },
+    { total_fare: 454, fare_surcharge: 0, fare_surcharge_pct: 0 },
+    'RAC 21',
+    '355'
+  );
+  assert.equal(fallbackMetrics.directFareNum, 355);
+  assert.equal(fallbackMetrics.fareDelta, 99);
+  assert.equal(fallbackMetrics.surchargePct.toFixed(1), '27.9');
+
+  // When live direct_fare (450) exceeds solution total_fare (400), shows negative delta (saves 50)
+  const savingsMetrics = exports.computeComparisonMetrics(
+    { direct_status: 'WL 10', direct_fare: 450 },
+    { total_fare: 400, fare_surcharge: 0, fare_surcharge_pct: 0 },
+    'WL 10',
+    '420'
+  );
+  assert.equal(savingsMetrics.directFareNum, 450);
+  assert.equal(savingsMetrics.fareDelta, -50);
+  assert.equal(savingsMetrics.surchargePct.toFixed(1), '11.1');
+});

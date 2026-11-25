@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { radius } from '../theme/tokens';
 import {
+  computeComparisonMetrics,
   fetchSmartRoutes,
   resolveSolutionPresentation,
   SmartRoutesResultData,
@@ -258,10 +259,12 @@ export const SmartRoutesScreen: React.FC = () => {
       ? resultData.solutions.slice(1)
       : [];
 
-  const directStatusText = params.directStatus || resultData?.direct_status || 'Waitlist';
-  const directFareNum = params.directFare
-    ? parseInt(params.directFare, 10)
-    : resultData?.direct_fare || null;
+  const {
+    directStatusText,
+    directFareNum,
+    fareDelta: displayedFareDelta,
+    surchargePct: displayedSurchargePct,
+  } = computeComparisonMetrics(resultData, bestSolution, params.directStatus, params.directFare);
 
   const renderSolutionTimeline = (
     sol: SmartRouteSolution,
@@ -548,50 +551,63 @@ export const SmartRoutesScreen: React.FC = () => {
                 <View
                   style={[
                     styles.splitStatusBadge,
-                    bestSolution && !bestSolution.is_confirmed && bestSolution.is_rac
-                      ? { backgroundColor: '#D97706' }
-                      : null,
+                    !bestSolution
+                      ? { backgroundColor: '#64748B' }
+                      : !bestSolution.is_confirmed && bestSolution.is_rac
+                        ? { backgroundColor: '#D97706' }
+                        : null,
                   ]}
                 >
                   <CheckCircle2 size={13} color="#FFFFFF" strokeWidth={2.4} style={{ marginRight: 4 }} />
                   <Text style={styles.splitStatusText}>
-                    {bestPres?.badge_text || 'CONFIRMED'}
+                    {bestSolution ? bestPres?.badge_text || 'CONFIRMED' : 'NONE FOUND'}
                   </Text>
                 </View>
                 <Text style={styles.colFareHighlight}>
-                  {bestSolution?.total_fare ? `₹${bestSolution.total_fare}` : 'Dynamic'}
+                  {bestSolution?.total_fare !== null && bestSolution?.total_fare !== undefined
+                    ? `₹${bestSolution.total_fare}`
+                    : bestSolution
+                      ? 'Dynamic'
+                      : '--'}
                 </Text>
                 <Text style={styles.colSubHighlight}>
-                  {bestPres?.comparison_sublabel || 'Same train'}
+                  {bestSolution ? bestPres?.comparison_sublabel || 'Same train' : 'All quotas full'}
                 </Text>
                 <View
                   style={[
                     styles.confirmedTag,
-                    bestSolution && !bestSolution.is_confirmed && bestSolution.is_rac
-                      ? { backgroundColor: '#FEF3C7' }
-                      : null,
+                    !bestSolution
+                      ? { backgroundColor: '#F1F5F9' }
+                      : !bestSolution.is_confirmed && bestSolution.is_rac
+                        ? { backgroundColor: '#FEF3C7' }
+                        : null,
                   ]}
                 >
                   <Text
                     style={[
                       styles.confirmedTagText,
-                      bestSolution && !bestSolution.is_confirmed && bestSolution.is_rac
-                        ? { color: '#B45309' }
-                        : null,
+                      !bestSolution
+                        ? { color: '#64748B' }
+                        : !bestSolution.is_confirmed && bestSolution.is_rac
+                          ? { color: '#B45309' }
+                          : null,
                     ]}
                   >
-                    {bestPres?.confirmed_tag || 'Guaranteed Seat'}
+                    {bestSolution ? bestPres?.confirmed_tag || 'Guaranteed Seat' : 'Try Another Date'}
                   </Text>
                 </View>
               </View>
             </View>
 
-            {bestSolution && bestSolution.fare_surcharge > 0 && (
+            {bestSolution && bestSolution.total_fare !== null && directFareNum !== null && (
               <View style={styles.surchargeFooter}>
                 <Info size={13} color="#1E40AF" style={{ marginRight: 6 }} />
                 <Text style={styles.surchargeFooterText}>
-                  {bestSolution.is_confirmed ? 'Confirmed berth' : 'Improved seat option'} for just ₹
-                  {bestSolution.fare_surcharge} more (+{bestSolution.fare_surcharge_pct.toFixed(1)}%).
+                  {displayedFareDelta > 0
+                    ? `${bestSolution.is_confirmed ? 'Confirmed berth' : 'Improved seat option'} for ₹${displayedFareDelta} more (+${displayedSurchargePct.toFixed(1)}%).`
+                    : displayedFareDelta < 0
+                      ? `${bestSolution.is_confirmed ? 'Confirmed berth' : 'Improved seat option'} and saves ₹${Math.abs(displayedFareDelta)} (-${displayedSurchargePct.toFixed(1)}%).`
+                      : `${bestSolution.is_confirmed ? 'Confirmed berth' : 'Improved seat option'} at the same ₹${bestSolution.total_fare} fare!`}
                 </Text>
               </View>
             )}

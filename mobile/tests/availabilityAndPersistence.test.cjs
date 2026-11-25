@@ -85,11 +85,15 @@ test('parseAvailabilityStatus correctly classifies AVAILABLE, RAC, and WAITLIST'
 
   const rac = parseAvailabilityStatus('RAC 4');
   assert.equal(rac.badgeLabel, 'RAC');
-  assert.equal(rac.canTrack, true);
+  assert.equal(rac.isBookable, true);
+  assert.equal(rac.canTrack, false);
+  assert.match(rac.untrackableReason, /confirmed \(AVL\)/i);
   assert.equal(rac.textColor, '#F59E0B'); // Amber
 
   const wl = parseAvailabilityStatus('GNWL 25');
   assert.equal(wl.badgeLabel, 'WAITLIST');
-  assert.equal(wl.canTrack, true);
+  assert.equal(wl.isBookable, true);
+  assert.equal(wl.canTrack, false);
+  assert.match(wl.untrackableReason, /confirmed \(AVL\)/i);
   assert.equal(wl.textColor, '#EF4444'); // Red
 });

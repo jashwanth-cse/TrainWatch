@@ -5,7 +5,14 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 
 from trainwatch.domain.alerts import AlertCondition, AlertKind
-from trainwatch.domain.watch import TrainQuery, Watch, WatchStatus
+from trainwatch.domain.watch import (
+    IST,
+    TrainQuery,
+    Watch,
+    WatchStatus,
+    compute_departure_at,
+    normalize_departure_time,
+)
 from trainwatch.ports import AvailabilityProvider, WatchRepository
 
 NOW = datetime(2026, 10, 23, 12, tzinfo=UTC)
@@ -198,3 +205,57 @@ def test_watch_update_condition() -> None:
     cancelled = w.transition(WatchStatus.CANCELLED, at=later)
     with pytest.raises(ValueError, match="cannot update condition"):
         cancelled.update_condition(new_cond, at=later)
+
+
+def test_departure_time_ist_expiry_and_legacy_dissolution() -> None:
+    """Validate IST departure timestamps, auto-dissolve, and AVL watermark persistence."""
+    assert normalize_departure_time(None) is None
+    assert normalize_departure_time("  ") is None
+    assert normalize_departure_time("8:05") == "08:05"
+    with pytest.raises(ValueError, match="HH:MM"):
+        normalize_departure_time("25:99")
+
+    dep_utc = compute_departure_at(journey_date=date(2026, 11, 26), departure_time="20:00")
+    assert dep_utc == datetime(2026, 11, 26, 14, 30, tzinfo=UTC)
+    eod_utc = compute_departure_at(journey_date=date(2026, 11, 26), departure_time=None)
+    assert eod_utc == datetime(2026, 11, 26, 23, 59, 59, tzinfo=IST).astimezone(UTC)
+
+    q = query(journey_date=date(2026, 11, 26), departure_time="20:00")
+    avl_watch = Watch(
+        watch_id="w-avl",
+        owner_id="u1",
+        query=q,
+        condition=AlertCondition(AlertKind.SEATS_BELOW, maximum_position=10),
+        status=WatchStatus.ACTIVE,
+        created_at=NOW,
+        updated_at=NOW,
+        departure_at=datetime(2026, 11, 26, 14, 30),  # naive coerced to UTC cleanly
+    )
+    assert avl_watch.is_active
+    assert avl_watch.effective_departure_at() == datetime(2026, 11, 26, 14, 30, tzinfo=UTC)
+    assert not avl_watch.is_departed(at=datetime(2026, 11, 26, 14, 29, tzinfo=UTC))
+    assert avl_watch.is_departed(at=datetime(2026, 11, 26, 14, 30))
+
+    # Same day 20:05 IST -> expires immediately with reason
+    after_dep = datetime(2026, 11, 26, 20, 5, tzinfo=IST)
+    expired = avl_watch.dissolve_if_due(at=after_dep)
+    assert expired.status is WatchStatus.EXPIRED
+    assert not expired.is_active
+    assert expired.expired_reason == "train_departed"
+
+    # Record AVL observation and watermark reset above threshold
+    obs1 = avl_watch.record_avl_observation(
+        current_avl=8, alerted=True, at=NOW + timedelta(minutes=5)
+    )
+    assert obs1.last_avl_count == 8 and obs1.last_alerted_avl == 8
+    obs2 = obs1.record_avl_observation(
+        current_avl=15, alerted=False, at=NOW
+    )  # earlier ts preserves updated_at
+    assert obs2.last_avl_count == 15 and obs2.last_alerted_avl is None
+
+    # Legacy non-AVL watch dissolves immediately with policy reason
+    legacy = watch(WatchStatus.ACTIVE)
+    dissolved_legacy = legacy.dissolve_if_legacy(at=NOW + timedelta(minutes=1))
+    assert dissolved_legacy.status is WatchStatus.EXPIRED
+    assert dissolved_legacy.expired_reason == "avl_only_policy"
+    assert dissolved_legacy.dissolve_if_legacy(at=NOW + timedelta(minutes=2)) is dissolved_legacy

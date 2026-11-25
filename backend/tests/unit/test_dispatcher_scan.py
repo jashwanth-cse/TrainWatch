@@ -37,7 +37,7 @@ async def test_scan_bounds_work_and_progresses_across_restarts() -> None:
                 "travelClass": "SL",
                 "quota": "GN",
             },
-            "condition": {"kind": "improves"},
+            "condition": {"kind": "seats_below", "maximumPosition": 10},
             # Equal creation times exercise the document-path tie breaker.
             "createdAt": now,
             "updatedAt": now,
